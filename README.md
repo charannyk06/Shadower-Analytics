@@ -70,6 +70,13 @@ npm run dev
 
 ## 📊 Features
 
+### Authentication & Authorization
+- **Shared JWT Authentication**: Seamless authentication with the main Shadower app
+- **Role-Based Access Control (RBAC)**: Fine-grained permissions for owner, admin, member, and viewer roles
+- **Workspace Permissions**: Multi-workspace support with workspace-level access control
+- **Automatic Token Refresh**: Tokens are automatically refreshed before expiration
+- **Secure**: HTTPS-only in production, rate limiting, audit logging
+
 ### Executive Dashboard
 - Real-time business metrics (MRR, Churn, LTV)
 - User engagement metrics (DAU, WAU, MAU)
@@ -164,10 +171,120 @@ shadower-analytics/
 See `.env.example` for all available configuration options.
 
 Key variables:
+
+**Backend:**
 - `DATABASE_URL`: PostgreSQL connection string
 - `REDIS_URL`: Redis connection string
-- `JWT_SECRET_KEY`: Secret for JWT tokens
-- `NEXT_PUBLIC_API_URL`: Backend API URL for frontend
+- `JWT_SECRET_KEY`: Secret for JWT tokens (must match main app!)
+- `JWT_ALGORITHM`: JWT algorithm (HS256 or RS256)
+- `JWT_EXPIRATION_HOURS`: Token expiration time (default: 24)
+- `MAIN_APP_URL`: URL of the main Shadower app
+
+**Frontend:**
+- `NEXT_PUBLIC_ANALYTICS_API_URL`: Backend API URL
+- `NEXT_PUBLIC_MAIN_APP_URL`: Main Shadower app URL for auth
+
+## 🔐 Authentication System
+
+### How It Works
+
+1. Users authenticate in the main Shadower app
+2. JWT token is generated with user claims (id, email, workspace, role, permissions)
+3. Token is shared with Analytics microservice via URL parameter or localStorage
+4. Analytics validates token using shared JWT secret
+5. Token is automatically refreshed before expiration
+
+### JWT Token Structure
+
+```typescript
+{
+  sub: "user-id",           // User ID
+  email: "user@example.com",
+  workspaceId: "ws-123",    // Current workspace
+  workspaces: ["ws-123"],   // All accessible workspaces
+  role: "admin",            // owner | admin | member | viewer
+  permissions: ["view_analytics", "export_analytics"],
+  iat: 1234567890,          // Issued at
+  exp: 1234567890           // Expiration
+}
+```
+
+### Roles and Permissions
+
+- **Owner**: Full access to all features and workspaces
+- **Admin**: Access to analytics, reports, alerts, and management features
+- **Member**: View and export analytics, view alerts
+- **Viewer**: Read-only access to analytics
+
+### Integrating with Main App
+
+Add a button in the main Shadower app to open Analytics:
+
+```typescript
+import { useAuth } from '@/hooks/useAuth';
+
+export function AnalyticsButton() {
+  const { token } = useAuth();
+
+  const openAnalytics = () => {
+    const analyticsUrl = process.env.NEXT_PUBLIC_ANALYTICS_URL;
+    const url = `${analyticsUrl}?token=${encodeURIComponent(token)}`;
+    window.open(url, '_blank');
+  };
+
+  return <button onClick={openAnalytics}>View Analytics</button>;
+}
+```
+
+### Protected Routes (Frontend)
+
+```typescript
+import { ProtectedRoute } from '@/components/auth';
+import { ROLES, PERMISSIONS } from '@/types/permissions';
+
+export default function ExecutivePage() {
+  return (
+    <ProtectedRoute
+      requiredRole={[ROLES.OWNER, ROLES.ADMIN]}
+      requiredPermissions={[PERMISSIONS.VIEW_EXECUTIVE_DASHBOARD]}
+    >
+      <ExecutiveDashboard />
+    </ProtectedRoute>
+  );
+}
+```
+
+### Protected Endpoints (Backend)
+
+```python
+from fastapi import APIRouter, Depends
+from src.api.dependencies.auth import require_owner_or_admin
+
+router = APIRouter()
+
+@router.get("/executive/overview")
+async def get_executive_overview(
+    current_user = Depends(require_owner_or_admin)
+):
+    # Only owners and admins can access this endpoint
+    return {"data": "..."}
+```
+
+### Security Considerations
+
+- JWT secret must be strong (256-bit minimum)
+- Tokens expire after 24 hours
+- Refresh tokens expire after 30 days
+- HTTPS only in production
+- Rate limiting on auth endpoints
+- All authentication attempts are logged
+
+### Performance Targets
+
+- Token verification: <10ms
+- Permission check: <5ms
+- Token refresh: <200ms
+- Auth state hydration: <100ms
 
 ### Database Migrations
 
