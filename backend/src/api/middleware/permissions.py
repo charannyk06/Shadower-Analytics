@@ -23,9 +23,7 @@ def require_permission(*required_permissions: str):
             user_permissions = current_user.get("permissions", [])
 
             # Check if user has any of the required permissions
-            has_permission = any(
-                perm in user_permissions for perm in required_permissions
-            )
+            has_permission = any(perm in user_permissions for perm in required_permissions)
 
             if not has_permission:
                 raise HTTPException(
