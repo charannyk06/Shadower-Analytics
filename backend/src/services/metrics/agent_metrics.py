@@ -36,7 +36,9 @@ async def get_agent_performance_metrics(
     """Get comprehensive agent performance metrics."""
     return {
         "success_rate": await calculate_agent_success_rate(db, agent_id, start_date, end_date),
-        "avg_execution_time": await calculate_avg_execution_time(db, agent_id, start_date, end_date),
+        "avg_execution_time": await calculate_avg_execution_time(
+            db, agent_id, start_date, end_date
+        ),
         "total_executions": 0,
         "failed_executions": 0,
     }

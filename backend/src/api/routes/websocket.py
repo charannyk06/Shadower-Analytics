@@ -52,8 +52,7 @@ async def metrics_websocket(websocket: WebSocket):
 
             # Send real-time updates based on subscription
             await manager.send_personal_message(
-                json.dumps({"type": "metric_update", "data": {}}),
-                websocket
+                json.dumps({"type": "metric_update", "data": {}}), websocket
             )
 
     except WebSocketDisconnect:
@@ -69,8 +68,7 @@ async def executions_websocket(websocket: WebSocket):
             # Send real-time execution updates
             await asyncio.sleep(1)
             await manager.send_personal_message(
-                json.dumps({"type": "execution_update", "data": {}}),
-                websocket
+                json.dumps({"type": "execution_update", "data": {}}), websocket
             )
     except WebSocketDisconnect:
         manager.disconnect(websocket)

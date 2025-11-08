@@ -58,9 +58,7 @@ class InMemoryRateLimiter:
         now = time.time()
         # Remove old entries
         self.clients[client_id] = [
-            timestamp
-            for timestamp in self.clients[client_id]
-            if now - timestamp < self.period
+            timestamp for timestamp in self.clients[client_id] if now - timestamp < self.period
         ]
 
         # Check limit
