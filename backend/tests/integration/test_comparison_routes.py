@@ -6,10 +6,31 @@ import pytest
 from datetime import datetime, timedelta
 from httpx import AsyncClient
 from fastapi import status
+from unittest.mock import patch
 
 
 class TestComparisonRoutes:
     """Test suite for comparison API routes"""
+
+    @pytest.fixture
+    def mock_auth_user(self):
+        """Mock authenticated user"""
+        return {
+            "id": "user-123",
+            "email": "test@example.com",
+            "role": "admin",
+            "workspaces": ["ws-1", "ws-2", "ws-3"],
+        }
+
+    @pytest.fixture
+    def mock_regular_user(self):
+        """Mock regular user with limited workspace access"""
+        return {
+            "id": "user-456",
+            "email": "regular@example.com",
+            "role": "user",
+            "workspaces": ["ws-1"],
+        }
 
     # ========================================================================
     # Agent Comparison Endpoint Tests
@@ -274,3 +295,122 @@ class TestComparisonRoutes:
             status.HTTP_400_BAD_REQUEST,
             status.HTTP_422_UNPROCESSABLE_ENTITY,
         ]
+
+    # ========================================================================
+    # Authentication & Authorization Tests
+    # ========================================================================
+
+    @pytest.mark.asyncio
+    async def test_workspace_access_control_admin(
+        self, client: AsyncClient, mock_auth_user
+    ):
+        """Test that admin users can access all workspaces"""
+        with patch(
+            "src.api.dependencies.auth.get_current_active_user",
+            return_value=mock_auth_user,
+        ):
+            response = await client.post(
+                "/api/v1/comparisons/workspaces",
+                params={
+                    "workspace_ids": ["ws-1", "ws-2", "ws-3"],
+                },
+            )
+
+            assert response.status_code == status.HTTP_200_OK
+
+    @pytest.mark.asyncio
+    async def test_workspace_access_control_regular_user_allowed(
+        self, client: AsyncClient, mock_regular_user
+    ):
+        """Test that regular users can access their own workspaces"""
+        with patch(
+            "src.api.dependencies.auth.get_current_active_user",
+            return_value=mock_regular_user,
+        ):
+            response = await client.post(
+                "/api/v1/comparisons/workspaces",
+                params={
+                    "workspace_ids": ["ws-1"],  # User has access to ws-1
+                },
+            )
+
+            # Should succeed or return 200 even if no data
+            assert response.status_code in [status.HTTP_200_OK, status.HTTP_400_BAD_REQUEST]
+
+    @pytest.mark.asyncio
+    async def test_workspace_access_control_regular_user_denied(
+        self, client: AsyncClient, mock_regular_user
+    ):
+        """Test that regular users cannot access unauthorized workspaces"""
+        with patch(
+            "src.api.dependencies.auth.get_current_active_user",
+            return_value=mock_regular_user,
+        ):
+            response = await client.post(
+                "/api/v1/comparisons/workspaces",
+                params={
+                    "workspace_ids": ["ws-99"],  # User doesn't have access
+                },
+            )
+
+            assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    # ========================================================================
+    # Input Validation Tests
+    # ========================================================================
+
+    @pytest.mark.asyncio
+    async def test_invalid_date_range(self, client: AsyncClient):
+        """Test validation of invalid date ranges"""
+        # start_date after end_date
+        payload = {
+            "type": "periods",
+            "filters": {
+                "start_date": datetime.utcnow().isoformat(),
+                "end_date": (datetime.utcnow() - timedelta(days=7)).isoformat(),
+            },
+        }
+
+        response = await client.post("/api/v1/comparisons/", json=payload)
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    @pytest.mark.asyncio
+    async def test_future_end_date(self, client: AsyncClient):
+        """Test validation of future end date"""
+        payload = {
+            "type": "periods",
+            "filters": {
+                "end_date": (datetime.utcnow() + timedelta(days=7)).isoformat(),
+            },
+        }
+
+        response = await client.post("/api/v1/comparisons/", json=payload)
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    @pytest.mark.asyncio
+    async def test_empty_agent_ids(self, client: AsyncClient):
+        """Test validation of empty agent IDs"""
+        response = await client.post(
+            "/api/v1/comparisons/agents",
+            params={
+                "agent_ids": ["", "  "],  # Empty strings
+            },
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    @pytest.mark.asyncio
+    async def test_invalid_metric_name(self, client: AsyncClient):
+        """Test validation of invalid metric names"""
+        payload = {
+            "type": "metrics",
+            "filters": {
+                "metric_names": ["invalid_metric_name"],
+            },
+        }
+
+        response = await client.post("/api/v1/comparisons/", json=payload)
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY

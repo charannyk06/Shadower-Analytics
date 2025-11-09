@@ -3,15 +3,25 @@ Comparison Service
 Business logic for comparison views
 """
 
+import logging
 from datetime import datetime, timedelta
+from functools import lru_cache
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 from scipy import stats
-from sqlalchemy import select, func, and_, or_
+from sqlalchemy import select, func, and_, or_, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.utils.datetime import utc_now
+from src.models.database.tables import (
+    ExecutionLog,
+    AgentMetric as AgentMetricDB,
+    WorkspaceMetric as WorkspaceMetricDB,
+)
+
+# Configure logging
+logger = logging.getLogger(__name__)
 from src.models.comparison_views import (
     AgentComparison,
     AgentComparisonItem,
@@ -218,44 +228,123 @@ class ComparisonService:
     async def _fetch_agent_metrics(
         self, filters: ComparisonFilters
     ) -> List[AgentComparisonItem]:
-        """Fetch metrics for agents
+        """Fetch metrics for agents from database
 
-        TODO: Replace with real database queries
-        WARNING: Current implementation returns mock data for demonstration
+        Args:
+            filters: Comparison filters with agent IDs and date range
+
+        Returns:
+            List of agent comparison items with metrics
+
+        Raises:
+            ValueError: If no valid agent data found
         """
+        try:
+            agent_ids = filters.agent_ids or []
+            if not agent_ids:
+                raise ValueError("No agent IDs provided")
 
-        # MOCK IMPLEMENTATION - Replace with real database queries
-        # TODO: Query from agent_metrics table with proper filters
-        # TODO: Add proper error handling and validation
-        # TODO: Add pagination support
-        agents = []
-        agent_ids = filters.agent_ids or []
+            # Limit to max 10 agents as per constraints
+            agent_ids = agent_ids[:MAX_AGENTS_FOR_COMPARISON]
 
-        for agent_id in agent_ids[:5]:  # Limit to 5 agents
-            metrics = AgentMetrics(
-                success_rate=np.random.uniform(85, 99),
-                average_runtime=np.random.uniform(100, 5000),
-                total_runs=np.random.randint(100, 10000),
-                error_rate=np.random.uniform(1, 15),
-                cost_per_run=np.random.uniform(0.01, 0.5),
-                total_cost=np.random.uniform(10, 1000),
-                p50_runtime=np.random.uniform(50, 2000),
-                p95_runtime=np.random.uniform(200, 8000),
-                p99_runtime=np.random.uniform(500, 15000),
-                throughput=np.random.uniform(10, 100),
-                user_satisfaction=np.random.uniform(3.5, 5.0),
-                credits_per_run=np.random.uniform(1, 50),
-            )
+            logger.info(f"Fetching metrics for {len(agent_ids)} agents")
 
-            agents.append(
-                AgentComparisonItem(
-                    id=agent_id,
-                    name=f"Agent {agent_id}",
-                    metrics=metrics,
+            agents = []
+
+            for agent_id in agent_ids:
+                # Build base query for execution logs
+                query = select(ExecutionLog).where(ExecutionLog.agent_id == agent_id)
+
+                # Apply date filters
+                if filters.start_date:
+                    query = query.where(ExecutionLog.started_at >= filters.start_date)
+                if filters.end_date:
+                    query = query.where(ExecutionLog.started_at <= filters.end_date)
+
+                # Apply workspace filter if provided
+                if filters.workspace_ids:
+                    query = query.where(ExecutionLog.workspace_id.in_(filters.workspace_ids))
+
+                result = await self.db.execute(query)
+                executions = result.scalars().all()
+
+                if not executions:
+                    logger.warning(f"No execution data found for agent {agent_id}")
+                    continue
+
+                # Calculate metrics from execution data
+                total_runs = len(executions)
+                successful_runs = len([e for e in executions if e.status == "success"])
+                failed_runs = len([e for e in executions if e.status in ["failed", "error"]])
+
+                success_rate = (successful_runs / total_runs * 100) if total_runs > 0 else 0
+                error_rate = (failed_runs / total_runs * 100) if total_runs > 0 else 0
+
+                # Calculate runtime metrics (in milliseconds)
+                durations = [e.duration for e in executions if e.duration is not None]
+                avg_runtime = np.mean(durations) if durations else 0
+                p50_runtime = np.percentile(durations, 50) if durations else 0
+                p95_runtime = np.percentile(durations, 95) if durations else 0
+                p99_runtime = np.percentile(durations, 99) if durations else 0
+
+                # Calculate cost metrics
+                credits_used = [e.credits_used for e in executions if e.credits_used is not None]
+                total_credits = sum(credits_used) if credits_used else 0
+                credits_per_run = total_credits / total_runs if total_runs > 0 else 0
+
+                # Estimate cost (assuming $0.01 per credit as placeholder)
+                cost_per_run = credits_per_run * 0.01
+                total_cost = total_credits * 0.01
+
+                # Calculate throughput (runs per day)
+                if filters.start_date and filters.end_date:
+                    days = (filters.end_date - filters.start_date).days or 1
+                    throughput = total_runs / days
+                else:
+                    # Default to last 30 days
+                    throughput = total_runs / 30
+
+                # Get agent name from first execution metadata or use ID
+                agent_name = f"Agent {agent_id}"
+                if executions and executions[0].metadata:
+                    agent_name = executions[0].metadata.get("agent_name", agent_name)
+
+                # Get last run timestamp
+                last_run_at = max([e.completed_at or e.started_at for e in executions])
+
+                metrics = AgentMetrics(
+                    success_rate=float(success_rate),
+                    average_runtime=float(avg_runtime),
+                    total_runs=total_runs,
+                    error_rate=float(error_rate),
+                    cost_per_run=float(cost_per_run),
+                    total_cost=float(total_cost),
+                    p50_runtime=float(p50_runtime),
+                    p95_runtime=float(p95_runtime),
+                    p99_runtime=float(p99_runtime),
+                    throughput=float(throughput),
+                    user_satisfaction=None,  # Not available in current schema
+                    credits_per_run=float(credits_per_run),
                 )
-            )
 
-        return agents
+                agents.append(
+                    AgentComparisonItem(
+                        id=agent_id,
+                        name=agent_name,
+                        metrics=metrics,
+                        last_run_at=last_run_at,
+                    )
+                )
+
+            if not agents:
+                raise ValueError("No valid agent data found for provided IDs")
+
+            logger.info(f"Successfully fetched metrics for {len(agents)} agents")
+            return agents
+
+        except Exception as e:
+            logger.error(f"Error fetching agent metrics: {str(e)}", exc_info=True)
+            raise
 
     def _calculate_agent_differences(
         self, agents: List[AgentComparisonItem]
@@ -452,28 +541,98 @@ class ComparisonService:
     async def _fetch_period_metrics(
         self, start: datetime, end: datetime, period_name: str
     ) -> PeriodMetrics:
-        """Fetch metrics for a time period
+        """Fetch metrics for a time period from database
 
-        TODO: Replace with real database queries
-        WARNING: Current implementation returns mock data
+        Args:
+            start: Period start date
+            end: Period end date
+            period_name: Name of the period
+
+        Returns:
+            PeriodMetrics with aggregated data
+
+        Raises:
+            ValueError: If no data found for the period
         """
+        try:
+            logger.info(f"Fetching metrics for period {period_name} ({start} to {end})")
 
-        # MOCK IMPLEMENTATION - Replace with real database aggregation queries
-        return PeriodMetrics(
-            period=period_name,
-            start_date=start,
-            end_date=end,
-            total_runs=np.random.randint(1000, 10000),
-            success_rate=np.random.uniform(85, 99),
-            average_runtime=np.random.uniform(500, 3000),
-            total_cost=np.random.uniform(100, 5000),
-            error_count=np.random.randint(10, 500),
-            active_agents=np.random.randint(5, 50),
-            active_users=np.random.randint(10, 200),
-            throughput=np.random.uniform(20, 100),
-            p95_runtime=np.random.uniform(1000, 8000),
-            credit_consumption=np.random.uniform(1000, 50000),
-        )
+            # Query execution logs for the period
+            query = select(ExecutionLog).where(
+                and_(
+                    ExecutionLog.started_at >= start,
+                    ExecutionLog.started_at <= end
+                )
+            )
+
+            result = await self.db.execute(query)
+            executions = result.scalars().all()
+
+            if not executions:
+                logger.warning(f"No execution data found for period {period_name}")
+                # Return zero metrics instead of failing
+                return PeriodMetrics(
+                    period=period_name,
+                    start_date=start,
+                    end_date=end,
+                    total_runs=0,
+                    success_rate=0.0,
+                    average_runtime=0.0,
+                    total_cost=0.0,
+                    error_count=0,
+                    active_agents=0,
+                    active_users=0,
+                    throughput=0.0,
+                    p95_runtime=0.0,
+                    credit_consumption=0.0,
+                )
+
+            # Calculate aggregated metrics
+            total_runs = len(executions)
+            successful_runs = len([e for e in executions if e.status == "success"])
+            failed_runs = len([e for e in executions if e.status in ["failed", "error"]])
+
+            success_rate = (successful_runs / total_runs * 100) if total_runs > 0 else 0
+
+            # Runtime metrics
+            durations = [e.duration for e in executions if e.duration is not None]
+            avg_runtime = float(np.mean(durations)) if durations else 0.0
+            p95_runtime = float(np.percentile(durations, 95)) if durations else 0.0
+
+            # Cost and credit metrics
+            credits = [e.credits_used for e in executions if e.credits_used is not None]
+            total_credits = sum(credits) if credits else 0
+            total_cost = total_credits * 0.01  # $0.01 per credit
+
+            # Active entities
+            active_agents = len(set(e.agent_id for e in executions))
+            active_users = len(set(e.user_id for e in executions))
+
+            # Throughput (runs per day)
+            days = (end - start).days or 1
+            throughput = total_runs / days
+
+            logger.info(f"Successfully fetched metrics for period {period_name}: {total_runs} runs")
+
+            return PeriodMetrics(
+                period=period_name,
+                start_date=start,
+                end_date=end,
+                total_runs=total_runs,
+                success_rate=float(success_rate),
+                average_runtime=avg_runtime,
+                total_cost=float(total_cost),
+                error_count=failed_runs,
+                active_agents=active_agents,
+                active_users=active_users,
+                throughput=float(throughput),
+                p95_runtime=p95_runtime,
+                credit_consumption=float(total_credits),
+            )
+
+        except Exception as e:
+            logger.error(f"Error fetching period metrics: {str(e)}", exc_info=True)
+            raise
 
     def _calculate_period_changes(
         self, current: PeriodMetrics, previous: PeriodMetrics
@@ -656,35 +815,100 @@ class ComparisonService:
     async def _fetch_workspace_metrics(
         self, filters: ComparisonFilters
     ) -> List[WorkspaceMetrics]:
-        """Fetch metrics for workspaces
+        """Fetch metrics for workspaces from database
 
-        TODO: Replace with real database queries
-        WARNING: Current implementation returns mock data
+        Args:
+            filters: Comparison filters with workspace IDs and date range
+
+        Returns:
+            List of workspace metrics
+
+        Raises:
+            ValueError: If no valid workspace data found
         """
+        try:
+            workspace_ids = filters.workspace_ids or []
+            if not workspace_ids:
+                raise ValueError("No workspace IDs provided")
 
-        # MOCK IMPLEMENTATION - Replace with real database workspace queries
-        workspaces = []
-        workspace_ids = filters.workspace_ids or []
+            # Limit to max 20 workspaces as per constraints
+            workspace_ids = workspace_ids[:MAX_WORKSPACES_FOR_COMPARISON]
 
-        for ws_id in workspace_ids[:10]:  # Limit to 10 workspaces
-            workspaces.append(
-                WorkspaceMetrics(
-                    workspace_id=ws_id,
-                    workspace_name=f"Workspace {ws_id}",
-                    total_runs=np.random.randint(500, 15000),
-                    success_rate=np.random.uniform(80, 99),
-                    average_runtime=np.random.uniform(300, 4000),
-                    total_cost=np.random.uniform(50, 3000),
-                    active_agents=np.random.randint(3, 30),
-                    active_users=np.random.randint(5, 100),
-                    credit_usage=np.random.uniform(500, 30000),
-                    error_rate=np.random.uniform(1, 20),
-                    throughput=np.random.uniform(15, 120),
-                    user_satisfaction=np.random.uniform(3.0, 5.0),
+            logger.info(f"Fetching metrics for {len(workspace_ids)} workspaces")
+
+            workspaces = []
+
+            for workspace_id in workspace_ids:
+                # Build base query for execution logs
+                query = select(ExecutionLog).where(ExecutionLog.workspace_id == workspace_id)
+
+                # Apply date filters
+                if filters.start_date:
+                    query = query.where(ExecutionLog.started_at >= filters.start_date)
+                if filters.end_date:
+                    query = query.where(ExecutionLog.started_at <= filters.end_date)
+
+                result = await self.db.execute(query)
+                executions = result.scalars().all()
+
+                if not executions:
+                    logger.warning(f"No execution data found for workspace {workspace_id}")
+                    continue
+
+                # Calculate metrics from execution data
+                total_runs = len(executions)
+                successful_runs = len([e for e in executions if e.status == "success"])
+                failed_runs = len([e for e in executions if e.status in ["failed", "error"]])
+
+                success_rate = (successful_runs / total_runs * 100) if total_runs > 0 else 0
+                error_rate = (failed_runs / total_runs * 100) if total_runs > 0 else 0
+
+                # Calculate runtime metrics
+                durations = [e.duration for e in executions if e.duration is not None]
+                avg_runtime = float(np.mean(durations)) if durations else 0.0
+
+                # Calculate cost metrics
+                credits = [e.credits_used for e in executions if e.credits_used is not None]
+                total_credits = sum(credits) if credits else 0
+                total_cost = total_credits * 0.01  # $0.01 per credit
+
+                # Active entities
+                active_agents = len(set(e.agent_id for e in executions))
+                active_users = len(set(e.user_id for e in executions))
+
+                # Calculate throughput (runs per day)
+                if filters.start_date and filters.end_date:
+                    days = (filters.end_date - filters.start_date).days or 1
+                    throughput = total_runs / days
+                else:
+                    throughput = total_runs / 30  # Default to 30 days
+
+                workspaces.append(
+                    WorkspaceMetrics(
+                        workspace_id=workspace_id,
+                        workspace_name=f"Workspace {workspace_id}",
+                        total_runs=total_runs,
+                        success_rate=float(success_rate),
+                        average_runtime=avg_runtime,
+                        total_cost=float(total_cost),
+                        active_agents=active_agents,
+                        active_users=active_users,
+                        credit_usage=float(total_credits),
+                        error_rate=float(error_rate),
+                        throughput=float(throughput),
+                        user_satisfaction=None,  # Not available in current schema
+                    )
                 )
-            )
 
-        return workspaces
+            if not workspaces:
+                raise ValueError("No valid workspace data found for provided IDs")
+
+            logger.info(f"Successfully fetched metrics for {len(workspaces)} workspaces")
+            return workspaces
+
+        except Exception as e:
+            logger.error(f"Error fetching workspace metrics: {str(e)}", exc_info=True)
+            raise
 
     def _calculate_workspace_benchmarks(
         self, workspaces: List[WorkspaceMetrics]
@@ -893,38 +1117,154 @@ class ComparisonService:
     async def _fetch_metric_entities(
         self, metric_name: str, filters: ComparisonFilters
     ) -> List[MetricEntity]:
-        """Fetch metric values for entities
+        """Fetch metric values for entities from database
 
-        TODO: Replace with real database queries
-        WARNING: Current implementation returns mock data
+        Args:
+            metric_name: Name of the metric to fetch
+            filters: Comparison filters
+
+        Returns:
+            List of metric entities
+
+        Raises:
+            ValueError: If no valid entity data found
         """
+        try:
+            logger.info(f"Fetching metric entities for {metric_name}")
 
-        # MOCK IMPLEMENTATION - Replace with real database metric queries
-        entities = []
-        entity_count = 20
+            # Map metric names to database fields
+            metric_mapping = {
+                "success_rate": lambda e: (len([x for x in e if x.status == "success"]) / len(e) * 100) if e else 0,
+                "error_rate": lambda e: (len([x for x in e if x.status in ["failed", "error"]]) / len(e) * 100) if e else 0,
+                "average_runtime": lambda e: float(np.mean([x.duration for x in e if x.duration])) if any(x.duration for x in e) else 0,
+                "throughput": lambda e: len(e),
+                "cost_per_run": lambda e: (sum(x.credits_used for x in e if x.credits_used) / len(e) * 0.01) if e else 0,
+            }
 
-        values = np.random.normal(75, 15, entity_count)
-        values = np.clip(values, 0, 100)
+            if metric_name not in metric_mapping:
+                raise ValueError(f"Unsupported metric: {metric_name}")
 
-        mean_value = np.mean(values)
+            # Determine entity type (agents or workspaces)
+            entity_ids = []
+            entity_type = "agent"
 
-        for i, value in enumerate(values):
-            percentile = stats.percentileofscore(values, value)
-            deviation = value - mean_value
+            if filters.agent_ids:
+                entity_ids = filters.agent_ids
+                entity_type = "agent"
+            elif filters.workspace_ids:
+                entity_ids = filters.workspace_ids
+                entity_type = "workspace"
+            else:
+                # Fetch all distinct entities from execution logs
+                if filters.start_date and filters.end_date:
+                    query = select(ExecutionLog.agent_id).distinct().where(
+                        and_(
+                            ExecutionLog.started_at >= filters.start_date,
+                            ExecutionLog.started_at <= filters.end_date
+                        )
+                    ).limit(50)
+                else:
+                    query = select(ExecutionLog.agent_id).distinct().limit(50)
 
-            entities.append(
-                MetricEntity(
-                    id=f"entity-{i}",
-                    name=f"Entity {i}",
-                    value=float(value),
-                    percentile=float(percentile),
-                    deviation_from_mean=float(deviation),
-                    trend=np.random.choice(["increasing", "decreasing", "stable"]),
-                    sparkline_data=list(np.random.uniform(value - 10, value + 10, 7)),
+                result = await self.db.execute(query)
+                entity_ids = [row[0] for row in result.all()]
+
+            if not entity_ids:
+                raise ValueError("No entities found for metric comparison")
+
+            entities = []
+            values = []
+
+            for entity_id in entity_ids:
+                # Build query for entity executions
+                if entity_type == "agent":
+                    query = select(ExecutionLog).where(ExecutionLog.agent_id == entity_id)
+                else:
+                    query = select(ExecutionLog).where(ExecutionLog.workspace_id == entity_id)
+
+                # Apply date filters
+                if filters.start_date:
+                    query = query.where(ExecutionLog.started_at >= filters.start_date)
+                if filters.end_date:
+                    query = query.where(ExecutionLog.started_at <= filters.end_date)
+
+                result = await self.db.execute(query)
+                executions = result.scalars().all()
+
+                if not executions:
+                    continue
+
+                # Calculate metric value using mapping function
+                value = metric_mapping[metric_name](executions)
+                values.append(value)
+
+                entities.append({
+                    "id": entity_id,
+                    "executions": executions,
+                    "value": value
+                })
+
+            if not entities:
+                raise ValueError("No valid entity data found")
+
+            # Calculate statistics for percentiles and deviations
+            values_array = np.array(values)
+            mean_value = np.mean(values_array)
+
+            # Build final entity list with statistics
+            result_entities = []
+            for entity_data in entities:
+                entity_id = entity_data["id"]
+                value = entity_data["value"]
+                executions = entity_data["executions"]
+
+                percentile = stats.percentileofscore(values, value)
+                deviation = value - mean_value
+
+                # Calculate trend (simple: compare first half vs second half)
+                if len(executions) >= 4:
+                    mid = len(executions) // 2
+                    first_half = metric_mapping[metric_name](executions[:mid])
+                    second_half = metric_mapping[metric_name](executions[mid:])
+
+                    if second_half > first_half * 1.1:
+                        trend = "increasing"
+                    elif second_half < first_half * 0.9:
+                        trend = "decreasing"
+                    else:
+                        trend = "stable"
+                else:
+                    trend = "stable"
+
+                # Generate sparkline data (last 7 data points)
+                sparkline_data = []
+                if len(executions) >= 7:
+                    chunk_size = max(1, len(executions) // 7)
+                    for i in range(7):
+                        start_idx = i * chunk_size
+                        end_idx = min((i + 1) * chunk_size, len(executions))
+                        chunk = executions[start_idx:end_idx]
+                        if chunk:
+                            sparkline_data.append(metric_mapping[metric_name](chunk))
+
+                result_entities.append(
+                    MetricEntity(
+                        id=entity_id,
+                        name=f"{entity_type.capitalize()} {entity_id}",
+                        value=float(value),
+                        percentile=float(percentile),
+                        deviation_from_mean=float(deviation),
+                        trend=trend,
+                        sparkline_data=sparkline_data if sparkline_data else None,
+                    )
                 )
-            )
 
-        return entities
+            logger.info(f"Successfully fetched {len(result_entities)} metric entities")
+            return result_entities
+
+        except Exception as e:
+            logger.error(f"Error fetching metric entities: {str(e)}", exc_info=True)
+            raise
 
     def _calculate_metric_statistics(
         self, values: List[float]
@@ -1030,57 +1370,128 @@ class ComparisonService:
     async def _calculate_metric_correlations(
         self, metric_name: str, filters: ComparisonFilters
     ) -> List[MetricCorrelation]:
-        """Calculate correlations with other metrics
+        """Calculate correlations with other metrics using real data
 
-        TODO: Replace with real correlation calculations
-        WARNING: Current implementation returns mock data
+        Args:
+            metric_name: Primary metric name
+            filters: Comparison filters
+
+        Returns:
+            List of metric correlations
+
+        Raises:
+            ValueError: If insufficient data for correlation calculation
         """
+        try:
+            logger.info(f"Calculating correlations for {metric_name}")
 
-        # MOCK IMPLEMENTATION - Replace with real correlation analysis
-        correlations = []
+            # Define metrics to correlate with
+            other_metrics = [
+                "success_rate",
+                "error_rate",
+                "average_runtime",
+                "throughput",
+                "cost_per_run",
+            ]
 
-        other_metrics = [
-            "average_runtime",
-            "error_rate",
-            "throughput",
-            "cost_per_run",
-        ]
+            # Remove the primary metric from the list
+            other_metrics = [m for m in other_metrics if m != metric_name]
 
-        for other_metric in other_metrics:
-            if other_metric == metric_name:
-                continue
+            # Fetch entities for primary metric
+            primary_entities = await self._fetch_metric_entities(metric_name, filters)
 
-            # Generate mock correlation
-            coefficient = np.random.uniform(-0.8, 0.8)
-            p_value = np.random.uniform(0, 0.1)
+            if len(primary_entities) < 3:
+                raise ValueError("Need at least 3 entities for correlation calculation")
 
-            strength = (
-                CorrelationStrength.STRONG
-                if abs(coefficient) > 0.7
-                else CorrelationStrength.MODERATE
-                if abs(coefficient) > 0.4
-                else CorrelationStrength.WEAK
-            )
+            primary_values = [e.value for e in primary_entities]
+            entity_ids = [e.id for e in primary_entities]
 
-            direction = (
-                CorrelationDirection.POSITIVE
-                if coefficient > 0
-                else CorrelationDirection.NEGATIVE
-            )
+            correlations = []
 
-            correlations.append(
-                MetricCorrelation(
-                    metric1=metric_name,
-                    metric2=other_metric,
-                    coefficient=float(coefficient),
-                    strength=strength,
-                    direction=direction,
-                    p_value=float(p_value),
-                    significant=p_value < 0.05,
-                )
-            )
+            for other_metric in other_metrics:
+                try:
+                    # Fetch entities for other metric
+                    # Create a new filter with the same entity IDs
+                    correlation_filters = ComparisonFilters(
+                        agent_ids=entity_ids if filters.agent_ids else None,
+                        workspace_ids=entity_ids if filters.workspace_ids else None,
+                        start_date=filters.start_date,
+                        end_date=filters.end_date,
+                    )
 
-        return correlations
+                    other_entities = await self._fetch_metric_entities(
+                        other_metric, correlation_filters
+                    )
+
+                    # Match entities by ID and create paired values
+                    other_values_dict = {e.id: e.value for e in other_entities}
+
+                    # Build paired arrays
+                    paired_primary = []
+                    paired_other = []
+
+                    for entity_id, primary_val in zip(entity_ids, primary_values):
+                        if entity_id in other_values_dict:
+                            paired_primary.append(primary_val)
+                            paired_other.append(other_values_dict[entity_id])
+
+                    if len(paired_primary) < 3:
+                        logger.warning(
+                            f"Insufficient paired data for {metric_name} vs {other_metric}"
+                        )
+                        continue
+
+                    # Calculate Pearson correlation coefficient
+                    coefficient, p_value = stats.pearsonr(paired_primary, paired_other)
+
+                    # Handle NaN results
+                    if np.isnan(coefficient) or np.isnan(p_value):
+                        logger.warning(
+                            f"NaN correlation result for {metric_name} vs {other_metric}"
+                        )
+                        continue
+
+                    # Determine strength
+                    abs_coef = abs(coefficient)
+                    if abs_coef > 0.7:
+                        strength = CorrelationStrength.STRONG
+                    elif abs_coef > 0.4:
+                        strength = CorrelationStrength.MODERATE
+                    else:
+                        strength = CorrelationStrength.WEAK
+
+                    # Determine direction
+                    direction = (
+                        CorrelationDirection.POSITIVE
+                        if coefficient > 0
+                        else CorrelationDirection.NEGATIVE
+                    )
+
+                    correlations.append(
+                        MetricCorrelation(
+                            metric1=metric_name,
+                            metric2=other_metric,
+                            coefficient=float(coefficient),
+                            strength=strength,
+                            direction=direction,
+                            p_value=float(p_value),
+                            significant=p_value < 0.05,
+                        )
+                    )
+
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to calculate correlation for {other_metric}: {str(e)}"
+                    )
+                    continue
+
+            logger.info(f"Calculated {len(correlations)} correlations for {metric_name}")
+            return correlations
+
+        except Exception as e:
+            logger.error(f"Error calculating metric correlations: {str(e)}", exc_info=True)
+            # Return empty list instead of failing
+            return []
 
     # ========================================================================
     # Utility Methods

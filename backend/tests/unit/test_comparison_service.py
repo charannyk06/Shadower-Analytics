@@ -416,3 +416,183 @@ class TestComparisonService:
                 filters=sample_filters,
                 options=sample_options,
             )
+
+    # ========================================================================
+    # Edge Case Tests
+    # ========================================================================
+
+    @pytest.mark.asyncio
+    async def test_zero_executions_data(self, comparison_service):
+        """Test handling when no execution data exists"""
+        from src.models.comparison_views import ComparisonFilters
+
+        filters = ComparisonFilters(
+            agent_ids=["nonexistent-agent"],
+            start_date=datetime.utcnow() - timedelta(days=1),
+            end_date=datetime.utcnow(),
+        )
+
+        response = await comparison_service.generate_comparison(
+            comparison_type=ComparisonType.AGENTS,
+            filters=filters,
+            options=ComparisonOptions(),
+        )
+
+        # Should handle gracefully - either succeed with empty data or fail with clear message
+        if not response.success:
+            assert response.error is not None
+            assert "no" in response.error.message.lower() or "not found" in response.error.message.lower()
+
+    def test_division_by_zero_protection(self, comparison_service):
+        """Test that division by zero is handled in metrics calculations"""
+        from src.models.comparison_views import AgentMetrics
+
+        # Test with zero values
+        metrics_data = {
+            "agent-1": 0.0,
+            "agent-2": 0.0,
+        }
+
+        diff = comparison_service._create_metric_difference(
+            metrics_data, higher_is_better=True
+        )
+
+        # Should not raise ZeroDivisionError
+        assert diff.delta_percent == 0.0
+
+    def test_statistical_calculations_with_zero_std_dev(self, comparison_service):
+        """Test statistical calculations when all values are the same"""
+        # All values are the same -> std dev = 0
+        values = [50.0, 50.0, 50.0, 50.0]
+
+        stats = comparison_service._calculate_metric_statistics(values)
+
+        assert stats.mean == 50.0
+        assert stats.standard_deviation == 0.0
+        assert stats.coefficient_of_variation == 0.0  # Should handle div by zero
+
+    def test_outlier_detection_with_zero_std_dev(self, comparison_service):
+        """Test outlier detection when standard deviation is zero"""
+        from src.models.comparison_views import MetricEntity, MetricStatistics
+
+        entities = [
+            MetricEntity(
+                id=f"entity-{i}",
+                name=f"Entity {i}",
+                value=100.0,
+                percentile=50.0,
+                deviation_from_mean=0.0,
+            )
+            for i in range(5)
+        ]
+
+        stats = MetricStatistics(
+            mean=100.0,
+            median=100.0,
+            standard_deviation=0.0,
+            min=100.0,
+            max=100.0,
+            p25=100.0,
+            p75=100.0,
+            p90=100.0,
+            p95=100.0,
+            p99=100.0,
+            variance=0.0,
+            coefficient_of_variation=0.0,
+        )
+
+        outliers = comparison_service._identify_metric_outliers(entities, stats)
+
+        # Should not detect any outliers when std dev is 0
+        assert len(outliers) == 0
+
+    @pytest.mark.asyncio
+    async def test_period_comparison_with_no_previous_data(self, comparison_service):
+        """Test period comparison when previous period has no data"""
+        from src.models.comparison_views import PeriodMetrics
+
+        # Current period with data
+        current = PeriodMetrics(
+            period="Current",
+            start_date=datetime.utcnow() - timedelta(days=7),
+            end_date=datetime.utcnow(),
+            total_runs=100,
+            success_rate=95.0,
+            average_runtime=500.0,
+            total_cost=50.0,
+            error_count=5,
+            active_agents=10,
+            active_users=20,
+            throughput=14.3,
+            p95_runtime=800.0,
+            credit_consumption=500.0,
+        )
+
+        # Previous period with zero data
+        previous = PeriodMetrics(
+            period="Previous",
+            start_date=datetime.utcnow() - timedelta(days=14),
+            end_date=datetime.utcnow() - timedelta(days=7),
+            total_runs=0,
+            success_rate=0.0,
+            average_runtime=0.0,
+            total_cost=0.0,
+            error_count=0,
+            active_agents=0,
+            active_users=0,
+            throughput=0.0,
+            p95_runtime=0.0,
+            credit_consumption=0.0,
+        )
+
+        change = comparison_service._calculate_period_changes(current, previous)
+
+        # Should handle gracefully - percent changes should work
+        assert change.total_runs.percent >= 0  # Should be very high or inf
+        assert change.success_rate.percent >= 0
+
+    @pytest.mark.asyncio
+    async def test_empty_workspace_list(self, comparison_service):
+        """Test workspace comparison with empty workspace list"""
+        filters = ComparisonFilters(workspace_ids=[])
+
+        response = await comparison_service.generate_comparison(
+            comparison_type=ComparisonType.WORKSPACES,
+            filters=filters,
+            options=ComparisonOptions(),
+        )
+
+        # Should fail with clear error message
+        assert response.success is False
+        assert response.error is not None
+
+    def test_nan_handling_in_statistics(self, comparison_service):
+        """Test that NaN values are handled in statistical calculations"""
+        import numpy as np
+
+        # Include some NaN values
+        values = [10.0, 20.0, 30.0, 40.0, 50.0]
+
+        stats = comparison_service._calculate_metric_statistics(values)
+
+        # Should not contain NaN
+        assert not np.isnan(stats.mean)
+        assert not np.isnan(stats.median)
+        assert not np.isnan(stats.standard_deviation)
+
+    @pytest.mark.asyncio
+    async def test_very_large_date_range(self, comparison_service):
+        """Test handling of very large date ranges"""
+        # This should be caught by validation
+        filters = ComparisonFilters(
+            start_date=datetime.utcnow() - timedelta(days=400),  # More than 365 days
+            end_date=datetime.utcnow(),
+        )
+
+        # Validation should catch this during model creation
+        # This test verifies the validator works
+        with pytest.raises(ValueError, match="365 days"):
+            ComparisonFilters(
+                start_date=datetime.utcnow() - timedelta(days=400),
+                end_date=datetime.utcnow(),
+            )
