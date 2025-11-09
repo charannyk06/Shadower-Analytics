@@ -28,15 +28,6 @@ jobs:
           # Checkout the PR head ref for pull_request events
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
-      - name: Set PR number
-        id: pr-info
-        run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            echo "pr_number=${{ github.event.inputs.pr_number }}" >> $GITHUB_OUTPUT
-          else
-            echo "pr_number=${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
-          fi
-
       - name: Gather PR context
         id: pr-context
         env:
@@ -71,6 +62,15 @@ jobs:
             echo "author=unknown" >> $GITHUB_OUTPUT
             echo "files=" >> $GITHUB_OUTPUT
             echo "files_count=0" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set PR number
+        id: pr-info
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "pr_number=${{ github.event.inputs.pr_number }}" >> $GITHUB_OUTPUT
+          else
+            echo "pr_number=${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
           fi
 
       - name: Run Claude Code Review

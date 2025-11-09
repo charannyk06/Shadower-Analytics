@@ -43,6 +43,13 @@ class ExecutionLog(Base):
     """Execution logs table."""
 
     __tablename__ = "execution_logs"
+    __table_args__ = (
+        # Compound indices for comparison queries performance
+        Index('idx_execution_logs_agent_date', 'agent_id', 'started_at'),
+        Index('idx_execution_logs_workspace_date', 'workspace_id', 'started_at'),
+        Index('idx_execution_logs_status_date', 'status', 'started_at'),
+        Index('idx_execution_logs_agent_workspace', 'agent_id', 'workspace_id', 'started_at'),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     execution_id = Column(String, unique=True, index=True, nullable=False)
