@@ -5,7 +5,6 @@ from datetime import datetime, timedelta, date
 from typing import Dict, List, Any
 import logging
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, desc
 from ...models.schemas.metrics import (
     ExecutiveDashboardResponse,
     Period,
@@ -41,7 +40,18 @@ def calculate_start_date(timeframe: str) -> datetime:
 
 
 def calculate_percentage_change(current: float, previous: float) -> float:
-    """Calculate percentage change between two values."""
+    """Calculate percentage change between two values.
+
+    Args:
+        current: The current value.
+        previous: The previous value to compare against.
+
+    Returns:
+        The percentage change from previous to current.
+        - If previous is 0 and current > 0, returns 100.0.
+        - If both current and previous are 0, returns 0.0.
+        - Otherwise, returns ((current - previous) / previous) * 100.
+    """
     if previous == 0:
         return 100.0 if current > 0 else 0.0
     return ((current - previous) / previous) * 100
@@ -57,11 +67,6 @@ async def get_user_metrics(
 
     # For now, return mock data with realistic values
     # In production, these would be actual database queries
-
-    # Calculate comparison period (previous period of same length)
-    period_length = end_date - start_date
-    prev_start = start_date - period_length
-    prev_end = start_date
 
     # Current period metrics (mock data)
     dau = 1247
@@ -231,9 +236,6 @@ async def get_trend_data(
 
     # Generate mock time series data
     # In production, this would query actual data
-
-    data_points = []
-    period_length = end_date - start_date
 
     # Determine granularity based on timeframe
     if timeframe == "24h":
@@ -439,6 +441,7 @@ async def get_executive_dashboard_data(
     # Handle any errors in parallel execution
     def handle_error(result, default):
         if isinstance(result, Exception):
+            logger.error(f"Error fetching metric data: {result}", exc_info=True)
             return default
         return result
 

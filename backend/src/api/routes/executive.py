@@ -10,7 +10,6 @@ from ...core.constants import TIMEFRAME_REGEX
 from ...models.schemas.metrics import (
     ExecutiveMetrics,
     ExecutiveDashboardResponse,
-    TimeRange,
 )
 from ...services.metrics.executive_service import (
     executive_metrics_service,

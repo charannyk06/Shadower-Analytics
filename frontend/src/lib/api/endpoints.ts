@@ -7,6 +7,7 @@ const API_VERSION = '/api/v1';
 export const endpoints = {
   // Executive dashboard
   executiveOverview: `${API_VERSION}/executive/overview`,
+  executiveDashboard: `${API_VERSION}/executive/dashboard`,
   revenue: `${API_VERSION}/executive/revenue`,
   kpis: `${API_VERSION}/executive/kpis`,
 
