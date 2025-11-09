@@ -35,6 +35,7 @@ export const endpoints = {
   // Workspaces
   workspaces: `${API_VERSION}/workspaces`,
   workspaceDetail: (id: string) => `${API_VERSION}/workspaces/${id}`,
+  workspaceAnalytics: (id: string) => `${API_VERSION}/workspaces/${id}/analytics`,
 
   // Cache management (admin only)
   cacheStats: `${API_VERSION}/cache/stats`,
