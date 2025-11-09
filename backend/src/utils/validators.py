@@ -20,8 +20,7 @@ def validate_agent_id(agent_id: str) -> str:
     Raises:
         HTTPException: If agent ID format is invalid
     """
-    # Agent IDs should be UUIDs or alphanumeric with underscores/hyphens
-    # Pattern: UUID format or agent_[alphanumeric]
+    # Agent IDs: alphanumeric with underscores/hyphens, 1-255 chars
     pattern = r'^[a-zA-Z0-9_-]{1,255}$'
 
     if not agent_id or not isinstance(agent_id, str):
@@ -37,18 +36,11 @@ def validate_agent_id(agent_id: str) -> str:
             detail="Invalid agent ID: path traversal characters not allowed"
         )
 
-    # Check format
+    # Check format (length is enforced by regex pattern {1,255})
     if not re.match(pattern, agent_id):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid agent ID format. Must be alphanumeric with optional underscores or hyphens"
-        )
-
-    # Check length
-    if len(agent_id) > 255:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Agent ID too long (max 255 characters)"
+            detail="Invalid agent ID format. Must be alphanumeric with optional underscores or hyphens (max 255 chars)"
         )
 
     return agent_id
@@ -56,7 +48,9 @@ def validate_agent_id(agent_id: str) -> str:
 
 def validate_workspace_id(workspace_id: str) -> str:
     """
-    Validate workspace ID format (UUID).
+    Validate workspace ID format.
+
+    Workspace IDs are alphanumeric strings with optional hyphens/underscores.
 
     Args:
         workspace_id: The workspace ID to validate
@@ -67,8 +61,8 @@ def validate_workspace_id(workspace_id: str) -> str:
     Raises:
         HTTPException: If workspace ID format is invalid
     """
-    # UUID pattern
-    uuid_pattern = r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    # Alphanumeric with hyphens/underscores, 1-64 chars
+    pattern = r'^[a-zA-Z0-9_-]{1,64}$'
 
     if not workspace_id or not isinstance(workspace_id, str):
         raise HTTPException(
@@ -80,17 +74,58 @@ def validate_workspace_id(workspace_id: str) -> str:
     if '..' in workspace_id or '/' in workspace_id or '\\' in workspace_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid workspace ID format"
+            detail="Invalid workspace ID: path traversal characters not allowed"
         )
 
-    # Validate UUID format
-    if not re.match(uuid_pattern, workspace_id.lower()):
+    # Check format (length is enforced by regex pattern {1,64})
+    if not re.match(pattern, workspace_id):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid workspace ID format. Must be a valid UUID"
+            detail="Invalid workspace ID format. Must be alphanumeric with optional hyphens or underscores (max 64 chars)"
         )
 
     return workspace_id
+
+
+def validate_user_id(user_id: str) -> str:
+    """
+    Validate user ID format.
+
+    User IDs are alphanumeric strings with optional hyphens/underscores.
+
+    Args:
+        user_id: The user ID to validate
+
+    Returns:
+        The validated user ID
+
+    Raises:
+        HTTPException: If user ID format is invalid
+    """
+    # User IDs: alphanumeric with underscores/hyphens, 1-255 chars
+    pattern = r'^[a-zA-Z0-9_-]{1,255}$'
+
+    if not user_id or not isinstance(user_id, str):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User ID is required and must be a string"
+        )
+
+    # Check for path traversal
+    if '..' in user_id or '/' in user_id or '\\' in user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid user ID: path traversal characters not allowed"
+        )
+
+    # Check format (length is enforced by regex pattern {1,255})
+    if not re.match(pattern, user_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid user ID format. Must be alphanumeric with optional underscores or hyphens (max 255 chars)"
+        )
+
+    return user_id
 
 
 def sanitize_html_content(content: str, max_length: int = 10000) -> str:

@@ -7,7 +7,7 @@ from datetime import date, timedelta
 from ...core.database import get_db
 from ...models.schemas.users import UserMetrics, UserActivity, CohortAnalysis
 from ...middleware.auth import get_current_user
-from ...utils.validators import validate_agent_id
+from ...utils.validators import validate_user_id
 
 router = APIRouter(prefix="/api/v1/users", tags=["users"])
 
@@ -76,7 +76,7 @@ async def get_user_details(
     Requires authentication. Users can only view their own data or must have admin permissions.
     """
     # Validate user_id format
-    validated_user_id = validate_agent_id(user_id)  # Reuse validator for similar format
+    validated_user_id = validate_user_id(user_id)
 
     # TODO: Verify current_user can access this user_id (self or admin)
 
@@ -102,7 +102,7 @@ async def get_user_timeline(
     Requires authentication. Users can only view their own timeline or must have admin permissions.
     """
     # Validate user_id format
-    validated_user_id = validate_agent_id(user_id)  # Reuse validator for similar format
+    validated_user_id = validate_user_id(user_id)
 
     # TODO: Verify current_user can access this user_id (self or admin)
 
