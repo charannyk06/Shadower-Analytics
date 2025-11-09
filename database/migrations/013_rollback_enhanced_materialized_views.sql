@@ -1,6 +1,6 @@
 -- =====================================================================
--- Rollback Migration: 014_rollback_enhanced_materialized_views.sql
--- Description: Rollback enhanced materialized views created in 014
+-- Rollback Migration: 013_rollback_enhanced_materialized_views.sql
+-- Description: Rollback enhanced materialized views created in 013
 -- Created: 2025-11-09
 -- =====================================================================
 
@@ -21,8 +21,8 @@ REVOKE EXECUTE ON FUNCTION analytics.refresh_all_materialized_views FROM service
 -- Note: RLS Policies and RLS on Materialized Views
 -- =====================================================================
 -- PostgreSQL does not support Row-Level Security (RLS) on materialized views.
--- The secure views (v_*_secure) created in migration 015 are regular views
--- that filter by workspace_id. These will be dropped in migration 015 rollback.
+-- The secure views (v_*_secure) created in migration 014 are regular views
+-- that filter by workspace_id. These will be dropped in migration 014 rollback.
 -- No RLS policies exist on materialized views themselves.
 
 -- =====================================================================
@@ -54,6 +54,6 @@ DROP MATERIALIZED VIEW IF EXISTS analytics.mv_agent_performance CASCADE;
 -- =====================================================================
 
 -- Note: This rollback script removes only the materialized views and functions
--- created in migration 014. Other materialized views from migration 004
+-- created in migration 013. Other materialized views from migration 004
 -- (mv_active_users, mv_top_agents, mv_workspace_summary, mv_error_trends,
 -- mv_agent_usage_trends) are not affected by this rollback.

@@ -249,6 +249,43 @@ class TestSQLInjectionPrevention:
             with pytest.raises(ValueError, match="Invalid SQL identifier"):
                 MaterializedViewRefreshService._validate_sql_identifier(name)
 
+    @pytest.mark.asyncio
+    async def test_batch_refresh_rejects_malformed_names(self):
+        """Test that batch refresh endpoint rejects malicious view names in list parameter"""
+        from src.services.materialized_views import MaterializedViewRefreshService
+
+        # Setup
+        mock_db = AsyncMock()
+        service = MaterializedViewRefreshService(mock_db)
+
+        # Test various SQL injection attempts in list format
+        malicious_lists = [
+            ["mv_test; DROP TABLE users;--"],
+            ["mv_test' OR '1'='1"],
+            ["mv_test", "mv_test; DROP TABLE users;--"],  # Mixed valid and malicious
+            ["' OR 1=1--"],
+            ["1; UPDATE analytics.daily_metrics SET value=0"],
+            ["mv_test", "../../../etc/passwd"],  # Path traversal attempt
+        ]
+
+        for malicious_list in malicious_lists:
+            # Execute - should fail validation
+            result = await service.refresh_all(views=malicious_list)
+
+            # Assert - Should fail with error for invalid views
+            # The service validates each view name against whitelist and regex
+            for view_name in malicious_list:
+                # Check if view name is in whitelist (valid views)
+                if view_name not in service.VIEWS:
+                    # Should have failed validation
+                    assert any(
+                        r["view_name"] == view_name and not r["success"]
+                        for r in result
+                    ) or any(
+                        "Unknown materialized view" in str(r.get("error", ""))
+                        for r in result
+                    ), f"Malicious view name '{view_name}' should have been rejected"
+
 
 class TestWorkspaceIsolation:
     """

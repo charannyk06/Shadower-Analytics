@@ -1,5 +1,5 @@
 -- =====================================================================
--- Migration: 009_create_workspace_analytics_tables.sql
+-- Migration: 012_create_workspace_analytics_tables.sql
 -- Description: Create tables for workspace-level analytics and comparison
 -- Created: 2025-11-09
 -- =====================================================================

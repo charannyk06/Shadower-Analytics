@@ -1,5 +1,5 @@
 -- =====================================================================
--- Migration: 009_create_execution_metrics_tables.sql
+-- Migration: 010_create_execution_metrics_tables.sql
 -- Description: Create execution metrics tracking tables and views
 -- Created: 2025-11-09
 -- =====================================================================
