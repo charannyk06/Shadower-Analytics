@@ -20,7 +20,14 @@ except ImportError:
     PROPHET_AVAILABLE = False
     logging.warning("Prophet not available. Forecasting features will be limited.")
 
+from . import trend_analysis_constants as const
+
 logger = logging.getLogger(__name__)
+
+# Timeout constants (in seconds)
+PROPHET_TIMEOUT = 30
+FFT_TIMEOUT = 10
+DECOMPOSITION_TIMEOUT = 15
 
 
 class TrendAnalysisService:

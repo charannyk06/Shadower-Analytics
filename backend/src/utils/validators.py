@@ -50,7 +50,9 @@ def validate_workspace_id(workspace_id: str) -> str:
     """
     Validate workspace ID format.
 
-    Workspace IDs are alphanumeric strings with optional hyphens/underscores.
+    Workspace IDs can be either:
+    - UUID format (recommended): xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+    - Alphanumeric with hyphens/underscores (legacy): 1-64 chars
 
     Args:
         workspace_id: The workspace ID to validate
@@ -61,9 +63,6 @@ def validate_workspace_id(workspace_id: str) -> str:
     Raises:
         HTTPException: If workspace ID format is invalid
     """
-    # Alphanumeric with hyphens/underscores, 1-64 chars
-    pattern = r'^[a-zA-Z0-9_-]{1,64}$'
-
     if not workspace_id or not isinstance(workspace_id, str):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -77,14 +76,20 @@ def validate_workspace_id(workspace_id: str) -> str:
             detail="Invalid workspace ID: path traversal characters not allowed"
         )
 
-    # Check format (length is enforced by regex pattern {1,64})
-    if not re.match(pattern, workspace_id):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid workspace ID format. Must be alphanumeric with optional hyphens or underscores (max 64 chars)"
-        )
+    # Try UUID format first (most common)
+    uuid_pattern = r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    if re.match(uuid_pattern, workspace_id, re.IGNORECASE):
+        return workspace_id.lower()  # Normalize to lowercase
 
-    return workspace_id
+    # Fall back to alphanumeric with hyphens/underscores (legacy)
+    legacy_pattern = r'^[a-zA-Z0-9_-]{1,64}$'
+    if re.match(legacy_pattern, workspace_id):
+        return workspace_id
+
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Invalid workspace ID format. Must be a valid UUID or alphanumeric with hyphens/underscores (max 64 chars)"
+    )
 
 
 def validate_user_id(user_id: str) -> str:

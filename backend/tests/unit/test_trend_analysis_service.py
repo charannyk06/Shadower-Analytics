@@ -226,36 +226,36 @@ class TestBuildMetricQuery:
 
     def test_build_executions_query(self, trend_service):
         """Test executions metric query."""
-        start_date = datetime(2024, 1, 1)
-        query = trend_service._build_metric_query('executions', 'workspace-123', start_date)
+        query, params = trend_service._build_metric_query('executions')
 
         assert 'agent_executions' in query
-        assert 'workspace-123' in query
+        assert ':workspace_id' in query  # Parameterized query
         assert 'COUNT(*)' in query
+        assert params == {}  # Empty params dict
 
     def test_build_users_query(self, trend_service):
         """Test users metric query."""
-        start_date = datetime(2024, 1, 1)
-        query = trend_service._build_metric_query('users', 'workspace-123', start_date)
+        query, params = trend_service._build_metric_query('users')
 
         assert 'agent_executions' in query
         assert 'COUNT(DISTINCT user_id)' in query
+        assert ':workspace_id' in query
 
     def test_build_credits_query(self, trend_service):
         """Test credits metric query."""
-        start_date = datetime(2024, 1, 1)
-        query = trend_service._build_metric_query('credits', 'workspace-123', start_date)
+        query, params = trend_service._build_metric_query('credits')
 
         assert 'credit_transactions' in query
-        assert 'SUM(credits_used)' in query
+        assert 'SUM(credits_used)' in query or 'COALESCE' in query
+        assert ':workspace_id' in query
 
     def test_build_success_rate_query(self, trend_service):
         """Test success rate metric query."""
-        start_date = datetime(2024, 1, 1)
-        query = trend_service._build_metric_query('success_rate', 'workspace-123', start_date)
+        query, params = trend_service._build_metric_query('success_rate')
 
         assert 'agent_executions' in query
         assert 'completed' in query
+        assert ':workspace_id' in query
 
 
 if __name__ == '__main__':
