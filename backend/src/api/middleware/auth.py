@@ -69,12 +69,12 @@ async def verify_jwt_token(credentials: HTTPAuthorizationCredentials):
     """Verify JWT token from request."""
     try:
         token = credentials.credentials
-        payload = verify_token(token)
+        payload = await verify_token(token)
         return payload
-    except JWTError:
+    except (JWTError, ValueError) as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
+            detail=str(e) if str(e) else "Could not validate credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -102,12 +102,12 @@ class AuthMiddleware:
         if auth_header and auth_header.startswith("Bearer "):
             token = auth_header.split(" ")[1]
             try:
-                payload = verify_token(token)
+                payload = await verify_token(token)
                 request.state.user = payload
-            except Exception:
+            except Exception as e:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid authentication credentials",
+                    detail=str(e) if str(e) else "Invalid authentication credentials",
                 )
 
         response = await call_next(request)

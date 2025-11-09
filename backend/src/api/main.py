@@ -58,9 +58,21 @@ app.include_router(websocket_router)
 async def startup_event():
     """Initialize application on startup."""
     logger.info("Starting Shadow Analytics API...")
+
     # Create database tables
     # async with engine.begin() as conn:
     #     await conn.run_sync(Base.metadata.create_all)
+
+    # Initialize Redis pub/sub for WebSocket scaling
+    if settings.ENABLE_REALTIME:
+        try:
+            from .websocket import init_redis_pubsub
+            await init_redis_pubsub(settings.REDIS_URL)
+            logger.info("Redis pub/sub initialized for WebSocket scaling")
+        except Exception as e:
+            logger.warning(f"Failed to initialize Redis pub/sub: {e}")
+            logger.warning("WebSocket will work but won't scale across instances")
+
     logger.info("Shadow Analytics API started successfully")
 
 
@@ -68,6 +80,16 @@ async def startup_event():
 async def shutdown_event():
     """Cleanup on shutdown."""
     logger.info("Shutting down Shadow Analytics API...")
+
+    # Shutdown Redis pub/sub
+    if settings.ENABLE_REALTIME:
+        try:
+            from .websocket import shutdown_redis_pubsub
+            await shutdown_redis_pubsub()
+            logger.info("Redis pub/sub shut down")
+        except Exception as e:
+            logger.error(f"Error shutting down Redis pub/sub: {e}")
+
     await engine.dispose()
     logger.info("Shadow Analytics API shut down successfully")
 

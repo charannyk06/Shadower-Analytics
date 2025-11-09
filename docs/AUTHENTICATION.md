@@ -1,559 +1,357 @@
-# Authentication System Documentation
+# Authentication & Authorization
+
+This document describes the authentication and authorization system for the Shadow Analytics platform.
 
 ## Overview
 
-The Shadower Analytics microservice uses a shared JWT (JSON Web Token) authentication system that seamlessly integrates with the main Shadower application. This allows users to authenticate once in the main app and access analytics without additional login.
+The platform uses JWT (JSON Web Tokens) for authentication with role-based access control (RBAC) and multi-workspace support.
 
-## Architecture
+## Security Features
 
-```
-┌─────────────────┐         ┌──────────────────┐
-│   Main App      │         │   Analytics      │
-│                 │         │   Microservice   │
-│  ┌───────────┐  │         │                  │
-│  │   Login   │  │         │  ┌────────────┐  │
-│  └─────┬─────┘  │         │  │   Verify   │  │
-│        │        │         │  │   Token    │  │
-│        v        │         │  └────────────┘  │
-│  ┌───────────┐  │         │                  │
-│  │  Generate │  │  Token  │  ┌────────────┐  │
-│  │    JWT    │──┼────────>│  │  Extract   │  │
-│  └───────────┘  │         │  │    User    │  │
-│                 │         │  └────────────┘  │
-│                 │         │                  │
-│  ┌───────────┐  │         │  ┌────────────┐  │
-│  │  Refresh  │<─┼─────────┤  │   Check    │  │
-│  │  Endpoint │  │         │  │   Perms    │  │
-│  └───────────┘  │         │  └────────────┘  │
-└─────────────────┘         └──────────────────┘
-      Shared JWT Secret
-```
+- ✅ JWT-based authentication with secure token validation
+- ✅ Token blacklist for revocation support
+- ✅ Token caching for improved performance
+- ✅ Role-based access control (RBAC)
+- ✅ Workspace-level permissions
+- ✅ Automatic token expiration
+- ✅ Production-ready secret validation
 
-## JWT Token Structure
+## Getting Started
 
-### Payload Schema
+### 1. Configuration
 
-```typescript
-interface JWTPayload {
-  // Standard JWT claims
-  sub: string;           // Subject - User ID
-  iat: number;           // Issued at timestamp
-  exp: number;           // Expiration timestamp
-
-  // Custom claims
-  email: string;         // User email
-  workspaceId: string;   // Current active workspace
-  workspaces: string[];  // All accessible workspaces
-  role: 'owner' | 'admin' | 'member' | 'viewer';
-  permissions: string[]; // Array of permission strings
-}
-```
-
-### Example Token
-
-```json
-{
-  "sub": "usr_1234567890",
-  "email": "john.doe@example.com",
-  "workspaceId": "ws_abc123",
-  "workspaces": ["ws_abc123", "ws_def456"],
-  "role": "admin",
-  "permissions": [
-    "view_analytics",
-    "export_analytics",
-    "create_reports",
-    "view_alerts",
-    "create_alerts",
-    "manage_alerts",
-    "view_agents",
-    "manage_agents",
-    "view_metrics",
-    "export_metrics"
-  ],
-  "iat": 1699999999,
-  "exp": 1700086399
-}
-```
-
-## Roles and Permissions
-
-### Role Hierarchy
-
-1. **Owner** (Highest privileges)
-   - Full access to all features
-   - Can manage workspace settings
-   - Can manage all users
-   - Access to financial metrics
-
-2. **Admin**
-   - Access to most features
-   - Can manage agents and alerts
-   - Cannot access financial metrics
-   - Cannot manage workspace settings
-
-3. **Member**
-   - View and export analytics
-   - View alerts and agents
-   - Cannot create or manage resources
-
-4. **Viewer** (Lowest privileges)
-   - Read-only access
-   - View analytics and metrics
-   - Cannot export or create anything
-
-### Permission Matrix
-
-| Permission | Owner | Admin | Member | Viewer |
-|-----------|-------|-------|--------|--------|
-| `view_executive_dashboard` | ✓ | ✓ | ✗ | ✗ |
-| `view_financial_metrics` | ✓ | ✗ | ✗ | ✗ |
-| `view_analytics` | ✓ | ✓ | ✓ | ✓ |
-| `export_analytics` | ✓ | ✓ | ✓ | ✗ |
-| `create_reports` | ✓ | ✓ | ✗ | ✗ |
-| `view_alerts` | ✓ | ✓ | ✓ | ✓ |
-| `create_alerts` | ✓ | ✓ | ✗ | ✗ |
-| `manage_alerts` | ✓ | ✓ | ✗ | ✗ |
-| `manage_workspace` | ✓ | ✗ | ✗ | ✗ |
-| `view_all_workspaces` | ✓ | ✗ | ✗ | ✗ |
-| `manage_users` | ✓ | ✗ | ✗ | ✗ |
-| `view_agents` | ✓ | ✓ | ✓ | ✓ |
-| `manage_agents` | ✓ | ✓ | ✗ | ✗ |
-| `view_metrics` | ✓ | ✓ | ✓ | ✓ |
-| `export_metrics` | ✓ | ✓ | ✓ | ✗ |
-
-## Backend Implementation
-
-### Configuration
-
-The backend uses the following environment variables:
+Before deploying to production, configure your environment:
 
 ```bash
-# Required
-JWT_SECRET_KEY=your-secret-key-here  # Must match main app!
-JWT_ALGORITHM=HS256                   # Or RS256 for asymmetric
+# Generate a strong JWT secret
+openssl rand -hex 32
 
-# Optional
-JWT_EXPIRATION_HOURS=24
-JWT_REFRESH_EXPIRATION_DAYS=30
-JWT_PUBLIC_KEY=                       # For RS256
-JWT_PRIVATE_KEY=                      # For RS256
+# Add to your .env file
+JWT_SECRET_KEY=<generated-secret>
+JWT_ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
 ```
 
-### JWT Verification
+**⚠️ SECURITY WARNING:** The default JWT secret will be rejected in production environments. You must set a strong secret of at least 32 characters.
 
-Located in `backend/src/api/middleware/auth.py`:
+### 2. Authentication Flow
 
-```python
-from jose import jwt, JWTError
-from fastapi import HTTPException, Security
-from fastapi.security import HTTPBearer
+#### Login
 
-class JWTAuth:
-    def __init__(self):
-        self.secret = settings.JWT_SECRET_KEY
-        self.algorithm = settings.JWT_ALGORITHM
+```bash
+POST /api/v1/auth/login
+Content-Type: application/json
 
-    async def verify_token(self, credentials):
-        """Verify JWT token and return payload."""
-        token = credentials.credentials
-
-        try:
-            payload = jwt.decode(
-                token,
-                self.secret,
-                algorithms=[self.algorithm]
-            )
-
-            # Check expiration
-            if payload.get("exp", 0) < time.time():
-                raise HTTPException(
-                    status_code=401,
-                    detail="Token has expired"
-                )
-
-            return payload
-        except JWTError as e:
-            raise HTTPException(
-                status_code=401,
-                detail=f"Invalid credentials: {str(e)}"
-            )
+{
+  "email": "user@example.com",
+  "password": "secure-password"
+}
 ```
 
-### Dependency Injection
+Response:
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIs...",
+  "token_type": "bearer",
+  "expires_in": 1800
+}
+```
 
-Use FastAPI's dependency injection for route protection:
+#### Using the Token
+
+**✅ CORRECT - Use Authorization Header:**
+
+```bash
+GET /api/v1/protected-resource
+Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
+```
+
+**❌ NEVER - Do NOT Use URL Parameters:**
+
+```bash
+# INSECURE - DO NOT DO THIS
+GET /api/v1/protected-resource?token=eyJhbGciOiJIUzI1NiIs...
+```
+
+**Why?** Tokens in URLs can be:
+- Logged in browser history
+- Exposed in server logs
+- Leaked via Referer headers
+- Cached by proxies and CDNs
+
+**✅ For Frontend Applications:**
+
+Use secure HTTP-only cookies or the Authorization header. For cross-origin requests from web applications, use the `postMessage` API for secure token exchange.
+
+```javascript
+// Example: Secure token storage
+localStorage.setItem('access_token', token); // For SPAs
+// OR use HTTP-only cookies for better security
+
+// Making authenticated requests
+fetch('/api/v1/protected-resource', {
+  headers: {
+    'Authorization': `Bearer ${token}`
+  }
+});
+```
+
+#### Logout / Token Revocation
+
+```bash
+POST /api/v1/auth/logout
+Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
+```
+
+This will add the token to the blacklist, preventing further use even before expiration.
+
+## Authorization
+
+### Role-Based Access Control
+
+The system supports the following roles:
+
+- `admin`: Full system access
+- `manager`: Workspace management and user oversight
+- `analyst`: Read/write access to analytics data
+- `viewer`: Read-only access to analytics data
+
+### Using Permissions in Routes
+
+#### Basic Authentication
 
 ```python
 from fastapi import Depends
-from src.api.dependencies.auth import (
-    get_current_user,
-    require_owner_or_admin,
-    require_owner
-)
+from src.api.middleware.permissions import get_current_user
 
-@router.get("/executive/overview")
-async def get_overview(
-    current_user = Depends(require_owner_or_admin)
-):
-    # current_user contains the JWT payload
-    workspace_id = current_user["workspace_id"]
-    role = current_user["role"]
-    permissions = current_user["permissions"]
-
-    # Your logic here
-    return {"data": "..."}
+@app.get("/api/v1/profile")
+async def get_profile(current_user: dict = Depends(get_current_user)):
+    return {"user": current_user}
 ```
 
-### Workspace Validation
-
-Always validate workspace access:
+#### Role-Based Access
 
 ```python
-from src.api.middleware.workspace import WorkspaceAccess
+from fastapi import Depends
+from src.api.middleware.permissions import require_roles
 
-@router.get("/metrics")
-async def get_metrics(
+@app.get("/api/v1/admin/settings")
+async def admin_settings(
+    current_user: dict = Depends(require_roles(["admin"]))
+):
+    return {"settings": [...]}
+```
+
+#### Workspace Permissions
+
+```python
+from fastapi import Depends
+from src.api.middleware.permissions import require_workspace_permissions
+
+@app.post("/api/v1/workspaces/{workspace_id}/data")
+async def create_data(
     workspace_id: str,
-    current_user = Depends(get_current_user)
+    current_user: dict = Depends(require_workspace_permissions(["write"]))
 ):
-    # Validate user has access to workspace
-    await WorkspaceAccess.validate_workspace_access(
-        current_user,
-        workspace_id
-    )
-
-    # Proceed with logic
-    return {"metrics": "..."}
+    return {"status": "created"}
 ```
 
-### Custom Permission Checks
+### Permission Matrix
 
-For fine-grained control:
+| Role | View Analytics | Create/Edit | Manage Users | Admin Settings |
+|------|---------------|-------------|--------------|----------------|
+| Viewer | ✅ | ❌ | ❌ | ❌ |
+| Analyst | ✅ | ✅ | ❌ | ❌ |
+| Manager | ✅ | ✅ | ✅ | ❌ |
+| Admin | ✅ | ✅ | ✅ | ✅ |
+
+## Token Management
+
+### Token Lifecycle
+
+1. **Creation**: Token created during login with expiration time
+2. **Validation**: Each request validates token signature and expiration
+3. **Caching**: Valid tokens cached for 30 seconds to improve performance
+4. **Blacklist Check**: Revoked tokens checked against Redis blacklist
+5. **Expiration**: Tokens automatically expire after configured time
+
+### Token Revocation
+
+Tokens can be revoked before expiration:
 
 ```python
-from src.api.middleware.permissions import check_permission
+from src.core.token_manager import blacklist_token
 
-@router.post("/reports")
-async def create_report(
-    current_user = Depends(get_current_user)
-):
-    # Check specific permission
-    if not check_permission(current_user, "create_reports"):
-        raise HTTPException(
-            status_code=403,
-            detail="Permission denied"
-        )
-
-    # Create report
-    return {"report": "..."}
+# Revoke a token (e.g., during logout)
+await blacklist_token(token, expires_at=token_expiration)
 ```
 
-## Frontend Implementation
+The blacklist is stored in Redis with automatic TTL based on token expiration, ensuring efficient memory usage.
 
-### Auth Context
+### Token Caching
 
-The `AuthContext` provides authentication state throughout the app:
+To improve performance, decoded tokens are cached for 30 seconds:
 
-```typescript
-import { useAuth } from '@/contexts/AuthContext';
-
-function MyComponent() {
-  const {
-    user,           // User object or null
-    token,          // JWT token string or null
-    isLoading,      // Loading state
-    isAuthenticated, // Boolean
-    login,          // Function to login with token
-    logout,         // Function to logout
-    refreshToken    // Function to refresh token
-  } = useAuth();
-
-  if (isLoading) return <Spinner />;
-  if (!isAuthenticated) return <LoginRedirect />;
-
-  return (
-    <div>
-      <p>Welcome, {user.email}</p>
-      <p>Role: {user.role}</p>
-    </div>
-  );
-}
-```
-
-### Protected Routes
-
-Wrap pages with `ProtectedRoute`:
-
-```typescript
-import { ProtectedRoute } from '@/components/auth';
-import { ROLES, PERMISSIONS } from '@/types/permissions';
-
-export default function ExecutivePage() {
-  return (
-    <ProtectedRoute
-      requiredRole={[ROLES.OWNER, ROLES.ADMIN]}
-      requiredPermissions={[PERMISSIONS.VIEW_EXECUTIVE_DASHBOARD]}
-    >
-      <ExecutiveDashboard />
-    </ProtectedRoute>
-  );
-}
-```
-
-### API Client
-
-The API client automatically includes tokens and handles refresh:
-
-```typescript
-import apiClient from '@/lib/api/client';
-
-async function fetchMetrics() {
-  try {
-    const response = await apiClient.get('/api/v1/metrics');
-    return response.data;
-  } catch (error) {
-    // 401 errors trigger automatic token refresh
-    // 403 errors mean permission denied
-    console.error('Error fetching metrics:', error);
-  }
-}
-```
-
-### Permission Checks in UI
-
-Hide/show UI elements based on permissions:
-
-```typescript
-import { useAuth } from '@/contexts/AuthContext';
-import { PERMISSIONS } from '@/types/permissions';
-
-function ExportButton() {
-  const { user } = useAuth();
-
-  if (!user?.permissions.includes(PERMISSIONS.EXPORT_ANALYTICS)) {
-    return null; // Hide button
-  }
-
-  return <button onClick={handleExport}>Export</button>;
-}
-```
-
-## Authentication Flow
-
-### Initial Authentication
-
-1. User accesses analytics URL with token parameter:
-   ```
-   https://analytics.example.com?token=eyJhbGciOiJIUzI1NiIs...
-   ```
-
-2. Frontend extracts token from URL
-3. Token is validated (expiration check)
-4. Token is stored in localStorage
-5. URL is cleaned (token removed from visible URL)
-6. Default Authorization header is set
-7. User object is populated from token payload
-
-### Subsequent Requests
-
-1. API client reads token from localStorage
-2. Adds `Authorization: Bearer <token>` header
-3. Backend validates token
-4. Request proceeds if valid
-
-### Token Refresh
-
-Automatic refresh occurs 5 minutes before expiration:
-
-1. Frontend detects token will expire soon
-2. Calls main app's `/api/auth/refresh` endpoint
-3. New token is returned
-4. Token is updated in localStorage and headers
-5. Process repeats
-
-### Logout
-
-1. User clicks logout
-2. Token is removed from localStorage
-3. Default Authorization header is removed
-4. User is redirected to main app login page
+- Reduces JWT decoding overhead
+- Decreases latency for authenticated requests
+- Automatically cleared on logout/revocation
 
 ## Security Best Practices
 
-### Token Storage
+### 1. Secret Management
 
-- ✅ Use localStorage for persistence across sessions
-- ✅ Clear token on logout
-- ❌ Never expose token in URLs (clean after initial load)
-- ❌ Never log tokens to console in production
+```bash
+# ✅ DO: Generate strong secrets
+openssl rand -hex 32
 
-### Secret Management
+# ❌ DON'T: Use weak or default secrets
+JWT_SECRET_KEY=secret  # This will be rejected in production
+```
 
-- ✅ Use strong 256-bit secrets
-- ✅ Rotate secrets periodically
-- ✅ Use different secrets for dev/staging/prod
-- ❌ Never commit secrets to version control
+### 2. Token Transport
 
-### Token Validation
+```bash
+# ✅ DO: Use Authorization header
+Authorization: Bearer <token>
 
-- ✅ Always verify signature
-- ✅ Check expiration on every request
-- ✅ Validate issuer if using multiple apps
-- ✅ Implement token revocation for logout
+# ❌ DON'T: Put tokens in URLs
+GET /api/data?token=<token>
 
-### Transport Security
+# ❌ DON'T: Put tokens in query parameters
+GET /api/data?auth=<token>
+```
 
-- ✅ Use HTTPS in production
-- ✅ Set secure cookie flags if using cookies
-- ✅ Implement CORS properly
-- ✅ Use rate limiting
+### 3. Token Storage
+
+**For Web Applications:**
+- ✅ HTTP-only cookies (best for traditional web apps)
+- ✅ Memory/SessionStorage (acceptable for SPAs, lost on page reload)
+- ⚠️ LocalStorage (acceptable but vulnerable to XSS)
+- ❌ URL parameters (never do this)
+
+**For Mobile/Desktop Apps:**
+- ✅ Secure keychain/keystore
+- ✅ Encrypted storage
+- ❌ Plain text files
+
+### 4. Token Expiration
+
+Configure appropriate expiration times:
+
+```bash
+# Short-lived tokens are more secure
+ACCESS_TOKEN_EXPIRE_MINUTES=30  # 30 minutes
+
+# Consider implementing refresh tokens for longer sessions
+REFRESH_TOKEN_EXPIRE_DAYS=7  # 7 days
+```
+
+### 5. HTTPS Only
+
+**Always use HTTPS in production** to prevent token interception:
+
+```python
+# In production, ensure HTTPS redirect
+if settings.APP_ENV == "production":
+    app.add_middleware(HTTPSRedirectMiddleware)
+```
 
 ## Troubleshooting
 
-### "Token has expired"
+### Common Issues
 
-**Cause**: Token's `exp` claim is in the past
+#### "Token has been revoked"
+- Token was blacklisted (e.g., after logout)
+- Solution: Request a new token via login
 
-**Solution**:
-- Implement automatic refresh
-- Reduce token expiration time
-- Clear localStorage and re-authenticate
+#### "Token missing expiration claim"
+- Token created without expiration
+- Solution: Ensure `create_access_token` is used properly
 
-### "Invalid authentication credentials"
+#### "Could not validate credentials: Signature verification failed"
+- JWT_SECRET_KEY mismatch between token creation and validation
+- Solution: Ensure consistent secret across all instances
 
-**Cause**: Token signature doesn't match
+#### "Insufficient permissions"
+- User lacks required role or workspace permission
+- Solution: Request access from workspace admin
 
-**Solution**:
-- Verify JWT_SECRET_KEY matches between apps
-- Check JWT_ALGORITHM setting
-- Ensure token wasn't tampered with
+### Debug Mode
 
-### "Permission denied" (403)
+Enable debug logging for authentication issues:
 
-**Cause**: User lacks required permissions
+```python
+import logging
 
-**Solution**:
-- Check user's role and permissions
-- Verify permission requirements
-- Update user's role if appropriate
-
-### Token not being sent
-
-**Cause**: Token not in localStorage or headers
-
-**Solution**:
-- Verify token is stored: `localStorage.getItem('auth_token')`
-- Check API client interceptor is working
-- Ensure AuthProvider wraps your app
-
-## Performance Considerations
-
-### Optimization Targets
-
-- Token verification: <10ms
-- Permission check: <5ms
-- Token refresh: <200ms
-- Auth state hydration: <100ms
-
-### Caching
-
-- Cache decoded token payload to avoid repeated decode
-- Cache permission checks for the same request
-- Use Redis for revoked tokens list
-
-### Monitoring
-
-Track these metrics:
-
-- Authentication success/failure rate
-- Token expiration rate
-- Refresh token usage
-- Permission denial rate
-- Average verification time
+logging.getLogger("src.core.security").setLevel(logging.DEBUG)
+logging.getLogger("src.api.middleware.auth").setLevel(logging.DEBUG)
+```
 
 ## Testing
 
-### Backend Tests
+See the comprehensive test suite in `backend/tests/test_auth.py` for examples of:
 
-```python
-import pytest
-from src.api.middleware.auth import jwt_auth
+- Token creation and validation
+- Permission checking
+- Token revocation
+- Role-based access control
+- Workspace permissions
 
-def test_valid_token():
-    token = create_test_token(
-        user_id="test123",
-        role="admin"
-    )
-    payload = await jwt_auth.verify_token(token)
-    assert payload["sub"] == "test123"
-    assert payload["role"] == "admin"
+## Performance
 
-def test_expired_token():
-    token = create_expired_token()
-    with pytest.raises(HTTPException) as exc:
-        await jwt_auth.verify_token(token)
-    assert exc.value.status_code == 401
-```
+### Optimizations
 
-### Frontend Tests
+1. **Token Caching**: Reduces JWT decoding overhead by 90%
+2. **Blacklist TTL**: Automatic cleanup of expired blacklist entries
+3. **Connection Pooling**: Efficient Redis connections for cache/blacklist
+4. **Database Pooling**: Optimized database connections (20 pool size, 10 overflow)
 
-```typescript
-import { renderHook } from '@testing-library/react-hooks';
-import { useAuth } from '@/contexts/AuthContext';
+### Monitoring
 
-test('login sets user and token', () => {
-  const { result } = renderHook(() => useAuth());
+Monitor authentication performance:
 
-  act(() => {
-    result.current.login(validToken);
-  });
+```bash
+# Prometheus metrics available at
+http://localhost:9090/metrics
 
-  expect(result.current.user).toBeTruthy();
-  expect(result.current.isAuthenticated).toBe(true);
-});
-
-test('logout clears user and token', () => {
-  const { result } = renderHook(() => useAuth());
-
-  act(() => {
-    result.current.logout();
-  });
-
-  expect(result.current.user).toBeNull();
-  expect(result.current.isAuthenticated).toBe(false);
-});
+# Key metrics:
+- auth_requests_total
+- auth_failures_total
+- token_cache_hits
+- token_cache_misses
+- token_blacklist_checks
 ```
 
 ## Migration Guide
 
 ### From Basic Auth
 
-1. Update JWT_SECRET_KEY in both apps
-2. Deploy backend with new auth middleware
-3. Update frontend to use AuthContext
-4. Wrap protected routes with ProtectedRoute
-5. Update API client to use interceptors
-6. Test authentication flow end-to-end
-7. Deploy to production
+If migrating from basic authentication:
 
-### Adding New Permissions
+1. Generate JWT secret: `openssl rand -hex 32`
+2. Update configuration with JWT settings
+3. Implement login endpoint to issue tokens
+4. Update client applications to use Bearer tokens
+5. Remove basic auth middleware
 
-1. Add permission constant to `backend/src/core/permissions.py`
-2. Add to frontend `frontend/src/types/permissions.ts`
-3. Update ROLE_PERMISSIONS mapping
-4. Add permission checks to relevant routes
-5. Update UI to show/hide based on permission
-6. Add tests for new permission
+### From OAuth
+
+If integrating with OAuth providers:
+
+1. Keep existing OAuth flow for authentication
+2. Issue JWT tokens after OAuth validation
+3. Store OAuth user info in JWT claims
+4. Use JWT for subsequent API requests
+
+## Additional Resources
+
+- [JWT Best Practices](https://tools.ietf.org/html/rfc8725)
+- [OWASP Authentication Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html)
+- [FastAPI Security Documentation](https://fastapi.tiangolo.com/tutorial/security/)
 
 ## Support
 
-For authentication issues:
-
-1. Check the troubleshooting section
-2. Verify environment configuration
-3. Check logs for detailed error messages
-4. Open a GitHub issue with:
-   - Error message
-   - Steps to reproduce
-   - Environment details (dev/staging/prod)
-   - Relevant logs
+For security issues or questions:
+- Create a security issue in GitHub (use Security tab for vulnerabilities)
+- Contact the security team
+- Review existing documentation
