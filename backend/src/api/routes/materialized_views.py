@@ -234,14 +234,20 @@ async def get_views_status(
     current_user: Dict[str, Any] = Depends(require_admin)
 ):
     """
-    Get status information for all materialized views.
+    Get status information for all materialized views (GLOBAL - ALL WORKSPACES).
 
     **Authentication**: Required (Admin role)
-    **Authorization**: Admin users have global access to view metadata across all workspaces.
-    This is by design to enable system monitoring and troubleshooting.
+    **Scope**: Returns metadata aggregated across ALL workspaces, not filtered by workspace.
     
-    Note: This endpoint returns metadata for all views across all workspaces.
-    Restricted to admin users to prevent metadata leakage.
+    This endpoint is designed for system administration and monitoring. 
+    - ✅ Use this for: System health monitoring, disk usage tracking, refresh status
+    - ❌ Not suitable for: Workspace-specific analytics or per-tenant metrics
+    
+    For workspace-filtered data access, use the secure views:
+    - v_agent_performance_secure
+    - v_workspace_metrics_secure  
+    - v_top_agents_enhanced_secure
+    - v_error_summary_secure
 
     Returns:
     - List of view status including size, population status, and description
@@ -267,14 +273,20 @@ async def get_view_statistics(
     current_user: Dict[str, Any] = Depends(require_admin)
 ):
     """
-    Get detailed statistics for a specific materialized view.
+    Get detailed statistics for a specific materialized view (GLOBAL - ALL WORKSPACES).
 
     **Authentication**: Required (Admin role)
-    **Authorization**: Admin users have global access to view statistics across all workspaces.
-    This is by design to enable system monitoring and troubleshooting.
+    **Scope**: Returns statistics aggregated across ALL workspaces, not filtered by workspace.
     
-    Note: This endpoint returns statistics for views across all workspaces.
-    Restricted to admin users to prevent metadata leakage.
+    This endpoint is designed for system administration and monitoring. 
+    - ✅ Use this for: System health monitoring, table statistics, vacuum/analyze tracking
+    - ❌ Not suitable for: Workspace-specific analytics or per-tenant metrics
+    
+    For workspace-filtered data access, use the secure views:
+    - v_agent_performance_secure
+    - v_workspace_metrics_secure  
+    - v_top_agents_enhanced_secure
+    - v_error_summary_secure
 
     Parameters:
     - **view_name**: Name of the materialized view
@@ -316,14 +328,20 @@ async def check_views_health(
     current_user: Dict[str, Any] = Depends(require_admin)
 ):
     """
-    Check the health of all materialized views.
+    Check the health of all materialized views (GLOBAL - ALL WORKSPACES).
 
     **Authentication**: Required (Admin role)
-    **Authorization**: Admin users have global access to view health information across all workspaces.
-    This is by design to enable system monitoring and troubleshooting.
+    **Scope**: Returns health information aggregated across ALL workspaces, not filtered by workspace.
     
-    Note: This endpoint returns health information for all views across all workspaces.
-    Restricted to admin users to prevent metadata leakage.
+    This endpoint is designed for system administration and monitoring. 
+    - ✅ Use this for: System health monitoring, view population status, index validation
+    - ❌ Not suitable for: Workspace-specific analytics or per-tenant metrics
+    
+    For workspace-filtered data access, use the secure views:
+    - v_agent_performance_secure
+    - v_workspace_metrics_secure  
+    - v_top_agents_enhanced_secure
+    - v_error_summary_secure
 
     Performs health checks including:
     - View population status
@@ -363,14 +381,23 @@ async def get_view_row_count(
     current_user: Dict[str, Any] = Depends(require_admin)
 ):
     """
-    Get the number of rows in a materialized view.
+    Get the number of rows in a materialized view (GLOBAL - ALL WORKSPACES).
 
     **Authentication**: Required (Admin role)
-    **Authorization**: Admin users have global access to row counts across all workspaces.
-    This is by design to enable system monitoring and troubleshooting.
+    **Scope**: Returns row counts aggregated across ALL workspaces, not filtered by workspace.
     
-    Note: This endpoint returns row counts for views across all workspaces.
-    Restricted to admin users to prevent metadata leakage.
+    This endpoint is designed for system administration and monitoring. 
+    - ✅ Use this for: System health monitoring, data volume tracking, capacity planning
+    - ❌ Not suitable for: Workspace-specific analytics or per-tenant metrics
+    
+    **SECURITY NOTE**: This endpoint intentionally returns row counts for views across ALL workspaces.
+    This provides system-wide visibility for administrative monitoring and is restricted to admin users only.
+    
+    For workspace-filtered data access, use the secure views:
+    - v_agent_performance_secure
+    - v_workspace_metrics_secure  
+    - v_top_agents_enhanced_secure
+    - v_error_summary_secure
 
     Parameters:
     - **view_name**: Name of the materialized view
@@ -420,3 +447,51 @@ async def list_available_views(
         "views": MaterializedViewRefreshService.VIEWS,
         "total": len(MaterializedViewRefreshService.VIEWS)
     }
+
+
+@router.get("/views/validation")
+async def validate_managed_views(
+    db: AsyncSession = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(require_admin)
+):
+    """
+    Validate that all managed views exist in the database.
+
+    **Authentication**: Required (Admin role)
+    
+    This endpoint helps catch configuration drift where views are created in migrations
+    but not added to the VIEWS list, or vice versa. Useful for deployment verification
+    and monitoring.
+
+    Returns:
+    - missing: Views in config but not in database
+    - unmanaged: Views in database but not managed
+    - valid: Views properly configured
+    - all_valid: Boolean indicating if all views are properly configured
+    
+    Status Codes:
+    - 200: All views are valid
+    - 409: Validation failed (some views missing or unmanaged)
+    """
+    from fastapi.responses import JSONResponse
+    
+    service = MaterializedViewRefreshService(db)
+    
+    try:
+        validation_result = await service.validate_managed_views()
+        
+        if not validation_result["all_valid"]:
+            # Return 409 Conflict if validation fails
+            return JSONResponse(
+                status_code=409,
+                content=validation_result
+            )
+        
+        return validation_result
+        
+    except Exception as e:
+        logger.error(f"Failed to validate managed views: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to validate managed views. Please check server logs for details."
+        )

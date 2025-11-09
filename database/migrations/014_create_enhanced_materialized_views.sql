@@ -281,6 +281,14 @@ DECLARE
     v_start_time TIMESTAMPTZ;
     v_end_time TIMESTAMPTZ;
     v_refresh_command TEXT;
+    -- Whitelist of known materialized views for defense-in-depth
+    -- Even though format() with %I prevents injection, this adds an extra layer
+    v_whitelist TEXT[] := ARRAY[
+        'mv_agent_performance',
+        'mv_workspace_metrics',
+        'mv_top_agents_enhanced',
+        'mv_error_summary'
+    ];
 BEGIN
     -- Refresh each materialized view
     FOR v_view IN
@@ -289,6 +297,14 @@ BEGIN
         WHERE schemaname = 'analytics'
         ORDER BY matviewname
     LOOP
+        -- Defense-in-depth: Only refresh views in whitelist
+        -- This prevents refreshing views even if pg_matviews metadata is compromised
+        IF NOT (v_view.matviewname = ANY(v_whitelist)) THEN
+            -- Skip unknown views and log warning
+            RAISE WARNING 'Skipping unknown materialized view: %', v_view.matviewname;
+            CONTINUE;
+        END IF;
+        
         v_start_time := clock_timestamp();
 
         BEGIN
@@ -371,6 +387,39 @@ COMMENT ON FUNCTION analytics.refresh_all_materialized_views IS
 -- 
 -- Note: Until views are populated, queries will return empty results.
 -- This is expected behavior - views must be refreshed before use.
+-- 
+-- =====================================================================
+-- Monitoring Recommendations
+-- =====================================================================
+-- 
+-- PRODUCTION MONITORING:
+-- 
+-- 1. View Freshness Monitoring:
+--    - Monitor last refresh time: SELECT * FROM analytics.v_materialized_view_status;
+--    - Set up alerts if views are stale (> 24 hours for daily views, > 1 hour for hourly)
+--    - Track refresh duration and failure rates
+-- 
+-- 2. Health Check Endpoints:
+--    - Use GET /materialized-views/health to check view health
+--    - Monitor is_populated status and row counts
+--    - Alert if any view becomes unpopulated or has 0 rows unexpectedly
+-- 
+-- 3. Refresh Performance:
+--    - Monitor refresh duration via GET /materialized-views/status
+--    - Alert if refresh takes longer than expected (e.g., > 60s for mv_error_summary)
+--    - Track refresh failures and investigate errors
+-- 
+-- 4. Alerting Thresholds (recommended):
+--    - View stale > 25 hours (daily views) or > 65 minutes (hourly views)
+--    - Refresh failure rate > 10% over 1 hour
+--    - Refresh duration > 2x normal (indicates data growth or performance issues)
+--    - View unpopulated status detected
+-- 
+-- 5. Capacity Planning:
+--    - Monitor view sizes via v_materialized_view_status
+--    - Track growth trends to predict storage needs
+--    - Review indexes if query performance degrades
+-- 
 -- =====================================================================
 
 -- =====================================================================
@@ -400,9 +449,11 @@ GRANT SELECT ON analytics.mv_workspace_metrics TO service_role;
 GRANT SELECT ON analytics.mv_top_agents_enhanced TO service_role;
 GRANT SELECT ON analytics.mv_error_summary TO service_role;
 
--- Grant SELECT on metadata view to authenticated (metadata only, not data)
--- This view only shows view metadata (size, population status), not aggregated data
-GRANT SELECT ON analytics.v_materialized_view_status TO authenticated;
+-- Grant SELECT on metadata view ONLY to service_role (admin operations)
+-- Regular users don't need visibility into materialized view metadata
+-- Applications should use the API endpoints which enforce proper access control
+-- Metadata can reveal system architecture details that could help attackers
+GRANT SELECT ON analytics.v_materialized_view_status TO service_role;
 
 -- Grant EXECUTE on refresh function only to service_role
 -- Admin API endpoints will use service_role connection for refresh operations

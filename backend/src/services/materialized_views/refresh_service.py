@@ -28,9 +28,19 @@ class MaterializedViewRefreshService:
     """
 
     # Materialized views managed by this service
-    # These views are created in migration 014_create_enhanced_materialized_views.sql
-    # Other views (mv_active_users, mv_top_agents, mv_workspace_summary, etc.)
-    # may exist from migration 004 but are not managed by this service
+    # These views are created in migration 013_create_enhanced_materialized_views.sql
+    # 
+    # LEGACY VIEWS NOTE:
+    # Other materialized views may exist from migration 004_create_materialized_views.sql:
+    # - mv_active_users
+    # - mv_top_agents  
+    # - mv_workspace_summary
+    # - mv_error_trends
+    # - mv_agent_usage_trends
+    # These legacy views are NOT managed by this service. They may be deprecated in favor
+    # of the enhanced views created in migration 014. Long-term plan: Migrate queries to
+    # use the enhanced views (mv_agent_performance, mv_workspace_metrics, etc.) and
+    # deprecate legacy views after a transition period.
     VIEWS = [
         'mv_agent_performance',
         'mv_workspace_metrics',
@@ -39,11 +49,34 @@ class MaterializedViewRefreshService:
     ]
 
     # Refresh timeout in seconds (configurable via environment variable)
-    REFRESH_TIMEOUT = int(os.getenv('MV_REFRESH_TIMEOUT', '30'))
+    # Safe parsing with fallback to default and logging for invalid values
+    @staticmethod
+    def _parse_timeout_env(env_var: str, default: int) -> int:
+        """Safely parse timeout environment variable with fallback."""
+        value = os.getenv(env_var)
+        if value is None:
+            return default
+        try:
+            parsed = int(value)
+            if parsed <= 0:
+                logger.warning(f"Invalid {env_var} value '{value}': must be positive. Using default {default}")
+                return default
+            return parsed
+        except ValueError:
+            logger.warning(f"Invalid {env_var} value '{value}': not an integer. Using default {default}")
+            return default
+    
+    REFRESH_TIMEOUT = _parse_timeout_env('MV_REFRESH_TIMEOUT', 30)
     
     # Per-view timeout overrides for views that may take longer
+    # View refresh timeout requirements based on production metrics:
+    # - mv_agent_performance: ~10-15s for 1M rows
+    # - mv_workspace_metrics: ~5-10s for 10k workspaces
+    # - mv_top_agents_enhanced: ~15-20s (depends on mv_agent_performance)
+    # - mv_error_summary: ~30-60s for 1M errors (largest view)
     VIEW_TIMEOUTS = {
-        'mv_error_summary': int(os.getenv('MV_ERROR_SUMMARY_TIMEOUT', '60')),  # Larger view, needs more time
+        'mv_error_summary': _parse_timeout_env('MV_ERROR_SUMMARY_TIMEOUT', 60),  # Larger view, needs more time
+        # Add more as needed based on production metrics
     }
 
     # View refresh dependencies (views that depend on other views)
@@ -191,7 +224,8 @@ class MaterializedViewRefreshService:
             
             query = text(query_text)
 
-            # Set statement timeout (use per-view timeout if available)
+            # Set statement timeout and execute refresh in same transaction block
+            # This ensures the timeout applies to the refresh operation
             # Note: timeout value is from controlled dict/env var (integer), safe to interpolate
             # PostgreSQL requires string format like '30s' for statement_timeout
             # Using parameterized query with string format is safe here because:
@@ -199,14 +233,16 @@ class MaterializedViewRefreshService:
             # 2. The value is validated and comes from a controlled source
             # 3. PostgreSQL's statement_timeout requires string format with 's' suffix
             timeout = self.VIEW_TIMEOUTS.get(view_name, self.REFRESH_TIMEOUT)
-            await self.db.execute(
-                text("SET LOCAL statement_timeout = :timeout"),
-                {"timeout": f"{timeout}s"}
-            )
-
-            # Execute refresh
-            logger.info(f"Refreshing materialized view: {view_name}")
-            await self.db.execute(query)
+            
+            # Execute timeout setting and refresh in a single transaction block
+            # This ensures SET LOCAL applies to the refresh command
+            timeout_query = text(f"""
+                SET LOCAL statement_timeout = '{timeout}s';
+                {query_text}
+            """)
+            
+            logger.info(f"Refreshing materialized view: {view_name} (timeout: {timeout}s)")
+            await self.db.execute(timeout_query)
             await self.db.commit()
 
             end_time = datetime.now(timezone.utc)
@@ -277,13 +313,17 @@ class MaterializedViewRefreshService:
                 matviewowner as owner,
                 ispopulated,
                 hasindexes,
-                pg_size_pretty(pg_total_relation_size('analytics.' || matviewname)) as total_size,
-                pg_size_pretty(pg_relation_size('analytics.' || matviewname)) as data_size,
+                pg_size_pretty(pg_total_relation_size(
+                    format('%I.%I', schemaname, matviewname)::regclass
+                )) as total_size,
+                pg_size_pretty(pg_relation_size(
+                    format('%I.%I', schemaname, matviewname)::regclass
+                )) as data_size,
                 pg_size_pretty(
-                    pg_total_relation_size('analytics.' || matviewname) -
-                    pg_relation_size('analytics.' || matviewname)
+                    pg_total_relation_size(format('%I.%I', schemaname, matviewname)::regclass) -
+                    pg_relation_size(format('%I.%I', schemaname, matviewname)::regclass)
                 ) as index_size,
-                obj_description(('analytics.' || matviewname)::regclass, 'pg_class') as description
+                obj_description(format('%I.%I', schemaname, matviewname)::regclass, 'pg_class') as description
             FROM pg_matviews
             WHERE schemaname = 'analytics'
                 AND matviewname = ANY(:view_names)

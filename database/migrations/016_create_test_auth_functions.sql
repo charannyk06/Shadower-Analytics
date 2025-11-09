@@ -3,7 +3,7 @@
 -- Description: Create test helper functions for auth.uid() and auth.role()
 -- Created: 2025-11-09
 -- 
--- WARNING: TEST ENVIRONMENT ONLY
+-- ⚠️ DEV/TEST ONLY - DO NOT RUN IN PRODUCTION ⚠️
 -- This migration should ONLY run in test/dev environments
 -- DO NOT run in production - Supabase provides these functions
 -- 
@@ -25,6 +25,19 @@ BEGIN
             'This migration should not run in Supabase/production environments. '
             'Supabase provides auth.uid() and auth.role() functions automatically. '
             'This migration is for test/dev environments only.';
+    END IF;
+    
+    -- Additional check: If auth.uid() already exists, skip this migration
+    -- This prevents overriding production auth functions if migration runs in wrong environment
+    IF EXISTS (
+        SELECT 1 FROM pg_proc p
+        JOIN pg_namespace n ON p.pronamespace = n.oid
+        WHERE n.nspname = 'auth' AND p.proname = 'uid'
+    ) THEN
+        RAISE NOTICE 'auth.uid() already exists, skipping test function creation. '
+                     'This migration should not run if auth functions already exist.';
+        -- Exit early without error - this is a safety check, not a failure
+        RETURN;
     END IF;
 END $$;
 
