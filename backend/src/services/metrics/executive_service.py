@@ -36,42 +36,10 @@ from ...models.database.tables import (
     UserMetric,
     AgentMetric,
 )
+from ...utils.calculations import calculate_percentage_change
+from ...utils.datetime import calculate_start_date
 
 logger = logging.getLogger(__name__)
-
-
-def calculate_start_date(timeframe: str) -> datetime:
-    """Calculate start date based on timeframe."""
-    now = datetime.now(timezone.utc)
-
-    if timeframe == "24h":
-        return now - timedelta(hours=24)
-    elif timeframe == "7d":
-        return now - timedelta(days=7)
-    elif timeframe == "30d":
-        return now - timedelta(days=30)
-    elif timeframe == "90d":
-        return now - timedelta(days=90)
-    else:  # 'all'
-        return now - timedelta(days=365 * 10)  # 10 years back
-
-
-def calculate_percentage_change(current: float, previous: float) -> float:
-    """Calculate percentage change between two values.
-
-    Args:
-        current: The current value.
-        previous: The previous value to compare against.
-
-    Returns:
-        The percentage change from previous to current.
-        - If previous is 0 and current > 0, returns 100.0.
-        - If both current and previous are 0, returns 0.0.
-        - Otherwise, returns ((current - previous) / previous) * 100.
-    """
-    if previous == 0:
-        return 100.0 if current > 0 else 0.0
-    return ((current - previous) / previous) * 100
 
 
 async def get_user_metrics(
