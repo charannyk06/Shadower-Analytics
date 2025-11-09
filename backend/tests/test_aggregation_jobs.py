@@ -12,7 +12,6 @@ from src.services.aggregation.rollup import (
 )
 from src.services.aggregation.materialized import (
     refresh_materialized_view,
-    refresh_all_materialized_views,
 )
 
 
@@ -334,13 +333,13 @@ async def test_aggregation_performance(db_session):
     await db_session.commit()
 
     # Time the aggregation
-    start_time = time.time()
+    timer_start = time.time()
     end_time = datetime.utcnow()
     start_time_dt = end_time - timedelta(hours=2)
 
     await aggregate_execution_metrics(db_session, start_time_dt, end_time)
 
-    elapsed = time.time() - start_time
+    elapsed = time.time() - timer_start
 
     # Should complete in under 5 seconds for 100 records
     assert elapsed < 5.0, f"Aggregation took {elapsed}s, expected < 5s"

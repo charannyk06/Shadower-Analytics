@@ -1,11 +1,9 @@
 """Aggregation Celery tasks."""
 
 import logging
-import asyncio
 from datetime import datetime, timedelta
 from typing import Optional, Dict
 
-from celery import Task
 from src.celery_app import celery_app
 from src.core.database import async_session_maker
 from src.services.aggregation.rollup import (
@@ -16,21 +14,9 @@ from src.services.aggregation.rollup import (
 )
 from src.services.aggregation.materialized import refresh_all_materialized_views
 from src.core.config import settings
+from src.tasks.base import AsyncDatabaseTask
 
 logger = logging.getLogger(__name__)
-
-
-class AsyncDatabaseTask(Task):
-    """Base task class that provides async database session handling."""
-
-    def run_async(self, async_func, *args, **kwargs):
-        """Run an async function synchronously."""
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            # If loop is already running, create a new one
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        return loop.run_until_complete(async_func(*args, **kwargs))
 
 
 @celery_app.task(
@@ -257,32 +243,32 @@ def backfill_aggregations_task(
         start_dt = datetime.fromisoformat(start_date)
         end_dt = datetime.fromisoformat(end_date)
 
-        results = []
-
         async def run_backfill():
-            async with async_session_maker() as db:
-                current = start_dt
+            results = []
+            current = start_dt
 
-                if granularity == 'hourly':
-                    while current < end_dt:
+            if granularity == 'hourly':
+                while current < end_dt:
+                    async with async_session_maker() as db:
                         result = await hourly_rollup(db, current)
-                        results.append(result)
-                        current += timedelta(hours=1)
+                    results.append(result)
+                    current += timedelta(hours=1)
 
-                elif granularity == 'daily':
-                    while current < end_dt:
+            elif granularity == 'daily':
+                while current < end_dt:
+                    async with async_session_maker() as db:
                         result = await daily_rollup(db, current)
-                        results.append(result)
-                        current += timedelta(days=1)
+                    results.append(result)
+                    current += timedelta(days=1)
 
-                return {
-                    'success': True,
-                    'granularity': granularity,
-                    'start_date': start_date,
-                    'end_date': end_date,
-                    'periods_processed': len(results),
-                    'results': results
-                }
+            return {
+                'success': True,
+                'granularity': granularity,
+                'start_date': start_date,
+                'end_date': end_date,
+                'periods_processed': len(results),
+                'results': results
+            }
 
         result = self.run_async(run_backfill)
         logger.info(f"Backfill task completed: {result}")

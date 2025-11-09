@@ -1,6 +1,6 @@
 """SQLAlchemy database models."""
 
-from sqlalchemy import Column, String, Integer, Float, DateTime, Boolean, JSON, Enum, Index
+from sqlalchemy import Column, String, Integer, Float, DateTime, Boolean, JSON, Enum, Index, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
 from datetime import datetime
@@ -270,6 +270,7 @@ class ExecutionMetricsHourly(Base):
     __table_args__ = (
         Index('idx_exec_metrics_hourly_workspace_hour', 'workspace_id', 'hour'),
         Index('idx_exec_metrics_hourly_hour', 'hour'),
+        UniqueConstraint('workspace_id', 'hour', name='uq_exec_metrics_hourly_workspace_hour'),
         {'schema': 'analytics'}
     )
 
@@ -304,6 +305,7 @@ class ExecutionMetricsDaily(Base):
     __table_args__ = (
         Index('idx_exec_metrics_daily_workspace_date', 'workspace_id', 'date'),
         Index('idx_exec_metrics_daily_date', 'date'),
+        UniqueConstraint('workspace_id', 'date', name='uq_exec_metrics_daily_workspace_date'),
         {'schema': 'analytics'}
     )
 
@@ -345,6 +347,7 @@ class UserActivityHourly(Base):
     __table_args__ = (
         Index('idx_user_activity_hourly_workspace_hour', 'workspace_id', 'hour'),
         Index('idx_user_activity_hourly_user_hour', 'user_id', 'hour'),
+        UniqueConstraint('workspace_id', 'user_id', 'hour', name='uq_user_activity_hourly_workspace_user_hour'),
         {'schema': 'analytics'}
     )
 
@@ -377,6 +380,7 @@ class CreditConsumptionHourly(Base):
     __table_args__ = (
         Index('idx_credit_hourly_workspace_hour', 'workspace_id', 'hour'),
         Index('idx_credit_hourly_user_hour', 'user_id', 'hour'),
+        UniqueConstraint('workspace_id', 'user_id', 'agent_id', 'hour', name='uq_credit_hourly_workspace_user_agent_hour'),
         {'schema': 'analytics'}
     )
 

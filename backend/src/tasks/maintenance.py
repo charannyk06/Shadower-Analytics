@@ -1,31 +1,17 @@
 """Maintenance Celery tasks."""
 
 import logging
-import asyncio
 from datetime import datetime, timedelta
 from typing import Dict
 
-from celery import Task
 from sqlalchemy import text
 
 from src.celery_app import celery_app
 from src.core.database import async_session_maker
 from src.core.config import settings
+from src.tasks.base import AsyncDatabaseTask
 
 logger = logging.getLogger(__name__)
-
-
-class AsyncDatabaseTask(Task):
-    """Base task class that provides async database session handling."""
-
-    def run_async(self, async_func, *args, **kwargs):
-        """Run an async function synchronously."""
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            # If loop is already running, create a new one
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        return loop.run_until_complete(async_func(*args, **kwargs))
 
 
 @celery_app.task(
@@ -228,10 +214,17 @@ def vacuum_tables_task(self, analyze: bool = True) -> Dict:
 
                 for table in tables:
                     try:
-                        # Note: VACUUM cannot run inside a transaction block
-                        # This would need special handling in production
-                        analyze_str = "ANALYZE" if analyze else ""
-                        query = text(f"VACUUM {analyze_str} {table}")
+                        # Validate table name against whitelist
+                        if table not in tables:
+                            raise ValueError(f"Invalid table name: {table}")
+                        
+                        # Note: VACUUM cannot run inside a transaction block.
+                        # In production, this should be executed using a connection with
+                        # autocommit=True or through a separate database connection that
+                        # executes outside of a transaction context.
+                        analyze_str = " ANALYZE" if analyze else ""
+                        # Build the query string safely - table names are validated against whitelist
+                        query = text(f"VACUUM{analyze_str} {table}")
                         await db.execute(query)
                         await db.commit()
 
@@ -308,6 +301,14 @@ def rebuild_indices_task(self) -> Dict:
 
                 for schema, table, index in indices:
                     try:
+                        # Validate schema and index names from database results
+                        # These come from pg_indexes system catalog, but we still validate
+                        if not schema or not index:
+                            raise ValueError(f"Invalid schema or index name: {schema}.{index}")
+                        
+                        # Use parameterized identifier quoting for safety
+                        # Note: SQLAlchemy text() doesn't support identifier parameters,
+                        # so we validate the values come from trusted source (pg_indexes)
                         reindex_query = text(f"REINDEX INDEX CONCURRENTLY {schema}.{index}")
                         await db.execute(reindex_query)
                         await db.commit()

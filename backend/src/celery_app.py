@@ -39,13 +39,6 @@ celery_app.conf.update(
     result_expires=86400,  # 24 hours
     result_persistent=True,
 
-    # Retry settings
-    task_autoretry_for=(Exception,),
-    task_retry_kwargs={'max_retries': 3},
-    task_retry_backoff=True,
-    task_retry_backoff_max=600,  # 10 minutes max backoff
-    task_retry_jitter=True,
-
     # Performance settings
     worker_disable_rate_limits=True,
     task_compression='gzip',

@@ -3,7 +3,7 @@
 import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
-from typing import List, Dict
+from typing import Dict, Any
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +12,7 @@ async def refresh_materialized_view(
     db: AsyncSession,
     view_name: str,
     concurrently: bool = True
-) -> Dict[str, any]:
+) -> Dict[str, Any]:
     """Refresh a specific materialized view.
 
     Args:
@@ -24,6 +24,16 @@ async def refresh_materialized_view(
         Dictionary with refresh status
     """
     try:
+        # Validate view_name against known materialized views to prevent SQL injection
+        valid_views = [
+            "analytics.mv_daily_user_metrics",
+            "analytics.mv_daily_agent_metrics",
+            "analytics.mv_hourly_execution_stats",
+            "analytics.mv_workspace_summary",
+        ]
+        if view_name not in valid_views:
+            raise ValueError(f"Invalid materialized view name: {view_name}")
+        
         concurrent_str = "CONCURRENTLY" if concurrently else ""
         query = text(f"REFRESH MATERIALIZED VIEW {concurrent_str} {view_name}")
 
@@ -49,7 +59,7 @@ async def refresh_materialized_view(
         }
 
 
-async def refresh_all_materialized_views(db: AsyncSession) -> Dict[str, any]:
+async def refresh_all_materialized_views(db: AsyncSession) -> Dict[str, Any]:
     """Refresh all materialized views.
 
     Args:
@@ -95,7 +105,7 @@ async def refresh_all_materialized_views(db: AsyncSession) -> Dict[str, any]:
     }
 
 
-async def create_materialized_views(db: AsyncSession) -> Dict[str, any]:
+async def create_materialized_views(db: AsyncSession) -> Dict[str, Any]:
     """Create materialized views if they don't exist.
 
     This should be called during initial setup or migrations.

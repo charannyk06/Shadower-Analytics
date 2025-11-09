@@ -126,15 +126,15 @@ async def aggregate_user_activity(
             SELECT
                 workspace_id,
                 user_id,
-                created_at,
+                DATE_TRUNC('hour', created_at) AS hour,
                 session_id,
                 event_type,
                 COUNT(*) as event_count
             FROM analytics.user_activity
             WHERE created_at >= :start_time AND created_at < :end_time
-            GROUP BY workspace_id, user_id, created_at, session_id, event_type
+            GROUP BY workspace_id, user_id, hour, session_id, event_type
         ) subquery
-        GROUP BY workspace_id, user_id, DATE_TRUNC('hour', created_at)
+        GROUP BY workspace_id, user_id, hour
         ON CONFLICT (workspace_id, user_id, hour)
         DO UPDATE SET
             total_events = EXCLUDED.total_events,
