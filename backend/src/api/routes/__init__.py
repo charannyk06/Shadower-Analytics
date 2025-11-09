@@ -11,6 +11,7 @@ from .health import router as health_router
 from .websocket import router as websocket_router
 from .user_activity import router as user_activity_router
 from .credits import router as credits_router
+from .errors import router as errors_router
 
 __all__ = [
     "executive_router",
@@ -24,4 +25,5 @@ __all__ = [
     "websocket_router",
     "user_activity_router",
     "credits_router",
+    "errors_router",
 ]
