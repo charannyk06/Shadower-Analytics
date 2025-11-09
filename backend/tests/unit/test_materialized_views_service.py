@@ -41,7 +41,7 @@ class TestMaterializedViewRefreshService:
     async def test_refresh_view_success(self, service, mock_db_session):
         """Test successful refresh of a single view"""
         # Setup
-        view_name = "mv_active_users"
+        view_name = "mv_agent_performance"
         mock_db_session.execute.return_value = None
 
         # Execute
@@ -56,7 +56,8 @@ class TestMaterializedViewRefreshService:
         assert result["duration_seconds"] > 0
 
         # Verify correct SQL was executed
-        assert mock_db_session.execute.call_count == 2  # timeout + refresh
+        # refresh_view executes a single query combining timeout setting and refresh
+        assert mock_db_session.execute.call_count == 1
         mock_db_session.commit.assert_called_once()
 
     @pytest.mark.asyncio
@@ -73,7 +74,7 @@ class TestMaterializedViewRefreshService:
     async def test_refresh_view_database_error(self, service, mock_db_session):
         """Test handling of database errors during refresh"""
         # Setup
-        view_name = "mv_active_users"
+        view_name = "mv_agent_performance"
         mock_db_session.execute.side_effect = Exception("Database connection failed")
 
         # Execute
@@ -89,28 +90,28 @@ class TestMaterializedViewRefreshService:
     async def test_refresh_view_concurrent_mode(self, service, mock_db_session):
         """Test refresh with concurrent mode enabled"""
         # Setup
-        view_name = "mv_active_users"
+        view_name = "mv_agent_performance"
 
         # Execute
         await service.refresh_view(view_name, concurrent=True)
 
         # Assert - verify CONCURRENTLY keyword was used
         calls = mock_db_session.execute.call_args_list
-        refresh_call = calls[1][0][0]  # Second call is the refresh
+        refresh_call = calls[0][0][0]  # Single call combines timeout and refresh
         assert "CONCURRENTLY" in str(refresh_call)
 
     @pytest.mark.asyncio
     async def test_refresh_view_non_concurrent_mode(self, service, mock_db_session):
         """Test refresh with concurrent mode disabled"""
         # Setup
-        view_name = "mv_active_users"
+        view_name = "mv_agent_performance"
 
         # Execute
         await service.refresh_view(view_name, concurrent=False)
 
         # Assert - verify CONCURRENTLY keyword was NOT used
         calls = mock_db_session.execute.call_args_list
-        refresh_call = calls[1][0][0]  # Second call is the refresh
+        refresh_call = calls[0][0][0]  # Single call combines timeout and refresh
         assert "CONCURRENTLY" not in str(refresh_call)
 
     @pytest.mark.asyncio
@@ -132,8 +133,9 @@ class TestMaterializedViewRefreshService:
 
         def execute_side_effect(*args, **kwargs):
             call_count[0] += 1
-            # Every 4th call (refresh calls) alternates between success and failure
-            if call_count[0] % 4 == 2:  # Refresh calls for alternating views
+            # Each view has 1 call (combines timeout and refresh)
+            # Make every other view fail
+            if call_count[0] % 2 == 0:  # Every other view fails
                 raise Exception("Refresh failed")
             return None
 
@@ -153,7 +155,7 @@ class TestMaterializedViewRefreshService:
     async def test_refresh_specific_views(self, service, mock_db_session):
         """Test refresh of specific subset of views"""
         # Setup
-        specific_views = ["mv_active_users", "mv_agent_performance"]
+        specific_views = ["mv_agent_performance", "mv_workspace_metrics"]
 
         # Execute
         results = await service.refresh_all(views=specific_views)
@@ -168,7 +170,7 @@ class TestMaterializedViewRefreshService:
         # Setup
         mock_result = MagicMock()
         mock_row = MagicMock()
-        mock_row.view_name = "mv_active_users"
+        mock_row.view_name = "mv_agent_performance"
         mock_row.owner = "postgres"
         mock_row.ispopulated = True
         mock_row.hasindexes = True
@@ -185,7 +187,7 @@ class TestMaterializedViewRefreshService:
 
         # Assert
         assert len(status) == 1
-        assert status[0]["view_name"] == "mv_active_users"
+        assert status[0]["view_name"] == "mv_agent_performance"
         assert status[0]["is_populated"] is True
         assert status[0]["has_indexes"] is True
         assert status[0]["total_size"] == "1024 kB"
@@ -194,7 +196,7 @@ class TestMaterializedViewRefreshService:
     async def test_get_view_statistics(self, service, mock_db_session):
         """Test retrieval of view statistics"""
         # Setup
-        view_name = "mv_active_users"
+        view_name = "mv_agent_performance"
         mock_result = MagicMock()
         mock_row = MagicMock()
         mock_row.schemaname = "analytics"
@@ -230,7 +232,7 @@ class TestMaterializedViewRefreshService:
     async def test_get_view_statistics_not_found(self, service, mock_db_session):
         """Test statistics retrieval for non-existent view"""
         # Setup
-        view_name = "mv_active_users"
+        view_name = "mv_agent_performance"
         mock_result = MagicMock()
         mock_result.fetchone.return_value = None
         mock_db_session.execute.return_value = mock_result
@@ -252,11 +254,10 @@ class TestMaterializedViewRefreshService:
     async def test_get_row_count(self, service, mock_db_session):
         """Test row count retrieval"""
         # Setup
-        view_name = "mv_active_users"
+        view_name = "mv_agent_performance"
         mock_result = MagicMock()
-        mock_row = MagicMock()
-        mock_row.count = 1500
-        mock_result.fetchone.return_value = mock_row
+        # get_row_count returns row[0] from fetchone(), so mock as tuple
+        mock_result.fetchone.return_value = (1500,)
         mock_db_session.execute.return_value = mock_result
 
         # Execute
@@ -283,11 +284,11 @@ class TestMaterializedViewRefreshService:
         mock_status_result.fetchone.return_value = mock_status_row
 
         mock_count_result = MagicMock()
-        mock_count_row = MagicMock()
-        mock_count_row.count = 100
-        mock_count_result.fetchone.return_value = mock_count_row
+        # get_row_count returns row[0] from fetchone(), so mock as tuple
+        mock_count_result.fetchone.return_value = (100,)
 
         # Alternate between status and count queries
+        # Each view has: 1 status query + 1 count query (via get_row_count)
         mock_db_session.execute.side_effect = [
             mock_status_result, mock_count_result
         ] * len(service.VIEWS)
@@ -304,7 +305,7 @@ class TestMaterializedViewRefreshService:
     async def test_check_view_health_unpopulated_view(self, service, mock_db_session):
         """Test health check with unpopulated view"""
         # Setup - only check first view
-        service.VIEWS = ["mv_active_users"]
+        service.VIEWS = ["mv_agent_performance"]
 
         mock_status_result = MagicMock()
         mock_status_row = MagicMock()
@@ -313,9 +314,8 @@ class TestMaterializedViewRefreshService:
         mock_status_result.fetchone.return_value = mock_status_row
 
         mock_count_result = MagicMock()
-        mock_count_row = MagicMock()
-        mock_count_row.count = 0
-        mock_count_result.fetchone.return_value = mock_count_row
+        # get_row_count returns row[0] from fetchone(), so mock as tuple
+        mock_count_result.fetchone.return_value = (0,)
 
         mock_db_session.execute.side_effect = [
             mock_status_result, mock_count_result
@@ -334,7 +334,7 @@ class TestMaterializedViewRefreshService:
     async def test_check_view_health_no_indexes(self, service, mock_db_session):
         """Test health check with view missing indexes"""
         # Setup - only check first view
-        service.VIEWS = ["mv_active_users"]
+        service.VIEWS = ["mv_agent_performance"]
 
         mock_status_result = MagicMock()
         mock_status_row = MagicMock()
@@ -343,9 +343,8 @@ class TestMaterializedViewRefreshService:
         mock_status_result.fetchone.return_value = mock_status_row
 
         mock_count_result = MagicMock()
-        mock_count_row = MagicMock()
-        mock_count_row.count = 100
-        mock_count_result.fetchone.return_value = mock_count_row
+        # get_row_count returns row[0] from fetchone(), so mock as tuple
+        mock_count_result.fetchone.return_value = (100,)
 
         mock_db_session.execute.side_effect = [
             mock_status_result, mock_count_result
@@ -376,7 +375,7 @@ class TestMaterializedViewRefreshService:
     async def test_resolve_dependencies_no_dependencies(self, service):
         """Test dependency resolution with independent views"""
         # Setup
-        views = ["mv_active_users", "mv_workspace_metrics"]
+        views = ["mv_agent_performance", "mv_error_summary"]
 
         # Execute
         ordered = service._resolve_dependencies(views)
@@ -391,7 +390,7 @@ class TestMaterializedViewRefreshService:
         # Setup
         mock_result = MagicMock()
         mock_row = MagicMock()
-        mock_row.view_name = "mv_active_users"
+        mock_row.view_name = "mv_agent_performance"
         mock_row.refresh_started_at = datetime.now(timezone.utc)
         mock_row.refresh_completed_at = datetime.now(timezone.utc)
         mock_row.duration_seconds = 1.5
@@ -406,7 +405,7 @@ class TestMaterializedViewRefreshService:
 
         # Assert
         assert len(results) == 1
-        assert results[0]["view_name"] == "mv_active_users"
+        assert results[0]["view_name"] == "mv_agent_performance"
         assert results[0]["success"] is True
         assert results[0]["duration_seconds"] == 1.5
 
@@ -414,24 +413,23 @@ class TestMaterializedViewRefreshService:
     async def test_refresh_timeout_setting(self, service, mock_db_session):
         """Test that timeout is properly set"""
         # Setup
-        view_name = "mv_active_users"
+        view_name = "mv_agent_performance"
 
         # Execute
         await service.refresh_view(view_name)
 
         # Assert
         calls = mock_db_session.execute.call_args_list
-        timeout_call = calls[0][0][0]  # First call is the timeout setting
+        timeout_call = calls[0][0][0]  # Single call combines timeout setting and refresh
         assert f"'{service.REFRESH_TIMEOUT}s'" in str(timeout_call)
 
     @pytest.mark.asyncio
     async def test_service_views_list(self, service):
         """Test that service has expected views"""
         # Assert
-        assert "mv_active_users" in service.VIEWS
         assert "mv_agent_performance" in service.VIEWS
         assert "mv_workspace_metrics" in service.VIEWS
-        assert "mv_top_agents" in service.VIEWS
+        assert "mv_top_agents_enhanced" in service.VIEWS
         assert "mv_error_summary" in service.VIEWS
 
     @pytest.mark.asyncio

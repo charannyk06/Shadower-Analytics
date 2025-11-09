@@ -29,15 +29,19 @@ REVOKE SELECT ON analytics.mv_error_summary FROM authenticated;
 
 -- Enable RLS on agent_runs table
 ALTER TABLE analytics.agent_runs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE analytics.agent_runs FORCE ROW LEVEL SECURITY;
 
 -- Enable RLS on agent_errors table
 ALTER TABLE analytics.agent_errors ENABLE ROW LEVEL SECURITY;
+ALTER TABLE analytics.agent_errors FORCE ROW LEVEL SECURITY;
 
 -- =====================================================================
 -- RLS Policies: agent_runs
 -- =====================================================================
 
 -- Policy: Users can view agent runs in their workspaces
+-- DROP IF EXISTS for idempotent migrations
+DROP POLICY IF EXISTS agent_runs_select_policy ON analytics.agent_runs;
 CREATE POLICY agent_runs_select_policy ON analytics.agent_runs
     FOR SELECT
     USING (
@@ -46,6 +50,7 @@ CREATE POLICY agent_runs_select_policy ON analytics.agent_runs
     );
 
 -- Policy: Only service role can insert/update agent runs
+DROP POLICY IF EXISTS agent_runs_service_policy ON analytics.agent_runs;
 CREATE POLICY agent_runs_service_policy ON analytics.agent_runs
     FOR ALL
     USING (auth.role() = 'service_role');
@@ -55,6 +60,7 @@ CREATE POLICY agent_runs_service_policy ON analytics.agent_runs
 -- =====================================================================
 
 -- Policy: Users can view errors in their workspaces
+DROP POLICY IF EXISTS agent_errors_select_policy ON analytics.agent_errors;
 CREATE POLICY agent_errors_select_policy ON analytics.agent_errors
     FOR SELECT
     USING (
@@ -62,6 +68,7 @@ CREATE POLICY agent_errors_select_policy ON analytics.agent_errors
     );
 
 -- Policy: Only service role can insert/update agent errors
+DROP POLICY IF EXISTS agent_errors_service_policy ON analytics.agent_errors;
 CREATE POLICY agent_errors_service_policy ON analytics.agent_errors
     FOR ALL
     USING (auth.role() = 'service_role');

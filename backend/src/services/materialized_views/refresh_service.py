@@ -211,10 +211,12 @@ class MaterializedViewRefreshService:
             self._validate_sql_identifier(view_name)
 
             # Build refresh command - view_name is validated against whitelist and regex
-            # Using f-string is safe here because:
-            # 1. view_name is validated against VIEWS whitelist
-            # 2. view_name is validated with regex for SQL identifier format
+            # SECURITY: Using f-string is safe here because:
+            # 1. view_name is validated against VIEWS whitelist (line 207)
+            # 2. view_name is validated with regex for SQL identifier format (line 211)
             # 3. Schema name 'analytics' is hardcoded
+            # 4. concurrent_keyword is boolean-derived, not user input
+            # For additional safety, consider using SQLAlchemy's identifier quoting in future
             concurrent_keyword = "CONCURRENTLY" if concurrent else ""
             
             if concurrent_keyword:
@@ -226,16 +228,21 @@ class MaterializedViewRefreshService:
 
             # Set statement timeout and execute refresh in same transaction block
             # This ensures the timeout applies to the refresh operation
-            # Note: timeout value is from controlled dict/env var (integer), safe to interpolate
+            # SECURITY: timeout is validated as integer via _parse_timeout_env() before use
             # PostgreSQL requires string format like '30s' for statement_timeout
-            # Using parameterized query with string format is safe here because:
-            # 1. timeout is an integer from VIEW_TIMEOUTS dict or REFRESH_TIMEOUT env var
-            # 2. The value is validated and comes from a controlled source
-            # 3. PostgreSQL's statement_timeout requires string format with 's' suffix
+            # We validate timeout is integer before interpolation to prevent SQL injection
             timeout = self.VIEW_TIMEOUTS.get(view_name, self.REFRESH_TIMEOUT)
+            
+            # CRITICAL SECURITY: Ensure timeout is an integer before interpolation
+            # This prevents SQL injection if VIEW_TIMEOUTS dict is compromised
+            if not isinstance(timeout, int) or timeout <= 0:
+                raise ValueError(f"Invalid timeout value: {timeout}. Must be a positive integer.")
             
             # Execute timeout setting and refresh in a single transaction block
             # This ensures SET LOCAL applies to the refresh command
+            # Using f-string is safe here because:
+            # 1. timeout is validated as integer above
+            # 2. query_text is built from validated view_name (whitelist + regex)
             timeout_query = text(f"""
                 SET LOCAL statement_timeout = '{timeout}s';
                 {query_text}
