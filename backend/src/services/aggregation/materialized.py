@@ -9,9 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 async def refresh_materialized_view(
-    db: AsyncSession,
-    view_name: str,
-    concurrently: bool = True
+    db: AsyncSession, view_name: str, concurrently: bool = True
 ) -> Dict[str, Any]:
     """Refresh a specific materialized view.
 
@@ -33,7 +31,7 @@ async def refresh_materialized_view(
         ]
         if view_name not in valid_views:
             raise ValueError(f"Invalid materialized view name: {view_name}")
-        
+
         concurrent_str = "CONCURRENTLY" if concurrently else ""
         query = text(f"REFRESH MATERIALIZED VIEW {concurrent_str} {view_name}")
 
@@ -42,20 +40,16 @@ async def refresh_materialized_view(
         await db.commit()
 
         logger.info(f"Successfully refreshed materialized view: {view_name}")
-        return {
-            'view_name': view_name,
-            'success': True,
-            'concurrent': concurrently
-        }
+        return {"view_name": view_name, "success": True, "concurrent": concurrently}
 
     except Exception as e:
         logger.error(f"Failed to refresh materialized view {view_name}: {str(e)}")
         await db.rollback()
         return {
-            'view_name': view_name,
-            'success': False,
-            'error': str(e),
-            'concurrent': concurrently
+            "view_name": view_name,
+            "success": False,
+            "error": str(e),
+            "concurrent": concurrently,
         }
 
 
@@ -87,7 +81,7 @@ async def refresh_all_materialized_views(db: AsyncSession) -> Dict[str, Any]:
         result = await refresh_materialized_view(db, view, concurrently=True)
         results.append(result)
 
-        if result['success']:
+        if result["success"]:
             success_count += 1
         else:
             failure_count += 1
@@ -98,10 +92,10 @@ async def refresh_all_materialized_views(db: AsyncSession) -> Dict[str, Any]:
     )
 
     return {
-        'total_views': len(views),
-        'success_count': success_count,
-        'failure_count': failure_count,
-        'results': results
+        "total_views": len(views),
+        "success_count": success_count,
+        "failure_count": failure_count,
+        "results": results,
     }
 
 
@@ -118,7 +112,8 @@ async def create_materialized_views(db: AsyncSession) -> Dict[str, Any]:
     """
     try:
         # Example materialized view for daily user metrics
-        query_daily_user = text("""
+        query_daily_user = text(
+            """
             CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.mv_daily_user_metrics AS
             SELECT
                 user_id,
@@ -131,10 +126,12 @@ async def create_materialized_views(db: AsyncSession) -> Dict[str, Any]:
             FROM analytics.user_activity_hourly
             GROUP BY user_id, workspace_id, DATE(hour)
             WITH DATA
-        """)
+        """
+        )
 
         # Example materialized view for hourly execution stats
-        query_hourly_exec = text("""
+        query_hourly_exec = text(
+            """
             CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.mv_hourly_execution_stats AS
             SELECT
                 workspace_id,
@@ -152,10 +149,12 @@ async def create_materialized_views(db: AsyncSession) -> Dict[str, Any]:
                 total_credits
             FROM analytics.execution_metrics_hourly
             WITH DATA
-        """)
+        """
+        )
 
         # Example materialized view for workspace summary
-        query_workspace_summary = text("""
+        query_workspace_summary = text(
+            """
             CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.mv_workspace_summary AS
             SELECT
                 workspace_id,
@@ -168,13 +167,20 @@ async def create_materialized_views(db: AsyncSession) -> Dict[str, Any]:
             FROM analytics.execution_metrics_hourly
             GROUP BY workspace_id
             WITH DATA
-        """)
+        """
+        )
 
         # Create indexes on materialized views
         index_queries = [
-            text("CREATE UNIQUE INDEX IF NOT EXISTS idx_mv_daily_user_metrics ON analytics.mv_daily_user_metrics (user_id, workspace_id, date)"),
-            text("CREATE UNIQUE INDEX IF NOT EXISTS idx_mv_hourly_exec_stats ON analytics.mv_hourly_execution_stats (workspace_id, hour)"),
-            text("CREATE UNIQUE INDEX IF NOT EXISTS idx_mv_workspace_summary ON analytics.mv_workspace_summary (workspace_id)")
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_mv_daily_user_metrics ON analytics.mv_daily_user_metrics (user_id, workspace_id, date)"
+            ),
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_mv_hourly_exec_stats ON analytics.mv_hourly_execution_stats (workspace_id, hour)"
+            ),
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_mv_workspace_summary ON analytics.mv_workspace_summary (workspace_id)"
+            ),
         ]
 
         logger.info("Creating materialized views...")
@@ -189,9 +195,9 @@ async def create_materialized_views(db: AsyncSession) -> Dict[str, Any]:
         await db.commit()
 
         logger.info("Successfully created materialized views")
-        return {'success': True, 'views_created': 3}
+        return {"success": True, "views_created": 3}
 
     except Exception as e:
         logger.error(f"Failed to create materialized views: {str(e)}")
         await db.rollback()
-        return {'success': False, 'error': str(e)}
+        return {"success": False, "error": str(e)}

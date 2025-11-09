@@ -9,7 +9,7 @@ class AsyncDatabaseTask(Task):
 
     def run_async(self, async_func, *args, **kwargs):
         """Run an async function synchronously.
-        
+
         Uses asyncio.run() for better compatibility with Python 3.10+.
         """
         return asyncio.run(async_func(*args, **kwargs))

@@ -8,14 +8,13 @@ from sqlalchemy import text
 
 from src.celery_app import celery_app
 from src.core.database import async_session_maker
-from src.core.config import settings
 from src.tasks.base import AsyncDatabaseTask
 
 logger = logging.getLogger(__name__)
 
 
 @celery_app.task(
-    name='tasks.maintenance.cleanup_old_data',
+    name="tasks.maintenance.cleanup_old_data",
     bind=True,
     base=AsyncDatabaseTask,
     max_retries=2,
@@ -40,46 +39,52 @@ def cleanup_old_data_task(self, retention_days: int = 90) -> Dict:
                 results = {}
 
                 # Clean up old execution logs
-                query_logs = text("""
+                query_logs = text(
+                    """
                     DELETE FROM execution_logs
                     WHERE started_at < :cutoff_date
                     RETURNING id
-                """)
-                result = await db.execute(query_logs, {'cutoff_date': cutoff_date})
+                """
+                )
+                result = await db.execute(query_logs, {"cutoff_date": cutoff_date})
                 logs_deleted = len(result.fetchall())
-                results['execution_logs_deleted'] = logs_deleted
+                results["execution_logs_deleted"] = logs_deleted
 
                 # Clean up old user activity events
-                query_activity = text("""
+                query_activity = text(
+                    """
                     DELETE FROM analytics.user_activity
                     WHERE created_at < :cutoff_date
                     RETURNING id
-                """)
-                result = await db.execute(query_activity, {'cutoff_date': cutoff_date})
+                """
+                )
+                result = await db.execute(query_activity, {"cutoff_date": cutoff_date})
                 activity_deleted = len(result.fetchall())
-                results['user_activity_deleted'] = activity_deleted
+                results["user_activity_deleted"] = activity_deleted
 
                 # Clean up old hourly aggregations (keep longer than raw data)
                 # Only delete if older than 2x retention period
                 long_cutoff = datetime.utcnow() - timedelta(days=retention_days * 2)
-                query_hourly = text("""
+                query_hourly = text(
+                    """
                     DELETE FROM analytics.execution_metrics_hourly
                     WHERE hour < :cutoff_date
                     RETURNING id
-                """)
-                result = await db.execute(query_hourly, {'cutoff_date': long_cutoff})
+                """
+                )
+                result = await db.execute(query_hourly, {"cutoff_date": long_cutoff})
                 hourly_deleted = len(result.fetchall())
-                results['hourly_metrics_deleted'] = hourly_deleted
+                results["hourly_metrics_deleted"] = hourly_deleted
 
                 await db.commit()
 
                 logger.info(f"Cleanup completed: {results}")
 
                 return {
-                    'success': True,
-                    'retention_days': retention_days,
-                    'cutoff_date': cutoff_date.isoformat(),
-                    'results': results
+                    "success": True,
+                    "retention_days": retention_days,
+                    "cutoff_date": cutoff_date.isoformat(),
+                    "results": results,
                 }
 
         result = self.run_async(run_cleanup)
@@ -91,7 +96,7 @@ def cleanup_old_data_task(self, retention_days: int = 90) -> Dict:
 
 
 @celery_app.task(
-    name='tasks.maintenance.health_check',
+    name="tasks.maintenance.health_check",
     bind=True,
     base=AsyncDatabaseTask,
 )
@@ -111,63 +116,67 @@ def health_check_task(self) -> Dict:
                 # Check database connectivity
                 try:
                     await db.execute(text("SELECT 1"))
-                    checks['database'] = {'status': 'healthy', 'latency_ms': 0}
+                    checks["database"] = {"status": "healthy", "latency_ms": 0}
                 except Exception as e:
-                    checks['database'] = {'status': 'unhealthy', 'error': str(e)}
+                    checks["database"] = {"status": "unhealthy", "error": str(e)}
 
                 # Check recent aggregation activity
                 try:
-                    query = text("""
+                    query = text(
+                        """
                         SELECT COUNT(*), MAX(updated_at)
                         FROM analytics.execution_metrics_hourly
                         WHERE updated_at > NOW() - INTERVAL '2 hours'
-                    """)
+                    """
+                    )
                     result = await db.execute(query)
                     row = result.fetchone()
                     recent_count, last_update = row if row else (0, None)
 
                     if recent_count > 0:
-                        checks['aggregations'] = {
-                            'status': 'healthy',
-                            'recent_updates': recent_count,
-                            'last_update': last_update.isoformat() if last_update else None
+                        checks["aggregations"] = {
+                            "status": "healthy",
+                            "recent_updates": recent_count,
+                            "last_update": last_update.isoformat() if last_update else None,
                         }
                     else:
-                        checks['aggregations'] = {
-                            'status': 'warning',
-                            'message': 'No recent aggregation updates'
+                        checks["aggregations"] = {
+                            "status": "warning",
+                            "message": "No recent aggregation updates",
                         }
                 except Exception as e:
-                    checks['aggregations'] = {'status': 'error', 'error': str(e)}
+                    checks["aggregations"] = {"status": "error", "error": str(e)}
 
                 # Check data freshness
                 try:
-                    query = text("""
+                    query = text(
+                        """
                         SELECT
                             (SELECT COUNT(*) FROM execution_logs WHERE started_at > NOW() - INTERVAL '1 hour') as recent_logs,
                             (SELECT COUNT(*) FROM analytics.execution_metrics_hourly WHERE hour > NOW() - INTERVAL '1 hour') as recent_metrics
-                    """)
+                    """
+                    )
                     result = await db.execute(query)
                     row = result.fetchone()
                     recent_logs, recent_metrics = row if row else (0, 0)
 
-                    checks['data_freshness'] = {
-                        'status': 'healthy' if recent_logs > 0 or recent_metrics > 0 else 'idle',
-                        'recent_logs': recent_logs,
-                        'recent_metrics': recent_metrics
+                    checks["data_freshness"] = {
+                        "status": "healthy" if recent_logs > 0 or recent_metrics > 0 else "idle",
+                        "recent_logs": recent_logs,
+                        "recent_metrics": recent_metrics,
                     }
                 except Exception as e:
-                    checks['data_freshness'] = {'status': 'error', 'error': str(e)}
+                    checks["data_freshness"] = {"status": "error", "error": str(e)}
 
                 # Overall health status
-                unhealthy_checks = [k for k, v in checks.items() if v.get('status') == 'unhealthy']
-                overall_status = 'unhealthy' if unhealthy_checks else 'healthy'
+                unhealthy_checks = [k for k, v in checks.items() if v.get("status") == "unhealthy"]
+                overall_status = "unhealthy" if unhealthy_checks else "healthy"
 
                 return {
-                    'timestamp': datetime.utcnow().isoformat(),
-                    'overall_status': overall_status,
-                    'checks': checks,
-                    'unhealthy_checks': unhealthy_checks
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "overall_status": overall_status,
+                    "checks": checks,
+                    "unhealthy_checks": unhealthy_checks,
                 }
 
         result = self.run_async(run_health_check)
@@ -177,14 +186,14 @@ def health_check_task(self) -> Dict:
     except Exception as exc:
         logger.error(f"Health check task failed: {str(exc)}", exc_info=True)
         return {
-            'timestamp': datetime.utcnow().isoformat(),
-            'overall_status': 'error',
-            'error': str(exc)
+            "timestamp": datetime.utcnow().isoformat(),
+            "overall_status": "error",
+            "error": str(exc),
         }
 
 
 @celery_app.task(
-    name='tasks.maintenance.vacuum_tables',
+    name="tasks.maintenance.vacuum_tables",
     bind=True,
     base=AsyncDatabaseTask,
     max_retries=1,
@@ -204,10 +213,10 @@ def vacuum_tables_task(self, analyze: bool = True) -> Dict:
         async def run_vacuum():
             async with async_session_maker() as db:
                 tables = [
-                    'analytics.execution_metrics_hourly',
-                    'analytics.execution_metrics_daily',
-                    'analytics.user_activity_hourly',
-                    'analytics.credit_consumption_hourly',
+                    "analytics.execution_metrics_hourly",
+                    "analytics.execution_metrics_daily",
+                    "analytics.user_activity_hourly",
+                    "analytics.credit_consumption_hourly",
                 ]
 
                 results = []
@@ -217,7 +226,7 @@ def vacuum_tables_task(self, analyze: bool = True) -> Dict:
                         # Validate table name against whitelist
                         if table not in tables:
                             raise ValueError(f"Invalid table name: {table}")
-                        
+
                         # Note: VACUUM cannot run inside a transaction block.
                         # In production, this should be executed using a connection with
                         # autocommit=True or through a separate database connection that
@@ -228,28 +237,20 @@ def vacuum_tables_task(self, analyze: bool = True) -> Dict:
                         await db.execute(query)
                         await db.commit()
 
-                        results.append({
-                            'table': table,
-                            'status': 'success',
-                            'analyzed': analyze
-                        })
+                        results.append({"table": table, "status": "success", "analyzed": analyze})
                         logger.info(f"Vacuumed table: {table}")
 
                     except Exception as e:
                         logger.error(f"Failed to vacuum {table}: {str(e)}")
-                        results.append({
-                            'table': table,
-                            'status': 'error',
-                            'error': str(e)
-                        })
+                        results.append({"table": table, "status": "error", "error": str(e)})
 
-                success_count = sum(1 for r in results if r['status'] == 'success')
+                success_count = sum(1 for r in results if r["status"] == "success")
 
                 return {
-                    'success': True,
-                    'tables_vacuumed': success_count,
-                    'total_tables': len(tables),
-                    'results': results
+                    "success": True,
+                    "tables_vacuumed": success_count,
+                    "total_tables": len(tables),
+                    "results": results,
                 }
 
         result = self.run_async(run_vacuum)
@@ -262,7 +263,7 @@ def vacuum_tables_task(self, analyze: bool = True) -> Dict:
 
 
 @celery_app.task(
-    name='tasks.maintenance.rebuild_indices',
+    name="tasks.maintenance.rebuild_indices",
     bind=True,
     base=AsyncDatabaseTask,
     max_retries=1,
@@ -279,7 +280,8 @@ def rebuild_indices_task(self) -> Dict:
         async def run_rebuild():
             async with async_session_maker() as db:
                 # Get all indices on aggregation tables
-                query = text("""
+                query = text(
+                    """
                     SELECT
                         schemaname,
                         tablename,
@@ -292,7 +294,8 @@ def rebuild_indices_task(self) -> Dict:
                         'user_activity_hourly',
                         'credit_consumption_hourly'
                     )
-                """)
+                """
+                )
 
                 result = await db.execute(query)
                 indices = result.fetchall()
@@ -305,7 +308,7 @@ def rebuild_indices_task(self) -> Dict:
                         # These come from pg_indexes system catalog, but we still validate
                         if not schema or not index:
                             raise ValueError(f"Invalid schema or index name: {schema}.{index}")
-                        
+
                         # Use parameterized identifier quoting for safety
                         # Note: SQLAlchemy text() doesn't support identifier parameters,
                         # so we validate the values come from trusted source (pg_indexes)
@@ -313,29 +316,33 @@ def rebuild_indices_task(self) -> Dict:
                         await db.execute(reindex_query)
                         await db.commit()
 
-                        rebuild_results.append({
-                            'index': f"{schema}.{index}",
-                            'table': f"{schema}.{table}",
-                            'status': 'success'
-                        })
+                        rebuild_results.append(
+                            {
+                                "index": f"{schema}.{index}",
+                                "table": f"{schema}.{table}",
+                                "status": "success",
+                            }
+                        )
                         logger.info(f"Rebuilt index: {schema}.{index}")
 
                     except Exception as e:
                         logger.error(f"Failed to rebuild {schema}.{index}: {str(e)}")
-                        rebuild_results.append({
-                            'index': f"{schema}.{index}",
-                            'table': f"{schema}.{table}",
-                            'status': 'error',
-                            'error': str(e)
-                        })
+                        rebuild_results.append(
+                            {
+                                "index": f"{schema}.{index}",
+                                "table": f"{schema}.{table}",
+                                "status": "error",
+                                "error": str(e),
+                            }
+                        )
 
-                success_count = sum(1 for r in rebuild_results if r['status'] == 'success')
+                success_count = sum(1 for r in rebuild_results if r["status"] == "success")
 
                 return {
-                    'success': True,
-                    'indices_rebuilt': success_count,
-                    'total_indices': len(indices),
-                    'results': rebuild_results
+                    "success": True,
+                    "indices_rebuilt": success_count,
+                    "total_indices": len(indices),
+                    "results": rebuild_results,
                 }
 
         result = self.run_async(run_rebuild)

@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 @celery_app.task(
-    name='tasks.aggregation.hourly_rollup',
+    name="tasks.aggregation.hourly_rollup",
     bind=True,
     base=AsyncDatabaseTask,
     max_retries=3,
@@ -37,7 +37,7 @@ def hourly_rollup_task(self, target_hour: Optional[str] = None) -> Dict:
     """
     if not settings.HOURLY_ROLLUP_ENABLED:
         logger.info("Hourly rollup is disabled via settings")
-        return {'success': False, 'message': 'Hourly rollup disabled'}
+        return {"success": False, "message": "Hourly rollup disabled"}
 
     try:
         logger.info("Starting hourly rollup task")
@@ -62,7 +62,7 @@ def hourly_rollup_task(self, target_hour: Optional[str] = None) -> Dict:
 
 
 @celery_app.task(
-    name='tasks.aggregation.daily_rollup',
+    name="tasks.aggregation.daily_rollup",
     bind=True,
     base=AsyncDatabaseTask,
     max_retries=3,
@@ -79,7 +79,7 @@ def daily_rollup_task(self, target_date: Optional[str] = None) -> Dict:
     """
     if not settings.DAILY_ROLLUP_ENABLED:
         logger.info("Daily rollup is disabled via settings")
-        return {'success': False, 'message': 'Daily rollup disabled'}
+        return {"success": False, "message": "Daily rollup disabled"}
 
     try:
         logger.info("Starting daily rollup task")
@@ -103,7 +103,7 @@ def daily_rollup_task(self, target_date: Optional[str] = None) -> Dict:
 
 
 @celery_app.task(
-    name='tasks.aggregation.weekly_rollup',
+    name="tasks.aggregation.weekly_rollup",
     bind=True,
     base=AsyncDatabaseTask,
     max_retries=3,
@@ -120,7 +120,7 @@ def weekly_rollup_task(self, target_week: Optional[str] = None) -> Dict:
     """
     if not settings.WEEKLY_ROLLUP_ENABLED:
         logger.info("Weekly rollup is disabled via settings")
-        return {'success': False, 'message': 'Weekly rollup disabled'}
+        return {"success": False, "message": "Weekly rollup disabled"}
 
     try:
         logger.info("Starting weekly rollup task")
@@ -144,7 +144,7 @@ def weekly_rollup_task(self, target_week: Optional[str] = None) -> Dict:
 
 
 @celery_app.task(
-    name='tasks.aggregation.monthly_rollup',
+    name="tasks.aggregation.monthly_rollup",
     bind=True,
     base=AsyncDatabaseTask,
     max_retries=3,
@@ -161,7 +161,7 @@ def monthly_rollup_task(self, target_month: Optional[str] = None) -> Dict:
     """
     if not settings.MONTHLY_ROLLUP_ENABLED:
         logger.info("Monthly rollup is disabled via settings")
-        return {'success': False, 'message': 'Monthly rollup disabled'}
+        return {"success": False, "message": "Monthly rollup disabled"}
 
     try:
         logger.info("Starting monthly rollup task")
@@ -185,7 +185,7 @@ def monthly_rollup_task(self, target_month: Optional[str] = None) -> Dict:
 
 
 @celery_app.task(
-    name='tasks.aggregation.refresh_materialized_views',
+    name="tasks.aggregation.refresh_materialized_views",
     bind=True,
     base=AsyncDatabaseTask,
     max_retries=3,
@@ -214,16 +214,13 @@ def refresh_materialized_views_task(self) -> Dict:
 
 
 @celery_app.task(
-    name='tasks.aggregation.backfill_aggregations',
+    name="tasks.aggregation.backfill_aggregations",
     bind=True,
     base=AsyncDatabaseTask,
     max_retries=1,
 )
 def backfill_aggregations_task(
-    self,
-    start_date: str,
-    end_date: str,
-    granularity: str = 'hourly'
+    self, start_date: str, end_date: str, granularity: str = "hourly"
 ) -> Dict:
     """Backfill aggregations for a date range.
 
@@ -238,7 +235,9 @@ def backfill_aggregations_task(
         Dictionary with backfill results
     """
     try:
-        logger.info(f"Starting backfill task: {start_date} to {end_date}, granularity: {granularity}")
+        logger.info(
+            f"Starting backfill task: {start_date} to {end_date}, granularity: {granularity}"
+        )
 
         start_dt = datetime.fromisoformat(start_date)
         end_dt = datetime.fromisoformat(end_date)
@@ -247,14 +246,14 @@ def backfill_aggregations_task(
             results = []
             current = start_dt
 
-            if granularity == 'hourly':
+            if granularity == "hourly":
                 while current < end_dt:
                     async with async_session_maker() as db:
                         result = await hourly_rollup(db, current)
                     results.append(result)
                     current += timedelta(hours=1)
 
-            elif granularity == 'daily':
+            elif granularity == "daily":
                 while current < end_dt:
                     async with async_session_maker() as db:
                         result = await daily_rollup(db, current)
@@ -262,12 +261,12 @@ def backfill_aggregations_task(
                     current += timedelta(days=1)
 
             return {
-                'success': True,
-                'granularity': granularity,
-                'start_date': start_date,
-                'end_date': end_date,
-                'periods_processed': len(results),
-                'results': results
+                "success": True,
+                "granularity": granularity,
+                "start_date": start_date,
+                "end_date": end_date,
+                "periods_processed": len(results),
+                "results": results,
             }
 
         result = self.run_async(run_backfill)

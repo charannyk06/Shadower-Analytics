@@ -10,9 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 async def aggregate_execution_metrics(
-    db: AsyncSession,
-    start_time: datetime,
-    end_time: datetime
+    db: AsyncSession, start_time: datetime, end_time: datetime
 ) -> int:
     """Aggregate execution metrics for time period.
 
@@ -24,7 +22,8 @@ async def aggregate_execution_metrics(
     Returns:
         Number of workspaces aggregated
     """
-    query = text("""
+    query = text(
+        """
         INSERT INTO analytics.execution_metrics_hourly (
             workspace_id,
             hour,
@@ -70,9 +69,10 @@ async def aggregate_execution_metrics(
             avg_credits_per_run = EXCLUDED.avg_credits_per_run,
             updated_at = NOW()
         RETURNING workspace_id
-    """)
+    """
+    )
 
-    result = await db.execute(query, {'start_time': start_time, 'end_time': end_time})
+    result = await db.execute(query, {"start_time": start_time, "end_time": end_time})
     await db.commit()
 
     workspaces_count = len(result.fetchall())
@@ -81,9 +81,7 @@ async def aggregate_execution_metrics(
 
 
 async def aggregate_user_activity(
-    db: AsyncSession,
-    start_time: datetime,
-    end_time: datetime
+    db: AsyncSession, start_time: datetime, end_time: datetime
 ) -> int:
     """Aggregate user activity for time period.
 
@@ -95,7 +93,8 @@ async def aggregate_user_activity(
     Returns:
         Number of users aggregated
     """
-    query = text("""
+    query = text(
+        """
         INSERT INTO analytics.user_activity_hourly (
             workspace_id,
             user_id,
@@ -143,9 +142,10 @@ async def aggregate_user_activity(
             event_type_counts = EXCLUDED.event_type_counts,
             updated_at = NOW()
         RETURNING user_id
-    """)
+    """
+    )
 
-    result = await db.execute(query, {'start_time': start_time, 'end_time': end_time})
+    result = await db.execute(query, {"start_time": start_time, "end_time": end_time})
     await db.commit()
 
     users_count = len(result.fetchall())
@@ -154,9 +154,7 @@ async def aggregate_user_activity(
 
 
 async def aggregate_credit_consumption(
-    db: AsyncSession,
-    start_time: datetime,
-    end_time: datetime
+    db: AsyncSession, start_time: datetime, end_time: datetime
 ) -> int:
     """Aggregate credit consumption for time period.
 
@@ -168,7 +166,8 @@ async def aggregate_credit_consumption(
     Returns:
         Number of records aggregated
     """
-    query = text("""
+    query = text(
+        """
         INSERT INTO analytics.credit_consumption_hourly (
             workspace_id,
             user_id,
@@ -214,9 +213,10 @@ async def aggregate_credit_consumption(
             credits_per_success = EXCLUDED.credits_per_success,
             updated_at = NOW()
         RETURNING id
-    """)
+    """
+    )
 
-    result = await db.execute(query, {'start_time': start_time, 'end_time': end_time})
+    result = await db.execute(query, {"start_time": start_time, "end_time": end_time})
     await db.commit()
 
     records_count = len(result.fetchall())
@@ -237,7 +237,8 @@ async def aggregate_daily_metrics(db: AsyncSession, target_date: datetime) -> in
     start_of_day = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
     end_of_day = start_of_day + timedelta(days=1)
 
-    query = text("""
+    query = text(
+        """
         INSERT INTO analytics.execution_metrics_daily (
             workspace_id,
             date,
@@ -299,13 +300,12 @@ async def aggregate_daily_metrics(db: AsyncSession, target_date: datetime) -> in
             health_score = EXCLUDED.health_score,
             updated_at = NOW()
         RETURNING workspace_id
-    """)
+    """
+    )
 
-    result = await db.execute(query, {
-        'target_date': target_date,
-        'start_of_day': start_of_day,
-        'end_of_day': end_of_day
-    })
+    result = await db.execute(
+        query, {"target_date": target_date, "start_of_day": start_of_day, "end_of_day": end_of_day}
+    )
     await db.commit()
 
     workspaces_count = len(result.fetchall())
@@ -340,13 +340,13 @@ async def hourly_rollup(db: AsyncSession, target_hour: Optional[datetime] = None
         credit_count = await aggregate_credit_consumption(db, start_time, end_time)
 
         result = {
-            'success': True,
-            'period': 'hourly',
-            'start_time': start_time.isoformat(),
-            'end_time': end_time.isoformat(),
-            'execution_metrics_workspaces': exec_count,
-            'user_activity_users': user_count,
-            'credit_consumption_records': credit_count
+            "success": True,
+            "period": "hourly",
+            "start_time": start_time.isoformat(),
+            "end_time": end_time.isoformat(),
+            "execution_metrics_workspaces": exec_count,
+            "user_activity_users": user_count,
+            "credit_consumption_records": credit_count,
         }
 
         logger.info(f"Hourly rollup completed successfully: {result}")
@@ -380,10 +380,10 @@ async def daily_rollup(db: AsyncSession, target_date: Optional[datetime] = None)
         workspaces_count = await aggregate_daily_metrics(db, target_date)
 
         result = {
-            'success': True,
-            'period': 'daily',
-            'date': target_date.date().isoformat(),
-            'workspaces_aggregated': workspaces_count
+            "success": True,
+            "period": "daily",
+            "date": target_date.date().isoformat(),
+            "workspaces_aggregated": workspaces_count,
         }
 
         logger.info(f"Daily rollup completed successfully: {result}")
@@ -418,10 +418,10 @@ async def weekly_rollup(db: AsyncSession, target_week: Optional[datetime] = None
     # This can be expanded based on specific requirements
 
     return {
-        'success': True,
-        'period': 'weekly',
-        'week_start': target_week.date().isoformat(),
-        'message': 'Weekly rollup completed (aggregated from daily data)'
+        "success": True,
+        "period": "weekly",
+        "week_start": target_week.date().isoformat(),
+        "message": "Weekly rollup completed (aggregated from daily data)",
     }
 
 
@@ -447,8 +447,8 @@ async def monthly_rollup(db: AsyncSession, target_month: Optional[datetime] = No
     # This can be expanded based on specific requirements
 
     return {
-        'success': True,
-        'period': 'monthly',
-        'month': target_month.strftime('%Y-%m'),
-        'message': 'Monthly rollup completed (aggregated from daily data)'
+        "success": True,
+        "period": "monthly",
+        "month": target_month.strftime("%Y-%m"),
+        "message": "Monthly rollup completed (aggregated from daily data)",
     }

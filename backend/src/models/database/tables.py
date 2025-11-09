@@ -1,6 +1,17 @@
 """SQLAlchemy database models."""
 
-from sqlalchemy import Column, String, Integer, Float, DateTime, Boolean, JSON, Enum, Index, UniqueConstraint
+from sqlalchemy import (
+    Column,
+    String,
+    Integer,
+    Float,
+    DateTime,
+    Boolean,
+    JSON,
+    Enum,
+    Index,
+    UniqueConstraint,
+)
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
 from datetime import datetime
@@ -81,11 +92,11 @@ class UserActivity(Base):
     __tablename__ = "user_activity"
     __table_args__ = (
         # Compound indices for performance optimization
-        Index('idx_user_activity_workspace_created', 'workspace_id', 'created_at'),
-        Index('idx_user_activity_user_workspace', 'user_id', 'workspace_id'),
-        Index('idx_user_activity_session_created', 'session_id', 'created_at'),
-        Index('idx_user_activity_workspace_event_type', 'workspace_id', 'event_type'),
-        {'schema': 'analytics'}
+        Index("idx_user_activity_workspace_created", "workspace_id", "created_at"),
+        Index("idx_user_activity_user_workspace", "user_id", "workspace_id"),
+        Index("idx_user_activity_session_created", "session_id", "created_at"),
+        Index("idx_user_activity_workspace_event_type", "workspace_id", "event_type"),
+        {"schema": "analytics"},
     )
 
     id = Column(String, primary_key=True, index=True)
@@ -117,7 +128,7 @@ class UserSegment(Base):
     """User segments table for behavioral analysis."""
 
     __tablename__ = "user_segments"
-    __table_args__ = {'schema': 'analytics'}
+    __table_args__ = {"schema": "analytics"}
 
     id = Column(String, primary_key=True, index=True)
     workspace_id = Column(String, index=True)
@@ -140,11 +151,17 @@ class AgentLeaderboard(Base):
 
     __tablename__ = "agent_leaderboard"
     __table_args__ = (
-        Index('idx_agent_leaderboard_workspace_timeframe', 'workspace_id', 'timeframe', 'criteria', 'rank'),
-        Index('idx_agent_leaderboard_rank', 'timeframe', 'criteria', 'rank'),
-        Index('idx_agent_leaderboard_calculated', 'calculated_at'),
-        Index('idx_agent_leaderboard_agent', 'agent_id', 'timeframe'),
-        {'schema': 'analytics'}
+        Index(
+            "idx_agent_leaderboard_workspace_timeframe",
+            "workspace_id",
+            "timeframe",
+            "criteria",
+            "rank",
+        ),
+        Index("idx_agent_leaderboard_rank", "timeframe", "criteria", "rank"),
+        Index("idx_agent_leaderboard_calculated", "calculated_at"),
+        Index("idx_agent_leaderboard_agent", "agent_id", "timeframe"),
+        {"schema": "analytics"},
     )
 
     id = Column(String, primary_key=True, index=True)
@@ -158,7 +175,9 @@ class AgentLeaderboard(Base):
 
     # Timeframe and criteria
     timeframe = Column(String(20), nullable=False)  # '24h', '7d', '30d', '90d', 'all'
-    criteria = Column(String(50), nullable=False)  # 'runs', 'success_rate', 'speed', 'efficiency', 'popularity'
+    criteria = Column(
+        String(50), nullable=False
+    )  # 'runs', 'success_rate', 'speed', 'efficiency', 'popularity'
 
     # Agent metrics (snapshot)
     total_runs = Column(Integer, default=0)
@@ -183,11 +202,17 @@ class UserLeaderboard(Base):
 
     __tablename__ = "user_leaderboard"
     __table_args__ = (
-        Index('idx_user_leaderboard_workspace_timeframe', 'workspace_id', 'timeframe', 'criteria', 'rank'),
-        Index('idx_user_leaderboard_rank', 'timeframe', 'criteria', 'rank'),
-        Index('idx_user_leaderboard_calculated', 'calculated_at'),
-        Index('idx_user_leaderboard_user', 'user_id', 'timeframe'),
-        {'schema': 'analytics'}
+        Index(
+            "idx_user_leaderboard_workspace_timeframe",
+            "workspace_id",
+            "timeframe",
+            "criteria",
+            "rank",
+        ),
+        Index("idx_user_leaderboard_rank", "timeframe", "criteria", "rank"),
+        Index("idx_user_leaderboard_calculated", "calculated_at"),
+        Index("idx_user_leaderboard_user", "user_id", "timeframe"),
+        {"schema": "analytics"},
     )
 
     id = Column(String, primary_key=True, index=True)
@@ -201,7 +226,9 @@ class UserLeaderboard(Base):
 
     # Timeframe and criteria
     timeframe = Column(String(20), nullable=False)  # '24h', '7d', '30d', '90d', 'all'
-    criteria = Column(String(50), nullable=False)  # 'activity', 'efficiency', 'contribution', 'savings'
+    criteria = Column(
+        String(50), nullable=False
+    )  # 'activity', 'efficiency', 'contribution', 'savings'
 
     # User metrics (snapshot)
     total_actions = Column(Integer, default=0)
@@ -228,10 +255,10 @@ class WorkspaceLeaderboard(Base):
 
     __tablename__ = "workspace_leaderboard"
     __table_args__ = (
-        Index('idx_workspace_leaderboard_timeframe', 'timeframe', 'criteria', 'rank'),
-        Index('idx_workspace_leaderboard_rank', 'timeframe', 'criteria', 'rank'),
-        Index('idx_workspace_leaderboard_calculated', 'calculated_at'),
-        {'schema': 'analytics'}
+        Index("idx_workspace_leaderboard_timeframe", "timeframe", "criteria", "rank"),
+        Index("idx_workspace_leaderboard_rank", "timeframe", "criteria", "rank"),
+        Index("idx_workspace_leaderboard_calculated", "calculated_at"),
+        {"schema": "analytics"},
     )
 
     id = Column(String, primary_key=True, index=True)
@@ -244,7 +271,9 @@ class WorkspaceLeaderboard(Base):
 
     # Timeframe and criteria
     timeframe = Column(String(20), nullable=False)  # '24h', '7d', '30d', '90d', 'all'
-    criteria = Column(String(50), nullable=False)  # 'activity', 'efficiency', 'growth', 'innovation'
+    criteria = Column(
+        String(50), nullable=False
+    )  # 'activity', 'efficiency', 'growth', 'innovation'
 
     # Workspace metrics (snapshot)
     total_activity = Column(Integer, default=0)
@@ -268,10 +297,10 @@ class ExecutionMetricsHourly(Base):
 
     __tablename__ = "execution_metrics_hourly"
     __table_args__ = (
-        Index('idx_exec_metrics_hourly_workspace_hour', 'workspace_id', 'hour'),
-        Index('idx_exec_metrics_hourly_hour', 'hour'),
-        UniqueConstraint('workspace_id', 'hour', name='uq_exec_metrics_hourly_workspace_hour'),
-        {'schema': 'analytics'}
+        Index("idx_exec_metrics_hourly_workspace_hour", "workspace_id", "hour"),
+        Index("idx_exec_metrics_hourly_hour", "hour"),
+        UniqueConstraint("workspace_id", "hour", name="uq_exec_metrics_hourly_workspace_hour"),
+        {"schema": "analytics"},
     )
 
     id = Column(Integer, primary_key=True, index=True)
@@ -303,10 +332,10 @@ class ExecutionMetricsDaily(Base):
 
     __tablename__ = "execution_metrics_daily"
     __table_args__ = (
-        Index('idx_exec_metrics_daily_workspace_date', 'workspace_id', 'date'),
-        Index('idx_exec_metrics_daily_date', 'date'),
-        UniqueConstraint('workspace_id', 'date', name='uq_exec_metrics_daily_workspace_date'),
-        {'schema': 'analytics'}
+        Index("idx_exec_metrics_daily_workspace_date", "workspace_id", "date"),
+        Index("idx_exec_metrics_daily_date", "date"),
+        UniqueConstraint("workspace_id", "date", name="uq_exec_metrics_daily_workspace_date"),
+        {"schema": "analytics"},
     )
 
     id = Column(Integer, primary_key=True, index=True)
@@ -345,10 +374,12 @@ class UserActivityHourly(Base):
 
     __tablename__ = "user_activity_hourly"
     __table_args__ = (
-        Index('idx_user_activity_hourly_workspace_hour', 'workspace_id', 'hour'),
-        Index('idx_user_activity_hourly_user_hour', 'user_id', 'hour'),
-        UniqueConstraint('workspace_id', 'user_id', 'hour', name='uq_user_activity_hourly_workspace_user_hour'),
-        {'schema': 'analytics'}
+        Index("idx_user_activity_hourly_workspace_hour", "workspace_id", "hour"),
+        Index("idx_user_activity_hourly_user_hour", "user_id", "hour"),
+        UniqueConstraint(
+            "workspace_id", "user_id", "hour", name="uq_user_activity_hourly_workspace_user_hour"
+        ),
+        {"schema": "analytics"},
     )
 
     id = Column(Integer, primary_key=True, index=True)
@@ -378,10 +409,16 @@ class CreditConsumptionHourly(Base):
 
     __tablename__ = "credit_consumption_hourly"
     __table_args__ = (
-        Index('idx_credit_hourly_workspace_hour', 'workspace_id', 'hour'),
-        Index('idx_credit_hourly_user_hour', 'user_id', 'hour'),
-        UniqueConstraint('workspace_id', 'user_id', 'agent_id', 'hour', name='uq_credit_hourly_workspace_user_agent_hour'),
-        {'schema': 'analytics'}
+        Index("idx_credit_hourly_workspace_hour", "workspace_id", "hour"),
+        Index("idx_credit_hourly_user_hour", "user_id", "hour"),
+        UniqueConstraint(
+            "workspace_id",
+            "user_id",
+            "agent_id",
+            "hour",
+            name="uq_credit_hourly_workspace_user_agent_hour",
+        ),
+        {"schema": "analytics"},
     )
 
     id = Column(Integer, primary_key=True, index=True)
