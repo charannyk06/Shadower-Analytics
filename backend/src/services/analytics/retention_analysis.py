@@ -6,6 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, distinct, case
 
 from ...models.database.tables import UserActivity
+from ..cache.decorator import cached
+from ..cache.keys import CacheKeys
 
 
 class RetentionAnalysisService:
@@ -14,13 +16,18 @@ class RetentionAnalysisService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
+    @cached(
+        key_func=lambda self, workspace_id, cohort_date, days=90, **_:
+            CacheKeys.retention_curve(workspace_id, cohort_date.isoformat(), days),
+        ttl=CacheKeys.TTL_LONG  # 30 minutes cache
+    )
     async def calculate_retention_curve(
         self,
         workspace_id: str,
         cohort_date: date,
         days: int = 90
     ) -> List[Dict[str, Any]]:
-        """Calculate retention curve for a cohort."""
+        """Calculate retention curve for a cohort using optimized single query (cached for 30 minutes)."""
 
         # Get users who were active on cohort_date
         cohort_query = select(distinct(UserActivity.user_id)).where(
@@ -37,24 +44,32 @@ class RetentionAnalysisService:
         if cohort_size == 0:
             return []
 
-        retention_curve = []
+        # Calculate end date for the retention period
+        end_date = cohort_date + timedelta(days=days)
 
-        # Calculate retention for each day
+        # Optimized: Get all retention data in a single query using GROUP BY
+        retention_query = select(
+            func.date(UserActivity.created_at).label('activity_date'),
+            func.count(distinct(UserActivity.user_id)).label('active_users')
+        ).where(
+            and_(
+                UserActivity.workspace_id == workspace_id,
+                UserActivity.user_id.in_(cohort_users),
+                func.date(UserActivity.created_at) >= cohort_date,
+                func.date(UserActivity.created_at) <= end_date
+            )
+        ).group_by(
+            func.date(UserActivity.created_at)
+        )
+
+        result = await self.db.execute(retention_query)
+        retention_data = {row.activity_date: row.active_users for row in result.fetchall()}
+
+        # Build retention curve with data from single query
+        retention_curve = []
         for day_offset in range(days + 1):
             check_date = cohort_date + timedelta(days=day_offset)
-
-            # Count how many cohort users were active on this day
-            retention_query = select(func.count(distinct(UserActivity.user_id))).where(
-                and_(
-                    UserActivity.workspace_id == workspace_id,
-                    UserActivity.user_id.in_(cohort_users),
-                    func.date(UserActivity.created_at) == check_date
-                )
-            )
-
-            result = await self.db.execute(retention_query)
-            retained_users = result.scalar() or 0
-
+            retained_users = retention_data.get(check_date, 0)
             retention_rate = (retained_users / cohort_size * 100) if cohort_size > 0 else 0
 
             retention_curve.append({
@@ -65,6 +80,16 @@ class RetentionAnalysisService:
 
         return retention_curve
 
+    @cached(
+        key_func=lambda self, workspace_id, cohort_type="monthly", start_date=None, end_date=None, **_:
+            CacheKeys.cohort_analysis(
+                workspace_id,
+                cohort_type,
+                start_date.isoformat() if start_date else "default",
+                end_date.isoformat() if end_date else "default"
+            ),
+        ttl=CacheKeys.TTL_LONG  # 30 minutes cache
+    )
     async def generate_cohort_analysis(
         self,
         workspace_id: str,
@@ -72,7 +97,7 @@ class RetentionAnalysisService:
         start_date: date = None,
         end_date: date = None
     ) -> List[Dict[str, Any]]:
-        """Generate cohort analysis for user retention."""
+        """Generate cohort analysis for user retention (cached for 30 minutes)."""
 
         if not start_date:
             start_date = date.today() - timedelta(days=180)
@@ -120,7 +145,7 @@ class RetentionAnalysisService:
         cohort_date: date,
         cohort_size: int
     ) -> Dict[str, float]:
-        """Calculate retention for standard periods (day1, day7, etc.)."""
+        """Calculate retention for standard periods (day1, day7, etc.) using optimized query."""
 
         periods = {
             "day1": 1,
@@ -130,8 +155,6 @@ class RetentionAnalysisService:
             "day60": 60,
             "day90": 90
         }
-
-        retention = {}
 
         # Get cohort users
         cohort_query = select(distinct(UserActivity.user_id)).where(
@@ -144,33 +167,56 @@ class RetentionAnalysisService:
         cohort_result = await self.db.execute(cohort_query)
         cohort_users = [row[0] for row in cohort_result.fetchall()]
 
+        if not cohort_users:
+            return {period_name: 0.0 for period_name in periods.keys()}
+
+        # Calculate the max period to query
+        max_days = max(periods.values())
+        end_date = cohort_date + timedelta(days=max_days)
+
+        # Optimized: Get all retention data in a single query
+        retention_query = select(
+            func.date(UserActivity.created_at).label('activity_date'),
+            func.count(distinct(UserActivity.user_id)).label('active_users')
+        ).where(
+            and_(
+                UserActivity.workspace_id == workspace_id,
+                UserActivity.user_id.in_(cohort_users),
+                func.date(UserActivity.created_at) >= cohort_date,
+                func.date(UserActivity.created_at) <= end_date
+            )
+        ).group_by(
+            func.date(UserActivity.created_at)
+        )
+
+        result = await self.db.execute(retention_query)
+        retention_data = {row.activity_date: row.active_users for row in result.fetchall()}
+
+        # Build retention metrics from single query result
+        retention = {}
         for period_name, days_offset in periods.items():
             check_date = cohort_date + timedelta(days=days_offset)
-
-            # Count retained users
-            retention_query = select(func.count(distinct(UserActivity.user_id))).where(
-                and_(
-                    UserActivity.workspace_id == workspace_id,
-                    UserActivity.user_id.in_(cohort_users),
-                    func.date(UserActivity.created_at) == check_date
-                )
-            )
-
-            result = await self.db.execute(retention_query)
-            retained_users = result.scalar() or 0
-
+            retained_users = retention_data.get(check_date, 0)
             retention_rate = (retained_users / cohort_size * 100) if cohort_size > 0 else 0
             retention[period_name] = round(retention_rate, 2)
 
         return retention
 
+    @cached(
+        key_func=lambda self, workspace_id, start_date, end_date, **_:
+            CacheKeys.churn_analysis(
+                workspace_id,
+                f"{start_date.date().isoformat()}_{end_date.date().isoformat()}"
+            ),
+        ttl=CacheKeys.TTL_LONG  # 30 minutes cache
+    )
     async def analyze_churn(
         self,
         workspace_id: str,
         start_date: datetime,
         end_date: datetime
     ) -> Dict[str, Any]:
-        """Analyze user churn patterns."""
+        """Analyze user churn patterns (cached for 30 minutes)."""
 
         # Get total users at start of period
         start_users_query = select(func.count(distinct(UserActivity.user_id))).where(
