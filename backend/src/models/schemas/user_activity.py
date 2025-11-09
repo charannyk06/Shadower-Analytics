@@ -1,6 +1,6 @@
 """User activity tracking schemas."""
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 from typing import List, Dict, Any, Optional, Literal
 from datetime import datetime
 
@@ -254,3 +254,57 @@ class UserActivityData(BaseModel):
     user_journey: UserJourney
     retention: Retention
     segments: List[UserSegmentData]
+
+
+class TrackActivityRequest(BaseModel):
+    """Request schema for tracking user activity events."""
+
+    user_id: str = Field(..., min_length=1, max_length=255, description="User ID")
+    session_id: Optional[str] = Field(None, max_length=255, description="Session ID")
+    event_type: str = Field(..., min_length=1, max_length=50, description="Event type (e.g., page_view, feature_use, custom)")
+    event_name: Optional[str] = Field(None, max_length=100, description="Event name")
+    page_path: Optional[str] = Field(None, max_length=255, description="Page path")
+
+    # Context fields
+    ip_address: Optional[str] = Field(None, description="IP address (will be anonymized)")
+    user_agent: Optional[str] = Field(None, max_length=500, description="User agent string")
+    referrer: Optional[str] = Field(None, max_length=500, description="Referrer URL")
+    device_type: Optional[str] = Field(None, max_length=20, description="Device type (desktop, mobile, tablet)")
+    browser: Optional[str] = Field(None, max_length=50, description="Browser name")
+    os: Optional[str] = Field(None, max_length=50, description="Operating system")
+    country_code: Optional[str] = Field(None, max_length=2, description="ISO country code")
+
+    # Additional event data
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Additional event metadata")
+
+    @validator('event_type')
+    def validate_event_type(cls, v):
+        """Validate event type."""
+        allowed_types = ['page_view', 'feature_use', 'custom', 'click', 'form_submit', 'error', 'session_start', 'session_end']
+        if v not in allowed_types:
+            raise ValueError(f"event_type must be one of: {', '.join(allowed_types)}")
+        return v
+
+    @validator('country_code')
+    def validate_country_code(cls, v):
+        """Validate country code format."""
+        if v is not None and len(v) != 2:
+            raise ValueError("country_code must be a 2-letter ISO code")
+        return v.upper() if v else None
+
+    @validator('metadata')
+    def validate_metadata(cls, v):
+        """Validate metadata size to prevent abuse."""
+        if v is not None:
+            import json
+            # Limit metadata to 10KB
+            if len(json.dumps(v)) > 10240:
+                raise ValueError("metadata too large (max 10KB)")
+        return v
+
+
+class TrackActivityResponse(BaseModel):
+    """Response schema for track activity endpoint."""
+
+    success: bool
+    activity_id: str

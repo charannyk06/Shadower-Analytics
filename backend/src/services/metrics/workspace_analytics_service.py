@@ -21,6 +21,7 @@ from .constants import (
 logger = logging.getLogger(__name__)
 
 
+<<<<<<< HEAD
 class WorkspaceAnalyticsConstants:
     """Constants for workspace analytics calculations."""
 
