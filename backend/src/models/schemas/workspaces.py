@@ -1,7 +1,7 @@
-"""Workspace schemas."""
+"""Workspace schemas with comprehensive analytics types."""
 
-from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any, Literal
+from pydantic import BaseModel, Field, ConfigDict
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 
 
@@ -31,318 +31,198 @@ class WorkspaceStats(BaseModel):
     total_credits_used: int
 
 
-# =====================================================================
 # Workspace Analytics Schemas
-# =====================================================================
+
+class HealthScoreComponents(BaseModel):
+    """Health score component breakdown."""
+
+    success_rate: float = Field(..., ge=0, le=100, description="Success rate component (0-100)")
+    activity: float = Field(..., ge=0, le=100, description="Activity component (0-100)")
+    engagement: float = Field(..., ge=0, le=100, description="Engagement component (0-100)")
+    efficiency: float = Field(..., ge=0, le=100, description="Efficiency component (0-100)")
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "success_rate": 85.5,
+                "activity": 75.0,
+                "engagement": 65.2,
+                "efficiency": 90.0
+            }
+        }
+    )
 
 
-class HealthFactors(BaseModel):
-    """Health score breakdown by factor."""
+class HealthScore(BaseModel):
+    """Workspace health score."""
 
-    activity: int = Field(..., ge=0, le=100, description="Activity score (0-100)")
-    engagement: int = Field(..., ge=0, le=100, description="Engagement score (0-100)")
-    efficiency: int = Field(..., ge=0, le=100, description="Efficiency score (0-100)")
-    reliability: int = Field(..., ge=0, le=100, description="Reliability score (0-100)")
+    overall: float = Field(..., ge=0, le=100, description="Overall health score (0-100)")
+    components: HealthScoreComponents
 
-    # Aliases for camelCase compatibility
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "overall": 78.9,
+                "components": {
+                    "success_rate": 85.5,
+                    "activity": 75.0,
+                    "engagement": 65.2,
+                    "efficiency": 90.0
+                }
+            }
+        }
+    )
 
 
 class WorkspaceOverview(BaseModel):
     """Workspace overview metrics."""
 
-    # Members
-    total_members: int = Field(0, alias="totalMembers")
-    active_members: int = Field(0, alias="activeMembers")
-    pending_invites: int = Field(0, alias="pendingInvites")
-    member_growth: float = Field(0.0, alias="memberGrowth", description="Member growth percentage")
+<<<<<<< HEAD
+    workspace_name: str = Field(..., description="Name of the workspace")
+    created_at: Optional[str] = Field(None, description="Workspace creation timestamp")
+    total_members: int = Field(..., ge=0, description="Total number of members")
+    active_members: int = Field(..., ge=0, description="Number of active members")
+    member_activity_rate: float = Field(..., ge=0, le=100, alias="memberActivityRate", description="Percentage of active members")
+    total_activity: int = Field(..., ge=0, alias="totalActivity", description="Total activity count")
+    total_runs: int = Field(..., ge=0, alias="totalRuns", description="Total agent runs")
+    successful_runs: int = Field(..., ge=0, alias="successfulRuns", description="Number of successful runs")
+    failed_runs: int = Field(..., ge=0, alias="failedRuns", description="Number of failed runs")
+    success_rate: float = Field(..., ge=0, le=100, alias="successRate", description="Success rate percentage")
+    avg_runtime: float = Field(..., ge=0, alias="avgRuntime", description="Average runtime in seconds")
 
-    # Activity
-    total_activity: int = Field(0, alias="totalActivity")
-    avg_activity_per_member: float = Field(0.0, alias="avgActivityPerMember")
-    last_activity_at: Optional[str] = Field(None, alias="lastActivityAt")
-    activity_trend: Literal["increasing", "stable", "decreasing"] = Field("stable", alias="activityTrend")
-
-    # Health Score
-    health_score: int = Field(0, ge=0, le=100, alias="healthScore")
-    health_factors: HealthFactors = Field(..., alias="healthFactors")
-
-    # Status
-    status: Literal["active", "idle", "at_risk", "churned"] = "active"
-    days_active: int = Field(0, alias="daysActive")
-    created_at: str = Field(..., alias="createdAt")
-
-    class Config:
-        populate_by_name = True
-
-
-class MembersByRole(BaseModel):
-    """Member count breakdown by role."""
-
-    owner: int = 0
-    admin: int = 0
-    member: int = 0
-    viewer: int = 0
-
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(
+        populate_by_name=True,
+        json_schema_extra={
+            "example": {
+                "workspace_name": "Engineering Team",
+                "created_at": "2024-01-15T10:30:00Z",
+                "total_members": 25,
+                "active_members": 18,
+                "memberActivityRate": 72.0,
+                "totalActivity": 1250,
+                "totalRuns": 450,
+                "successfulRuns": 380,
+                "failedRuns": 70,
+                "successRate": 84.4,
+                "avgRuntime": 12.5
+            }
+        }
+    )
 
 
-class MemberActivityItem(BaseModel):
-    """Individual member activity metrics."""
+class MemberEngagementLevels(BaseModel):
+    """Member engagement level distribution."""
 
-    user_id: str = Field(..., alias="userId")
-    user_name: str = Field(..., alias="userName")
-    role: str
-    activity_count: int = Field(0, alias="activityCount")
-    last_active_at: Optional[str] = Field(None, alias="lastActiveAt")
-    engagement_level: Literal["high", "medium", "low", "inactive"] = Field("low", alias="engagementLevel")
-
-    class Config:
-        populate_by_name = True
+    high: int = Field(..., ge=0, description="Number of highly engaged members")
+    medium: int = Field(..., ge=0, description="Number of moderately engaged members")
+    low: int = Field(..., ge=0, description="Number of low engaged members")
 
 
-class TopContributor(BaseModel):
-    """Top contributor metrics."""
+class TopMember(BaseModel):
+    """Top member activity data."""
 
-    user_id: str = Field(..., alias="userId")
-    user_name: str = Field(..., alias="userName")
-    contribution: Dict[str, Any]  # agentRuns, successRate, creditsUsed
+    user_id: str = Field(..., alias="userId", description="User identifier")
+    activity_count: int = Field(..., ge=0, alias="activityCount", description="Total activity count")
+    active_days: int = Field(..., ge=0, alias="activeDays", description="Number of active days")
+    last_activity: Optional[str] = Field(None, alias="lastActivity", description="Last activity timestamp")
+    engagement: str = Field(..., description="Engagement level (high, medium, low)")
 
-    class Config:
-        populate_by_name = True
-
-
-class InactiveMember(BaseModel):
-    """Inactive member details."""
-
-    user_id: str = Field(..., alias="userId")
-    user_name: str = Field(..., alias="userName")
-    last_active_at: str = Field(..., alias="lastActiveAt")
-    days_since_active: int = Field(..., alias="daysSinceActive")
-
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class MemberAnalytics(BaseModel):
-    """Member analytics data."""
+    """Member activity analytics."""
 
-    members_by_role: MembersByRole = Field(..., alias="membersByRole")
-    activity_distribution: List[MemberActivityItem] = Field(default_factory=list, alias="activityDistribution")
-    top_contributors: List[TopContributor] = Field(default_factory=list, alias="topContributors")
-    inactive_members: List[InactiveMember] = Field(default_factory=list, alias="inactiveMembers")
+    top_members: List[TopMember] = Field(..., alias="topMembers", description="Top active members")
+    engagement_levels: MemberEngagementLevels = Field(..., alias="engagementLevels", description="Engagement distribution")
+    total_analyzed: int = Field(..., ge=0, alias="totalAnalyzed", description="Total members analyzed")
 
-    class Config:
-        populate_by_name = True
-
-
-class AgentPerformance(BaseModel):
-    """Individual agent performance metrics."""
-
-    agent_id: str = Field(..., alias="agentId")
-    agent_name: str = Field(..., alias="agentName")
-    runs: int = 0
-    success_rate: float = Field(0.0, alias="successRate")
-    avg_runtime: float = Field(0.0, alias="avgRuntime", description="Average runtime in seconds")
-    credits_consumed: float = Field(0.0, alias="creditsConsumed")
-    last_run_at: Optional[str] = Field(None, alias="lastRunAt")
-
-    class Config:
-        populate_by_name = True
-
-
-class AgentEfficiency(BaseModel):
-    """Agent efficiency metrics."""
-
-    most_efficient: Optional[str] = Field(None, alias="mostEfficient")
-    least_efficient: Optional[str] = Field(None, alias="leastEfficient")
-    avg_success_rate: float = Field(0.0, alias="avgSuccessRate")
-    avg_runtime: float = Field(0.0, alias="avgRuntime")
-
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class AgentUsage(BaseModel):
-    """Agent usage analytics."""
+    """Agent usage statistics."""
 
-    total_agents: int = Field(0, alias="totalAgents")
-    active_agents: int = Field(0, alias="activeAgents")
-    agents: List[AgentPerformance] = Field(default_factory=list)
-    usage_by_agent: Dict[str, Any] = Field(default_factory=dict, alias="usageByAgent")
-    agent_efficiency: AgentEfficiency = Field(..., alias="agentEfficiency")
+    total_agents: int = Field(..., ge=0, alias="totalAgents", description="Total number of agents")
+    total_runs: int = Field(..., ge=0, alias="totalRuns", description="Total agent runs")
+    successful_runs: int = Field(..., ge=0, alias="successfulRuns", description="Successful runs count")
+    success_rate: float = Field(..., ge=0, le=100, alias="successRate", description="Success rate percentage")
+    avg_runtime: float = Field(..., ge=0, alias="avgRuntime", description="Average runtime in seconds")
+    total_credits: float = Field(..., ge=0, alias="totalCredits", description="Total credits consumed")
+    efficiency_score: int = Field(..., ge=0, le=100, alias="efficiencyScore", description="Efficiency score (0-100)")
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class DailyConsumption(BaseModel):
-    """Daily credit consumption."""
+    """Daily resource consumption data."""
 
-    date: str
-    credits: float
-
-    class Config:
-        populate_by_name = True
+    date: str = Field(..., description="Date in ISO format")
+    credits: float = Field(..., ge=0, description="Credits consumed on this day")
+    runs: int = Field(..., ge=0, description="Number of runs on this day")
 
 
-class Credits(BaseModel):
-    """Credit utilization metrics."""
+class ResourceConsumption(BaseModel):
+    """Resource consumption metrics."""
 
-    allocated: float = 0.0
-    consumed: float = 0.0
-    remaining: float = 0.0
-    utilization_rate: float = Field(0.0, alias="utilizationRate")
-    projected_exhaustion: Optional[str] = Field(None, alias="projectedExhaustion")
-    consumption_by_model: Dict[str, Dict[str, float]] = Field(default_factory=dict, alias="consumptionByModel")
-    daily_consumption: List[DailyConsumption] = Field(default_factory=list, alias="dailyConsumption")
+    daily_consumption: List[DailyConsumption] = Field(..., alias="dailyConsumption", description="Daily consumption data")
+    total_credits: float = Field(..., ge=0, alias="totalCredits", description="Total credits consumed")
+    avg_daily_credits: float = Field(..., ge=0, alias="avgDailyCredits", description="Average daily credit consumption")
+    days_analyzed: int = Field(..., ge=0, alias="daysAnalyzed", description="Number of days analyzed")
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
-class Storage(BaseModel):
-    """Storage utilization metrics."""
+class ActivityTrend(BaseModel):
+    """Activity trend data point."""
 
-    used: int = Field(0, description="Bytes used")
-    limit: int = Field(10737418240, description="Storage limit in bytes (default 10GB)")
-    utilization_rate: float = Field(0.0, alias="utilizationRate")
-    breakdown: Dict[str, int] = Field(default_factory=dict)
+    date: str = Field(..., description="Date in ISO format")
+    activities: int = Field(..., ge=0, description="Total activities on this day")
+    active_users: int = Field(..., ge=0, alias="activeUsers", description="Active users on this day")
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
-class APIUsage(BaseModel):
-    """API usage metrics."""
+class ActivityTrends(BaseModel):
+    """Activity trends over time."""
 
-    total_calls: int = Field(0, alias="totalCalls")
-    rate_limit: int = Field(0, alias="rateLimit")
-    utilization_rate: float = Field(0.0, alias="utilizationRate")
-    by_endpoint: Dict[str, Dict[str, Any]] = Field(default_factory=dict, alias="byEndpoint")
-
-    class Config:
-        populate_by_name = True
-
-
-class ResourceUtilization(BaseModel):
-    """Resource utilization metrics."""
-
-    credits: Credits
-    storage: Storage
-    api_usage: APIUsage = Field(..., alias="apiUsage")
-
-    class Config:
-        populate_by_name = True
-
-
-class UsageLimit(BaseModel):
-    """Usage vs limit tracking."""
-
-    used: int
-    limit: int
-
-    class Config:
-        populate_by_name = True
-
-
-class BillingHistory(BaseModel):
-    """Billing history item."""
-
-    date: str
-    amount: float
-    status: Literal["paid", "pending", "failed"]
-
-    class Config:
-        populate_by_name = True
-
-
-class BillingRecommendation(BaseModel):
-    """Billing optimization recommendation."""
-
-    type: Literal["upgrade", "downgrade", "add_on"]
-    reason: str
-    estimated_savings: float = Field(..., alias="estimatedSavings")
-
-    class Config:
-        populate_by_name = True
-
-
-class Billing(BaseModel):
-    """Billing and subscription information."""
-
-    plan: str
-    status: Literal["active", "trial", "past_due", "cancelled"]
-    current_month_cost: float = Field(0.0, alias="currentMonthCost")
-    projected_month_cost: float = Field(0.0, alias="projectedMonthCost")
-    last_month_cost: float = Field(0.0, alias="lastMonthCost")
-    limits: Dict[str, UsageLimit]
-    history: List[BillingHistory] = Field(default_factory=list)
-    recommendations: List[BillingRecommendation] = Field(default_factory=list)
-
-    class Config:
-        populate_by_name = True
-
-
-class WorkspaceRanking(BaseModel):
-    """Workspace ranking information."""
-
-    overall: int
-    total_workspaces: int = Field(..., alias="totalWorkspaces")
-    percentile: float
-
-    class Config:
-        populate_by_name = True
-
-
-class Benchmarks(BaseModel):
-    """Benchmark comparisons vs average."""
-
-    activity_vs_avg: float = Field(..., alias="activityVsAvg", description="Percentage difference from average")
-    efficiency_vs_avg: float = Field(..., alias="efficiencyVsAvg", description="Percentage difference from average")
-    cost_vs_avg: float = Field(..., alias="costVsAvg", description="Percentage difference from average")
-
-    class Config:
-        populate_by_name = True
-
-
-class SimilarWorkspace(BaseModel):
-    """Similar workspace comparison."""
-
-    workspace_id: str = Field(..., alias="workspaceId")
-    similarity: float = Field(..., ge=0, le=100, description="Similarity score 0-100")
-    metrics: Dict[str, Any]
-
-    class Config:
-        populate_by_name = True
-
-
-class WorkspaceComparison(BaseModel):
-    """Workspace comparison data (admin only)."""
-
-    ranking: WorkspaceRanking
-    benchmarks: Benchmarks
-    similar_workspaces: List[SimilarWorkspace] = Field(default_factory=list, alias="similarWorkspaces")
-
-    class Config:
-        populate_by_name = True
+    trends: List[ActivityTrend] = Field(..., description="List of activity trend data points")
 
 
 class WorkspaceAnalytics(BaseModel):
-    """Complete workspace analytics response."""
+    """Comprehensive workspace analytics response."""
 
-    workspace_id: str = Field(..., alias="workspaceId")
-    workspace_name: str = Field(..., alias="workspaceName")
-    plan: Literal["free", "starter", "pro", "enterprise"]
-    timeframe: str
-    overview: WorkspaceOverview
-    member_analytics: MemberAnalytics = Field(..., alias="memberAnalytics")
-    agent_usage: AgentUsage = Field(..., alias="agentUsage")
-    resource_utilization: ResourceUtilization = Field(..., alias="resourceUtilization")
-    billing: Billing
-    comparison: Optional[WorkspaceComparison] = None
+    workspace_id: str = Field(..., alias="workspaceId", description="Workspace identifier")
+    timeframe: str = Field(..., description="Timeframe for analytics (24h, 7d, 30d, 90d, all)")
+    generated_at: str = Field(..., alias="generatedAt", description="Timestamp when analytics were generated")
+    health_score: HealthScore = Field(..., alias="healthScore", description="Workspace health score")
+    overview: WorkspaceOverview = Field(..., description="Workspace overview metrics")
+    member_analytics: MemberAnalytics = Field(..., alias="memberAnalytics", description="Member activity analytics")
+    agent_usage: AgentUsage = Field(..., alias="agentUsage", description="Agent usage statistics")
+    resource_consumption: ResourceConsumption = Field(..., alias="resourceConsumption", description="Resource consumption data")
+    activity_trends: ActivityTrends = Field(..., alias="activityTrends", description="Activity trends over time")
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(
+        populate_by_name=True,
+        json_schema_extra={
+            "example": {
+                "workspaceId": "ws_123abc",
+                "timeframe": "30d",
+                "generatedAt": "2024-11-09T10:30:00Z",
+                "healthScore": {
+                    "overall": 78.9,
+                    "components": {
+                        "success_rate": 85.5,
+                        "activity": 75.0,
+                        "engagement": 65.2,
+                        "efficiency": 90.0
+                    }
+                },
+                "overview": {
+                    "workspace_name": "Engineering Team",
+                    "total_members": 25,
+                    "active_members": 18
+                }
+            }
+        }
+    )

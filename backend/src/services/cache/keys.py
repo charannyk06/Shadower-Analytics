@@ -193,6 +193,20 @@ class CacheKeys:
         return f"{CacheKeys.WORKSPACE_PREFIX}:overview:{workspace_id}"
 
     @staticmethod
+    def workspace_analytics(workspace_id: str, timeframe: str) -> str:
+        """
+        Key for workspace analytics data.
+
+        Args:
+            workspace_id: Workspace identifier
+            timeframe: Time period (e.g., '24h', '7d', '30d')
+
+        Returns:
+            Cache key string
+        """
+        return f"{CacheKeys.WORKSPACE_PREFIX}:analytics:{workspace_id}:{timeframe}"
+
+    @staticmethod
     def query_result(query_hash: str) -> str:
         """
         Key for cached query results.
