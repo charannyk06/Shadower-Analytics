@@ -383,6 +383,10 @@ async def list_available_views(
     List all available materialized views managed by this service.
 
     **Authentication**: Required
+    
+    Note: While this endpoint only returns public metadata (view names),
+    authentication is required for consistency with other endpoints and
+    to prevent unnecessary API discovery by unauthenticated clients.
 
     Returns:
     - List of view names

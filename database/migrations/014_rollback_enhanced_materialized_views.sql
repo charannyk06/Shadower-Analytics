@@ -18,22 +18,12 @@ REVOKE SELECT ON analytics.v_materialized_view_status FROM authenticated;
 REVOKE EXECUTE ON FUNCTION analytics.refresh_all_materialized_views FROM service_role, postgres;
 
 -- =====================================================================
--- Drop RLS Policies
+-- Note: RLS Policies and RLS on Materialized Views
 -- =====================================================================
-
-DROP POLICY IF EXISTS mv_agent_performance_select_policy ON analytics.mv_agent_performance;
-DROP POLICY IF EXISTS mv_workspace_metrics_select_policy ON analytics.mv_workspace_metrics;
-DROP POLICY IF EXISTS mv_top_agents_enhanced_select_policy ON analytics.mv_top_agents_enhanced;
-DROP POLICY IF EXISTS mv_error_summary_select_policy ON analytics.mv_error_summary;
-
--- =====================================================================
--- Disable RLS on Materialized Views
--- =====================================================================
-
-ALTER MATERIALIZED VIEW analytics.mv_agent_performance DISABLE ROW LEVEL SECURITY;
-ALTER MATERIALIZED VIEW analytics.mv_workspace_metrics DISABLE ROW LEVEL SECURITY;
-ALTER MATERIALIZED VIEW analytics.mv_top_agents_enhanced DISABLE ROW LEVEL SECURITY;
-ALTER MATERIALIZED VIEW analytics.mv_error_summary DISABLE ROW LEVEL SECURITY;
+-- PostgreSQL does not support Row-Level Security (RLS) on materialized views.
+-- The secure views (v_*_secure) created in migration 015 are regular views
+-- that filter by workspace_id. These will be dropped in migration 015 rollback.
+-- No RLS policies exist on materialized views themselves.
 
 -- =====================================================================
 -- Drop Utility Function

@@ -27,16 +27,14 @@ class MaterializedViewRefreshService:
     """
 
     # Materialized views managed by this service
+    # These views are created in migration 014_create_enhanced_materialized_views.sql
+    # Other views (mv_active_users, mv_top_agents, mv_workspace_summary, etc.)
+    # may exist from migration 004 but are not managed by this service
     VIEWS = [
-        'mv_active_users',
         'mv_agent_performance',
         'mv_workspace_metrics',
-        'mv_top_agents',
         'mv_top_agents_enhanced',
         'mv_error_summary',
-        'mv_workspace_summary',
-        'mv_error_trends',
-        'mv_agent_usage_trends',
     ]
 
     # Refresh timeout in seconds
@@ -194,12 +192,14 @@ class MaterializedViewRefreshService:
         Get refresh status for all materialized views.
 
         Returns view metadata (size, population status) for all managed views.
-        This returns metadata about the views themselves, not the data inside them.
+        This endpoint returns administrative metadata only and is restricted to
+        admin users to prevent information leakage.
 
-        Note: Row-Level Security (RLS) policies on the materialized views ensure
-        that when users query the actual view data, they only see rows from their
-        own workspaces. This metadata endpoint shows information about the views
-        themselves (size, indexes, etc.) which is not workspace-specific.
+        Note: Materialized views do not support RLS directly. Applications should
+        use the secure views (v_*_secure) created in migration 015 to access
+        workspace-filtered data. This endpoint returns metadata about the 
+        materialized views themselves (storage size, indexes, etc.), not the
+        aggregated data they contain.
 
         Returns:
             List of view status information including size and population status
@@ -319,17 +319,24 @@ class MaterializedViewRefreshService:
         # Additional SQL identifier validation
         self._validate_sql_identifier(view_name)
 
-        # Use parameterized query with identifier quoting for defense-in-depth
-        # Even though view_name is whitelisted, this adds an extra layer of safety
-        from sqlalchemy import sql
-        schema = sql.quoted_name('analytics', quote=False)
-        view = sql.quoted_name(view_name, quote=False)
-        query = text(f"SELECT COUNT(*) as count FROM {schema}.{view}")
+        # Use SQLAlchemy's table() constructor for safe identifier handling
+        # This ensures proper quoting and prevents SQL injection
+        from sqlalchemy import select, func, table
+        
+        # Build table reference safely using SQLAlchemy's table constructor
+        # The table() function properly quotes identifiers
+        view_table = table(
+            view_name,
+            schema='analytics'
+        )
+        
+        # Use SQLAlchemy's select with func.count() for safe query construction
+        query = select(func.count()).select_from(view_table)
         
         result = await self.db.execute(query)
         row = result.fetchone()
 
-        return row.count if row else 0
+        return row[0] if row else 0
 
     async def check_view_health(self) -> List[Dict[str, Any]]:
         """

@@ -274,11 +274,20 @@ BEGIN
         BEGIN
             -- Build refresh command using format() with %I for identifier escaping
             -- This prevents SQL injection if pg_matviews metadata is compromised
-            v_refresh_command := format(
-                'REFRESH MATERIALIZED VIEW %s analytics.%I',
-                CASE WHEN concurrent_mode THEN 'CONCURRENTLY' ELSE '' END,
-                v_view.matviewname
-            );
+            -- Use separate format() calls to ensure both schema and view name are escaped
+            IF concurrent_mode THEN
+                v_refresh_command := format(
+                    'REFRESH MATERIALIZED VIEW CONCURRENTLY %I.%I',
+                    'analytics',
+                    v_view.matviewname
+                );
+            ELSE
+                v_refresh_command := format(
+                    'REFRESH MATERIALIZED VIEW %I.%I',
+                    'analytics',
+                    v_view.matviewname
+                );
+            END IF;
 
             -- Execute refresh
             EXECUTE v_refresh_command;
