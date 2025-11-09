@@ -17,7 +17,7 @@ SET search_path TO analytics, public;
 
 -- Revoke SELECT access from authenticated role on materialized views
 -- These views contain aggregated data across ALL workspaces
--- Defense in depth: Even if migration 014 grants were missed, this ensures security
+-- Note: Migration 014 already revokes PUBLIC grants; this revokes authenticated role access
 REVOKE SELECT ON analytics.mv_agent_performance FROM authenticated;
 REVOKE SELECT ON analytics.mv_workspace_metrics FROM authenticated;
 REVOKE SELECT ON analytics.mv_top_agents_enhanced FROM authenticated;

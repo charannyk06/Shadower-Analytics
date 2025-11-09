@@ -183,7 +183,7 @@ class TestRLSEnforcement:
                 """)
             )
             rows = result.fetchall()
-            workspace_ids = [row.workspace_id for row in rows]
+            workspace_ids = [str(row.workspace_id) for row in rows]
             
             # CRITICAL ASSERTION: User1 should ONLY see workspace1 data
             assert workspace1_id in workspace_ids, \
@@ -245,7 +245,7 @@ class TestRLSEnforcement:
                 """)
             )
             rows = result.fetchall()
-            workspace_ids = [row.workspace_id for row in rows]
+            workspace_ids = [str(row.workspace_id) for row in rows]
             
             # CRITICAL ASSERTION: User1 should ONLY see workspace1 data
             assert workspace1_id in workspace_ids, \
