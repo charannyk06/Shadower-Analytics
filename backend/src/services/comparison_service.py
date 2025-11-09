@@ -13,11 +13,7 @@ from sqlalchemy import select, func, and_, or_, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.utils.datetime import utc_now
-from src.models.database.tables import (
-    ExecutionLog,
-    AgentMetric as AgentMetricDB,
-    WorkspaceMetric as WorkspaceMetricDB,
-)
+from src.models.database.tables import ExecutionLog
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -114,6 +110,13 @@ SPARKLINE_DATA_POINTS = 7
 
 # Default period for throughput calculation (days)
 DEFAULT_THROUGHPUT_PERIOD_DAYS = 30
+
+# Metric comparison defaults
+MAX_DEFAULT_ENTITIES = 50  # Maximum entities to fetch when no IDs specified
+
+# Trend detection thresholds
+TREND_INCREASE_THRESHOLD = 1.1  # 10% increase
+TREND_DECREASE_THRESHOLD = 0.9  # 10% decrease
 
 
 class ComparisonService:
@@ -236,7 +239,7 @@ class ComparisonService:
     async def _fetch_agent_metrics(
         self, filters: ComparisonFilters
     ) -> List[AgentComparisonItem]:
-        """Fetch metrics for agents from database
+        """Fetch metrics for agents from database using SQL aggregations
 
         Args:
             filters: Comparison filters with agent IDs and date range
@@ -257,60 +260,86 @@ class ComparisonService:
 
             logger.info(f"Fetching metrics for {len(agent_ids)} agents")
 
-            # Build batch query for all agents to avoid N+1 pattern
-            query = select(ExecutionLog).where(ExecutionLog.agent_id.in_(agent_ids))
-
-            # Apply date filters
+            # Build base filter conditions
+            conditions = [ExecutionLog.agent_id.in_(agent_ids)]
             if filters.start_date:
-                query = query.where(ExecutionLog.started_at >= filters.start_date)
+                conditions.append(ExecutionLog.started_at >= filters.start_date)
             if filters.end_date:
-                query = query.where(ExecutionLog.started_at <= filters.end_date)
-
-            # Apply workspace filter if provided
+                conditions.append(ExecutionLog.started_at <= filters.end_date)
             if filters.workspace_ids:
-                query = query.where(ExecutionLog.workspace_id.in_(filters.workspace_ids))
+                conditions.append(ExecutionLog.workspace_id.in_(filters.workspace_ids))
 
-            # Fetch all executions in one query
-            result = await self.db.execute(query)
-            all_executions = result.scalars().all()
+            # Use SQL aggregations to reduce memory usage
+            # Query 1: Get aggregated metrics per agent
+            agg_query = select(
+                ExecutionLog.agent_id,
+                func.count(ExecutionLog.id).label('total_runs'),
+                func.sum(case((ExecutionLog.status == 'success', 1), else_=0)).label('successful_runs'),
+                func.sum(case((ExecutionLog.status.in_(['failed', 'error']), 1), else_=0)).label('failed_runs'),
+                func.avg(ExecutionLog.duration).label('avg_duration'),
+                func.sum(ExecutionLog.credits_used).label('total_credits'),
+                func.max(func.coalesce(ExecutionLog.completed_at, ExecutionLog.started_at)).label('last_run_at'),
+            ).where(and_(*conditions)).group_by(ExecutionLog.agent_id)
 
-            # Group executions by agent_id
-            executions_by_agent = {}
-            for execution in all_executions:
-                if execution.agent_id not in executions_by_agent:
-                    executions_by_agent[execution.agent_id] = []
-                executions_by_agent[execution.agent_id].append(execution)
+            result = await self.db.execute(agg_query)
+            agg_data = {row.agent_id: row for row in result.all()}
+
+            # Query 2: Fetch duration values for percentile calculations (memory-optimized)
+            # Only select agent_id and duration columns
+            duration_query = select(
+                ExecutionLog.agent_id,
+                ExecutionLog.duration
+            ).where(
+                and_(*conditions, ExecutionLog.duration.isnot(None))
+            ).order_by(ExecutionLog.agent_id)
+
+            duration_result = await self.db.execute(duration_query)
+            durations_by_agent: Dict[str, List[float]] = {}
+            for row in duration_result.all():
+                if row.agent_id not in durations_by_agent:
+                    durations_by_agent[row.agent_id] = []
+                durations_by_agent[row.agent_id].append(row.duration)
+
+            # Query 3: Fetch one execution per agent for metadata (agent name)
+            # Use DISTINCT ON or similar approach
+            metadata_query = select(
+                ExecutionLog.agent_id,
+                ExecutionLog.metadata
+            ).where(and_(*conditions)).distinct(ExecutionLog.agent_id)
+
+            metadata_result = await self.db.execute(metadata_query)
+            metadata_by_agent = {row.agent_id: row.metadata for row in metadata_result.all()}
 
             agents = []
 
             for agent_id in agent_ids:
-                executions = executions_by_agent.get(agent_id, [])
-
-                if not executions:
+                if agent_id not in agg_data:
                     logger.warning(f"No execution data found for agent {agent_id}")
                     continue
 
-                # Calculate metrics from execution data
-                total_runs = len(executions)
-                successful_runs = len([e for e in executions if e.status == "success"])
-                failed_runs = len([e for e in executions if e.status in ["failed", "error"]])
+                agg = agg_data[agent_id]
+
+                # Calculate rates
+                total_runs = agg.total_runs
+                successful_runs = agg.successful_runs
+                failed_runs = agg.failed_runs
 
                 success_rate = (successful_runs / total_runs * 100) if total_runs > 0 else 0
                 error_rate = (failed_runs / total_runs * 100) if total_runs > 0 else 0
 
-                # Calculate runtime metrics (in milliseconds)
-                durations = [e.duration for e in executions if e.duration is not None]
-                avg_runtime = np.mean(durations) if durations else 0
-                p50_runtime = np.percentile(durations, 50) if durations else 0
-                p95_runtime = np.percentile(durations, 95) if durations else 0
-                p99_runtime = np.percentile(durations, 99) if durations else 0
+                # Get average runtime from aggregation
+                avg_runtime = float(agg.avg_duration) if agg.avg_duration else 0.0
+
+                # Calculate percentiles from duration data
+                durations = durations_by_agent.get(agent_id, [])
+                p50_runtime = float(np.percentile(durations, 50)) if durations else 0.0
+                p95_runtime = float(np.percentile(durations, 95)) if durations else 0.0
+                p99_runtime = float(np.percentile(durations, 99)) if durations else 0.0
 
                 # Calculate cost metrics
-                credits_used = [e.credits_used for e in executions if e.credits_used is not None]
-                total_credits = sum(credits_used) if credits_used else 0
+                total_credits = agg.total_credits or 0
                 credits_per_run = total_credits / total_runs if total_runs > 0 else 0
 
-                # Calculate cost using configured rate
                 cost_per_run = credits_per_run * CREDIT_COST_USD
                 total_cost = total_credits * CREDIT_COST_USD
 
@@ -319,16 +348,16 @@ class ComparisonService:
                     days = (filters.end_date - filters.start_date).days or 1
                     throughput = total_runs / days
                 else:
-                    # Default to configured period
                     throughput = total_runs / DEFAULT_THROUGHPUT_PERIOD_DAYS
 
-                # Get agent name from first execution metadata or use ID
+                # Get agent name from metadata
                 agent_name = f"Agent {agent_id}"
-                if executions and executions[0].metadata:
-                    agent_name = executions[0].metadata.get("agent_name", agent_name)
+                agent_metadata = metadata_by_agent.get(agent_id)
+                if agent_metadata:
+                    agent_name = agent_metadata.get("agent_name", agent_name)
 
                 # Get last run timestamp
-                last_run_at = max([e.completed_at or e.started_at for e in executions])
+                last_run_at = agg.last_run_at
 
                 metrics = AgentMetrics(
                     success_rate=float(success_rate),
@@ -833,7 +862,7 @@ class ComparisonService:
     async def _fetch_workspace_metrics(
         self, filters: ComparisonFilters
     ) -> List[WorkspaceMetrics]:
-        """Fetch metrics for workspaces from database
+        """Fetch metrics for workspaces from database using SQL aggregations
 
         Args:
             filters: Comparison filters with workspace IDs and date range
@@ -854,55 +883,55 @@ class ComparisonService:
 
             logger.info(f"Fetching metrics for {len(workspace_ids)} workspaces")
 
-            # Build batch query for all workspaces to avoid N+1 pattern
-            query = select(ExecutionLog).where(ExecutionLog.workspace_id.in_(workspace_ids))
-
-            # Apply date filters
+            # Build base filter conditions
+            conditions = [ExecutionLog.workspace_id.in_(workspace_ids)]
             if filters.start_date:
-                query = query.where(ExecutionLog.started_at >= filters.start_date)
+                conditions.append(ExecutionLog.started_at >= filters.start_date)
             if filters.end_date:
-                query = query.where(ExecutionLog.started_at <= filters.end_date)
+                conditions.append(ExecutionLog.started_at <= filters.end_date)
 
-            # Fetch all executions in one query
-            result = await self.db.execute(query)
-            all_executions = result.scalars().all()
+            # Use SQL aggregations to reduce memory usage
+            agg_query = select(
+                ExecutionLog.workspace_id,
+                func.count(ExecutionLog.id).label('total_runs'),
+                func.sum(case((ExecutionLog.status == 'success', 1), else_=0)).label('successful_runs'),
+                func.sum(case((ExecutionLog.status.in_(['failed', 'error']), 1), else_=0)).label('failed_runs'),
+                func.avg(ExecutionLog.duration).label('avg_duration'),
+                func.sum(ExecutionLog.credits_used).label('total_credits'),
+                func.count(func.distinct(ExecutionLog.agent_id)).label('active_agents'),
+                func.count(func.distinct(ExecutionLog.user_id)).label('active_users'),
+            ).where(and_(*conditions)).group_by(ExecutionLog.workspace_id)
 
-            # Group executions by workspace_id
-            executions_by_workspace = {}
-            for execution in all_executions:
-                if execution.workspace_id not in executions_by_workspace:
-                    executions_by_workspace[execution.workspace_id] = []
-                executions_by_workspace[execution.workspace_id].append(execution)
+            result = await self.db.execute(agg_query)
+            agg_data = {row.workspace_id: row for row in result.all()}
 
             workspaces = []
 
             for workspace_id in workspace_ids:
-                executions = executions_by_workspace.get(workspace_id, [])
-
-                if not executions:
+                if workspace_id not in agg_data:
                     logger.warning(f"No execution data found for workspace {workspace_id}")
                     continue
 
-                # Calculate metrics from execution data
-                total_runs = len(executions)
-                successful_runs = sum(1 for e in executions if e.status == "success")
-                failed_runs = sum(1 for e in executions if e.status in ["failed", "error"])
+                agg = agg_data[workspace_id]
+
+                # Calculate rates
+                total_runs = agg.total_runs
+                successful_runs = agg.successful_runs
+                failed_runs = agg.failed_runs
 
                 success_rate = (successful_runs / total_runs * 100) if total_runs > 0 else 0
                 error_rate = (failed_runs / total_runs * 100) if total_runs > 0 else 0
 
-                # Calculate runtime metrics
-                durations = [e.duration for e in executions if e.duration is not None]
-                avg_runtime = float(np.mean(durations)) if durations else 0.0
+                # Get average runtime from aggregation
+                avg_runtime = float(agg.avg_duration) if agg.avg_duration else 0.0
 
                 # Calculate cost metrics
-                credits = [e.credits_used for e in executions if e.credits_used is not None]
-                total_credits = sum(credits) if credits else 0
+                total_credits = agg.total_credits or 0
                 total_cost = total_credits * CREDIT_COST_USD
 
-                # Active entities
-                active_agents = len(set(e.agent_id for e in executions))
-                active_users = len(set(e.user_id for e in executions))
+                # Active entities from aggregation
+                active_agents = agg.active_agents
+                active_users = agg.active_users
 
                 # Calculate throughput (runs per day)
                 if filters.start_date and filters.end_date:
@@ -1162,11 +1191,11 @@ class ComparisonService:
 
             # Map metric names to database fields
             metric_mapping = {
-                "success_rate": lambda e: (sum(1 for x in e if x.status == "success") / len(e) * 100) if e else 0,
-                "error_rate": lambda e: (sum(1 for x in e if x.status in ["failed", "error"]) / len(e) * 100) if e else 0,
+                "success_rate": lambda e: (sum(1 for x in e if x.status == "success") / len(e) * 100) if e and len(e) > 0 else 0,
+                "error_rate": lambda e: (sum(1 for x in e if x.status in ["failed", "error"]) / len(e) * 100) if e and len(e) > 0 else 0,
                 "average_runtime": lambda e: float(np.mean([x.duration for x in e if x.duration])) if any(x.duration for x in e) else 0,
                 "throughput": lambda e: len(e),
-                "cost_per_run": lambda e: (sum(x.credits_used for x in e if x.credits_used) / len(e) * CREDIT_COST_USD) if e else 0,
+                "cost_per_run": lambda e: (sum(x.credits_used for x in e if x.credits_used) / len(e) * CREDIT_COST_USD) if e and len(e) > 0 else 0,
             }
 
             if metric_name not in metric_mapping:
@@ -1190,9 +1219,9 @@ class ComparisonService:
                             ExecutionLog.started_at >= filters.start_date,
                             ExecutionLog.started_at <= filters.end_date
                         )
-                    ).limit(50)
+                    ).limit(MAX_DEFAULT_ENTITIES)
                 else:
-                    query = select(ExecutionLog.agent_id).distinct().limit(50)
+                    query = select(ExecutionLog.agent_id).distinct().limit(MAX_DEFAULT_ENTITIES)
 
                 result = await self.db.execute(query)
                 entity_ids = [row[0] for row in result.all()]
@@ -1255,9 +1284,9 @@ class ComparisonService:
                     first_half = metric_mapping[metric_name](executions[:mid])
                     second_half = metric_mapping[metric_name](executions[mid:])
 
-                    if second_half > first_half * 1.1:
+                    if second_half > first_half * TREND_INCREASE_THRESHOLD:
                         trend = "increasing"
-                    elif second_half < first_half * 0.9:
+                    elif second_half < first_half * TREND_DECREASE_THRESHOLD:
                         trend = "decreasing"
                     else:
                         trend = "stable"

@@ -60,7 +60,7 @@ class ExecutionLog(Base):
     duration = Column(Float)
     credits_used = Column(Integer, default=0)
     metadata = Column(JSON)
-    started_at = Column(DateTime, nullable=False, index=True)
+    started_at = Column(DateTime, nullable=False)
     completed_at = Column(DateTime)
     created_at = Column(DateTime, default=func.now())
 
