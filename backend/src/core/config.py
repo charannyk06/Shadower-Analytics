@@ -17,7 +17,9 @@ class Settings(BaseSettings):
     BACKEND_PORT: int = 8000
 
     # Database
-    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/shadower_analytics"
+    DATABASE_URL: str = (
+        "postgresql://postgres:postgres@localhost:5432/shadower_analytics"
+    )
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"

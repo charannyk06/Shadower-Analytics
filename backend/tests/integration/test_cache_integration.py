@@ -4,10 +4,10 @@ import pytest
 import asyncio
 from datetime import datetime
 
-from src.core.redis import get_redis_client, close_redis
+from src.core.redis import get_redis_client
 from src.services.cache.redis_cache import CacheService
 from src.services.cache.keys import CacheKeys
-from src.services.cache.decorator import cached, invalidate_pattern
+from src.services.cache.decorator import cached
 
 
 @pytest.mark.integration
@@ -136,8 +136,11 @@ class TestCacheServiceIntegration:
         result2 = await cache_service.get_or_compute(
             "integration:compute:test", compute_func, ttl=60
         )
-        assert call_count == 1  # Should not increment
-        assert result2 == result1  # Should be same cached result
+        assert call_count == 1, "Function should not be called again (cache hit)"
+        assert result2 == result1, "Cached result should match first result"
+        assert (
+            result2["timestamp"] == result1["timestamp"]
+        ), "Timestamps should match (proving cache was used)"
 
     @pytest.mark.asyncio
     async def test_invalidate_workspace_integration(self, cache_service):
@@ -148,7 +151,9 @@ class TestCacheServiceIntegration:
         await redis_client.set(
             CacheKeys.executive_dashboard("ws123", "7d"), {"data": "dashboard"}
         )
-        await redis_client.set(CacheKeys.workspace_metrics("ws123", "runs", "2024-01-01"), {"count": 100})
+        await redis_client.set(
+            CacheKeys.workspace_metrics("ws123", "runs", "2024-01-01"), {"count": 100}
+        )
         await redis_client.set(CacheKeys.agent_top("ws123", "7d"), {"agents": []})
 
         # Invalidate workspace
@@ -157,9 +162,14 @@ class TestCacheServiceIntegration:
         assert deleted >= 3
 
         # Verify keys are deleted
-        assert await redis_client.exists(CacheKeys.executive_dashboard("ws123", "7d")) is False
         assert (
-            await redis_client.exists(CacheKeys.workspace_metrics("ws123", "runs", "2024-01-01"))
+            await redis_client.exists(CacheKeys.executive_dashboard("ws123", "7d"))
+            is False
+        )
+        assert (
+            await redis_client.exists(
+                CacheKeys.workspace_metrics("ws123", "runs", "2024-01-01")
+            )
             is False
         )
 
@@ -196,8 +206,9 @@ class TestCacheDecoratorIntegration:
 
         # Second call should use cache
         result2 = await get_metrics("ws123")
-        assert call_count == 1  # Should not increment
-        assert result2 == result1
+        assert call_count == 1, "Function should not be called again (cache hit)"
+        assert result2 == result1, "Cached result should match first result"
+        assert result2 is not None and result1 is not None, "Results should not be None"
 
         # Different workspace should execute function
         result3 = await get_metrics("ws456")

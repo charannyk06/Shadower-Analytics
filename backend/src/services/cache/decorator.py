@@ -2,7 +2,6 @@
 
 from functools import wraps
 from typing import Optional, Callable, Any, List
-import asyncio
 import logging
 
 from .keys import CacheKeys
@@ -96,7 +95,9 @@ def cached(
                 cache_key = key_func(*args, **kwargs)
                 redis_client = await get_redis_client()
                 await redis_client.delete(cache_key)
-                logger.info(f"Invalidated cache: {cache_key} (function: {func.__name__})")
+                logger.info(
+                    f"Invalidated cache: {cache_key} (function: {func.__name__})"
+                )
             except Exception as e:
                 logger.error(f"Failed to invalidate cache for {func.__name__}: {e}")
 
@@ -165,6 +166,13 @@ def cache_many(
                 # Otherwise, fetch from source
                 logger.debug(f"Cache miss for some items, fetching from source")
                 result = await func(*args, **kwargs)
+
+                # Validate result length matches cache keys
+                if len(cache_keys) != len(result):
+                    logger.error(
+                        f"cache_many: Number of cache keys ({len(cache_keys)}) does not match number of results ({len(result)}). Skipping caching."
+                    )
+                    return result
 
                 # Cache the results
                 for key, value in zip(cache_keys, result):

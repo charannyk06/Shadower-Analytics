@@ -2,7 +2,7 @@
  * Executive dashboard hooks with caching support
  */
 
-import { useQuery, UseQueryOptions } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import apiClient, { buildQueryParams } from '@/lib/api/client';
 import { endpoints } from '@/lib/api/endpoints';
 import { queryKeys, cacheTime } from '@/lib/react-query';

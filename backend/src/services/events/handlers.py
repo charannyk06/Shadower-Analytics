@@ -26,7 +26,9 @@ class EventHandlers:
         workspace_id = event.get("workspace_id")
 
         if not agent_id or not workspace_id:
-            logger.warning("Missing agent_id or workspace_id in agent run completed event")
+            logger.warning(
+                "Missing agent_id or workspace_id in agent run completed event"
+            )
             return
 
         try:
@@ -38,9 +40,13 @@ class EventHandlers:
 
             # Invalidate workspace executive dashboard
             exec_patterns = [
-                CacheKeys.get_pattern(CacheKeys.EXECUTIVE_PREFIX, "dashboard", workspace_id, "*"),
+                CacheKeys.get_pattern(
+                    CacheKeys.EXECUTIVE_PREFIX, "dashboard", workspace_id, "*"
+                ),
                 CacheKeys.get_pattern(CacheKeys.AGENT_PREFIX, "top", workspace_id, "*"),
-                CacheKeys.get_pattern(CacheKeys.METRICS_PREFIX, "runs", workspace_id, "*"),
+                CacheKeys.get_pattern(
+                    CacheKeys.METRICS_PREFIX, "runs", workspace_id, "*"
+                ),
             ]
 
             total_deleted = deleted_agent
@@ -189,8 +195,12 @@ class EventHandlers:
 
             # Invalidate credit metrics
             patterns = [
-                CacheKeys.get_pattern(CacheKeys.METRICS_PREFIX, "credits", workspace_id, "*"),
-                CacheKeys.get_pattern(CacheKeys.EXECUTIVE_PREFIX, "dashboard", workspace_id, "*"),
+                CacheKeys.get_pattern(
+                    CacheKeys.METRICS_PREFIX, "credits", workspace_id, "*"
+                ),
+                CacheKeys.get_pattern(
+                    CacheKeys.EXECUTIVE_PREFIX, "dashboard", workspace_id, "*"
+                ),
             ]
 
             total_deleted = 0

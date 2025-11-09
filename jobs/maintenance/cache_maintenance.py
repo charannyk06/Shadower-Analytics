@@ -4,14 +4,12 @@ import asyncio
 import logging
 import sys
 import os
-from datetime import datetime, timedelta
 
 # Add backend to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../backend/src"))
 
 from celeryconfig import app
 from core.redis import get_redis_client
-from core.config import settings
 from services.cache.keys import CacheKeys
 
 logger = logging.getLogger(__name__)
@@ -105,7 +103,9 @@ async def _refresh_materialized_cache():
         #     await cache_service.warm_cache(workspace.id)
         #     refreshed_count += 1
 
-        logger.info(f"Materialized cache refresh completed: {refreshed_count} workspaces")
+        logger.info(
+            f"Materialized cache refresh completed: {refreshed_count} workspaces"
+        )
 
         return {"refreshed": refreshed_count}
 
@@ -134,8 +134,9 @@ async def _cache_health_check():
         # Extract key metrics
         used_memory = info.get("used_memory", 0)
         used_memory_peak = info.get("used_memory_peak", 0)
-        hit_rate = info.get("keyspace_hits", 0) / max(
-            info.get("keyspace_hits", 0) + info.get("keyspace_misses", 0), 1
+        keyspace_hits = info.get("keyspace_hits", 0)
+        hit_rate = keyspace_hits / max(
+            keyspace_hits + info.get("keyspace_misses", 0), 1
         )
         evicted_keys = info.get("evicted_keys", 0)
 

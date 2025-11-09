@@ -2,8 +2,7 @@
 
 import pytest
 import json
-from unittest.mock import Mock, AsyncMock, patch
-from datetime import datetime
+from unittest.mock import AsyncMock, patch
 
 from src.core.redis import RedisClient
 from src.services.cache.keys import CacheKeys
@@ -162,7 +161,9 @@ class TestCacheService:
 
         assert result == {"computed": "data"}
         compute_func.assert_called_once()
-        cache_service.redis.set.assert_called_once_with("test_key", {"computed": "data"}, expire=300)
+        cache_service.redis.set.assert_called_once_with(
+            "test_key", {"computed": "data"}, expire=300
+        )
 
     @pytest.mark.asyncio
     async def test_invalidate_workspace(self, cache_service):
@@ -213,7 +214,9 @@ class TestCacheDecorator:
         mock_redis = AsyncMock()
         mock_redis.get = AsyncMock(return_value={"cached": "result"})
 
-        with patch("src.services.cache.decorator.get_redis_client", return_value=mock_redis):
+        with patch(
+            "src.services.cache.decorator.get_redis_client", return_value=mock_redis
+        ):
 
             @cached(
                 key_func=lambda workspace_id, **_: f"test:{workspace_id}",
@@ -233,7 +236,9 @@ class TestCacheDecorator:
         mock_redis.get = AsyncMock(return_value=None)
         mock_redis.set = AsyncMock()
 
-        with patch("src.services.cache.decorator.get_redis_client", return_value=mock_redis):
+        with patch(
+            "src.services.cache.decorator.get_redis_client", return_value=mock_redis
+        ):
 
             @cached(
                 key_func=lambda workspace_id, **_: f"test:{workspace_id}",
@@ -252,7 +257,9 @@ class TestCacheDecorator:
         """Test cached decorator bypasses cache when skip_cache=True."""
         mock_redis = AsyncMock()
 
-        with patch("src.services.cache.decorator.get_redis_client", return_value=mock_redis):
+        with patch(
+            "src.services.cache.decorator.get_redis_client", return_value=mock_redis
+        ):
 
             @cached(
                 key_func=lambda workspace_id, **_: f"test:{workspace_id}",
@@ -273,7 +280,9 @@ async def test_invalidate_pattern_helper():
     mock_redis = AsyncMock()
     mock_redis.flush_pattern = AsyncMock(return_value=10)
 
-    with patch("src.services.cache.decorator.get_redis_client", return_value=mock_redis):
+    with patch(
+        "src.services.cache.decorator.get_redis_client", return_value=mock_redis
+    ):
         deleted = await invalidate_pattern("test:*")
 
         assert deleted == 10
