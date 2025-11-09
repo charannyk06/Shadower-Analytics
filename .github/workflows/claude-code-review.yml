@@ -12,12 +12,6 @@ on:
 
 jobs:
   claude-review:
-    # Optional: Filter by PR author
-    # if: |
-    #   github.event.pull_request.user.login == 'external-contributor' ||
-    #   github.event.pull_request.user.login == 'new-developer' ||
-    #   github.event.pull_request.author_association == 'FIRST_TIME_CONTRIBUTOR'
-
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -43,84 +37,293 @@ jobs:
             echo "pr_number=${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
           fi
 
+      - name: Gather PR context
+        id: pr-context
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUM="${{ steps.pr-info.outputs.pr_number }}"
+          
+          # Authenticate GitHub CLI
+          echo "$GH_TOKEN" | gh auth login --with-token
+          
+          # Get PR details (with error handling)
+          if gh pr view $PR_NUM --json title,body,author,files > pr_details.json 2>/dev/null; then
+            # Extract information
+            echo "title=$(jq -r '.title' pr_details.json)" >> $GITHUB_OUTPUT
+            echo "body<<EOF" >> $GITHUB_OUTPUT
+            jq -r '.body // "No description provided"' pr_details.json >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+            echo "author=$(jq -r '.author.login' pr_details.json)" >> $GITHUB_OUTPUT
+            
+            # Get changed files list
+            jq -r '.files[].path' pr_details.json > changed_files.txt 2>/dev/null || echo "" > changed_files.txt
+            echo "files<<EOF" >> $GITHUB_OUTPUT
+            cat changed_files.txt >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+            
+            # Count changes
+            echo "files_count=$(wc -l < changed_files.txt | tr -d ' ')" >> $GITHUB_OUTPUT
+          else
+            # Fallback if gh command fails
+            echo "title=PR #$PR_NUM" >> $GITHUB_OUTPUT
+            echo "body=No description available" >> $GITHUB_OUTPUT
+            echo "author=unknown" >> $GITHUB_OUTPUT
+            echo "files=" >> $GITHUB_OUTPUT
+            echo "files_count=0" >> $GITHUB_OUTPUT
+          fi
+
       - name: Run Claude Code Review
         id: claude-review
         uses: anthropics/claude-code-action@v1
         env:
-          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          show_full_output: true
           prompt: |
-            You are reviewing PR #${{ steps.pr-info.outputs.pr_number }} in repository ${{ github.repository }}.
+            You are an expert code reviewer performing a comprehensive security, quality, and correctness analysis of pull request #${{ steps.pr-info.outputs.pr_number }} in the ${{ github.repository }} repository.
 
-            **Your Task:** Perform a comprehensive code review of this pull request.
+            ## Your Task
 
-            **Step-by-step process:**
+            Review this pull request systematically and provide actionable, prioritized feedback. Use the GitHub CLI tools available to you to gather all necessary context.
 
-            1. First, run: `gh pr view ${{ steps.pr-info.outputs.pr_number }} --repo ${{ github.repository }}`
-               This will show you the PR title, description, and metadata.
+            ## Step 1: Gather PR Information
 
-            2. Then run: `gh pr diff ${{ steps.pr-info.outputs.pr_number }} --repo ${{ github.repository }}`
-               This will show you all the code changes in the PR.
+            First, use these commands to understand the PR:
+            - `gh pr view ${{ steps.pr-info.outputs.pr_number }}` - Get PR title, description, and metadata
+            - `gh pr diff ${{ steps.pr-info.outputs.pr_number }}` - Get the full diff of all changes
+            - `gh pr view ${{ steps.pr-info.outputs.pr_number }} --json files` - Get list of changed files
+>>>>>>> 587402e (Enhance Claude code review workflow: add show_full_output, strengthen prompt with explicit gh pr comment instructions)
 
-            3. Use the Read, Grep, and Glob tools to:
-               - Read the full content of modified/new files
-               - Search for related code patterns
-               - Find relevant test files
-               - Check for style guide files (CLAUDE.md, CONTRIBUTING.md, etc.)
+            ## Step 2: Understand the Codebase Context
 
-            4. Analyze the code for:
-               - **Code Quality:** Best practices, maintainability, readability
-               - **Bugs:** Logic errors, edge cases, potential crashes
-               - **Performance:** Inefficiencies, scalability issues
-               - **Security:** Vulnerabilities, injection risks, authentication issues
-               - **Testing:** Coverage, quality, edge case handling
-               - **Architecture:** Consistency with existing patterns
-               - **Documentation:** Comments, README updates, API docs
+            This is a monorepo analytics platform with:
+            - **Backend**: Python 3.11 + FastAPI (async), PostgreSQL, Redis, Celery
+            - **Frontend**: Next.js 14 (App Router), TypeScript, React, TanStack Query, Tailwind CSS
+            - **Architecture**: Microservice with JWT auth, RBAC, multi-tenant workspaces
+            - **Key Patterns**: Async/await, dependency injection, service layer pattern, materialized views
 
-            5. After your thorough review, post a comment using:
-               ```bash
-               gh pr comment ${{ steps.pr-info.outputs.pr_number }} --repo ${{ github.repository }} --body "YOUR_REVIEW_HERE"
-               ```
+            For each changed file, examine:
+            - Related files (imports, dependencies, tests)
+            - How it fits into the overall architecture
+            - Database schema implications (if applicable)
+            - API contract changes (if applicable)
 
-            **Review Format (use markdown):**
+            ## Step 3: Review Methodology
+
+            Follow this systematic approach:
+
+            ### 3.1 Security Analysis
+            - SQL injection vulnerabilities (parameterized queries?)
+            - XSS vulnerabilities (input sanitization?)
+            - Authentication/authorization bypasses
+            - Exposed secrets or sensitive data
+            - Insecure dependencies or outdated packages
+            - CORS misconfigurations
+            - Rate limiting gaps
+            - JWT token handling issues
+
+            ### 3.2 Correctness & Logic
+            - Logic errors or edge cases not handled
+            - Race conditions or concurrency issues
+            - Null/undefined handling (especially in TypeScript)
+            - Type safety violations
+            - Data validation gaps
+            - Error handling completeness
+            - Database transaction boundaries
+            - Async/await error propagation
+
+            ### 3.3 Performance
+            - N+1 query problems
+            - Missing database indexes
+            - Inefficient algorithms
+            - Memory leaks or resource leaks
+            - Missing caching opportunities
+            - Large bundle sizes (frontend)
+            - Unnecessary re-renders (React)
+            - Missing pagination
+
+            ### 3.4 Code Quality
+            - DRY violations (code duplication)
+            - Unclear naming or poor abstractions
+            - Missing or inadequate comments
+            - Code that doesn't follow project conventions
+            - Dead code or commented-out code
+            - Inconsistent error handling patterns
+
+            ### 3.5 Testing
+            - Missing test coverage for new code
+            - Tests that don't actually test functionality
+            - Missing edge case tests
+            - Integration test gaps
+            - Test quality and maintainability
+
+            ### 3.6 Architecture & Design
+            - SOLID principle violations
+            - Tight coupling or poor separation of concerns
+            - API design consistency
+            - Breaking changes to public APIs
+            - Database migration safety
+            - Backward compatibility
+
+            ## Step 4: Severity Classification
+
+            Classify each issue with clear reasoning:
+
+            **🔴 BLOCKING** - Must fix before merge:
+            - Security vulnerabilities
+            - Bugs that break functionality
+            - Data loss/corruption risks
+            - Crashes or unhandled exceptions in critical paths
+            - Breaking changes to public APIs without migration
+
+            **🟡 IMPORTANT** - Should address (may merge with plan):
+            - Performance problems affecting users
+            - Missing error handling in important flows
+            - Hard-to-maintain code causing future problems
+            - Inadequate test coverage for risky changes
+            - Minor security concerns
+
+            **🔵 SUGGESTION** - Nice to have:
+            - Code style improvements
+            - Minor optimizations
+            - Better naming/structure
+            - Additional documentation
+            - Refactoring opportunities
+
+            ## Step 5: Output Format
+
+            Post your review as a GitHub PR comment using `gh pr comment` with this structure:
+
             ```markdown
-            ## 📋 Summary
-            [Brief overview of what this PR does]
+            ## 🤖 Claude Code Review
 
-            ## 🔍 What's Changed
-            [List the main changes]
+            ### 📊 Summary
+            [2-3 sentence overview of the PR and your overall assessment]
 
-            ## ✅ Strengths
-            [What's done well]
+            **Recommendation**: APPROVE | REQUEST_CHANGES | COMMENT
 
-            ## ⚠️ Issues Found
-            [Any problems discovered - be specific with file:line references]
+            ---
 
-            ## 💡 Suggestions for Improvement
-            [Actionable recommendations]
+            ### ✅ Strengths
+            - [Positive aspect 1]
+            - [Positive aspect 2]
+            - [What was done well]
 
-            ## 🔒 Security & Performance Notes
-            [Any security or performance concerns]
+            ---
 
-            ## 🧪 Test Coverage Assessment
-            [Analysis of test quality and coverage]
+            ### 🔴 Blocking Issues (Must Fix)
 
-            ## 🎯 Overall Recommendation
-            [Approve, Request Changes, or Comment with reasoning]
+            #### [File Path]:[Line Number] - [Issue Title]
+            **Problem**: [What's wrong and why it matters]
+            
+            **Impact**: [What could go wrong in production]
+            
+            **Fix**: 
+            ```[language]
+            [Specific code example showing the fix]
             ```
 
-            **Important:**
-            - Be constructive and helpful
-            - Cite specific files and line numbers when mentioning issues
-            - Prioritize critical issues over style nitpicks
-            - Acknowledge good practices when you see them
-            - If everything looks good, say so clearly
+            ---
 
-            Begin your review now!
+            ### 🟡 Important Issues (Should Fix)
 
-          # Allow Claude to use necessary tools for code review
-          # Using wildcard for Bash to allow all gh commands
-          claude_args: >-
-            --allowed-tools "Read,Grep,Glob,Bash"
+            #### [File Path]:[Line Number] - [Issue Title]
+            **Problem**: [Description]
+            
+            **Recommendation**: [Specific suggestion]
 
+            ---
+
+            ### 🔵 Suggestions (Nice to Have)
+
+            #### [File Path]:[Line Number] - [Suggestion Title]
+            [Brief explanation and optional code example]
+
+            ---
+
+            ### 🧪 Testing Recommendations
+            - [Specific test scenario 1]
+            - [Specific test scenario 2]
+            - [Edge cases to test]
+
+            ---
+
+            ### 📚 Documentation Needs
+            - [Documentation that should be updated]
+            - [API docs that need changes]
+
+            ---
+
+            ### 📝 Detailed Line-by-Line Notes
+
+            #### `filename.ext`
+            - **Line X-Y**: [Observation or minor note]
+            - **Line Z**: [Another observation]
+
+            ---
+
+            **Review completed at**: [timestamp]
+            ```
+
+            ## Step 6: Post Review - CRITICAL STEP
+
+            **YOU MUST POST YOUR REVIEW AS A COMMENT ON THE PR USING GITHUB CLI.**
+
+            After completing your analysis, you MUST execute this command to post your review:
+
+            ```bash
+            gh pr comment ${{ steps.pr-info.outputs.pr_number }} --body "YOUR_REVIEW_CONTENT_HERE"
+            ```
+
+            **IMPORTANT**: 
+            - You MUST use the `gh pr comment` command - this is not optional
+            - The GITHUB_TOKEN environment variable is already set for authentication
+            - Replace `YOUR_REVIEW_CONTENT_HERE` with your formatted review markdown
+            - If the review is very large (>4000 characters), split it into multiple comments:
+              1. First comment: Critical blocking issues only
+              2. Second comment: Important issues
+              3. Third comment: Suggestions and detailed notes
+
+            **Example command**:
+            ```bash
+            gh pr comment ${{ steps.pr-info.outputs.pr_number }} --body "## 🤖 Claude Code Review
+
+            ### 📊 Summary
+            [Your summary here]
+
+            [Rest of your review...]"
+            ```
+
+            **DO NOT SKIP THIS STEP.** Your review is not complete until you have posted it as a comment on the PR.
+
+            ## Important Guidelines
+
+            1. **Be Specific**: Reference exact file paths and line numbers
+            2. **Be Actionable**: Every issue should have a clear recommendation
+            3. **Be Constructive**: Explain the "why" behind your feedback
+            4. **Prioritize**: Focus on blocking issues first
+            5. **Consider Context**: Understand the codebase patterns before suggesting changes
+            6. **Think Production**: Consider what could go wrong in production
+            7. **Be Concise**: Don't overwhelm with minor style issues unless they're patterns
+
+            ## Edge Cases
+
+            - **Large PR (>20 files)**: Focus on critical files (auth, data access, API endpoints) first. Note if full review was limited.
+            - **No issues found**: Explicitly state "No significant issues found" and highlight what was reviewed.
+            - **Uncertainty**: State confidence level: "I'm uncertain if X because Y. Recommend testing Z."
+            - **Missing context**: Explicitly ask for needed information.
+
+            ---
+
+            **PR Number**: ${{ steps.pr-info.outputs.pr_number }}
+            **Repository**: ${{ github.repository }}
+            **PR Title**: ${{ steps.pr-context.outputs.title }}
+            **Author**: ${{ steps.pr-context.outputs.author }}
+            **Changed Files**: ${{ steps.pr-context.outputs.files_count }} files
+
+            Begin your review now. Use the GitHub CLI tools (`gh pr view`, `gh pr diff`) to gather all context, then provide your comprehensive analysis.
+
+            **REMINDER**: After completing your review, you MUST post it as a comment using:
+            `gh pr comment ${{ steps.pr-info.outputs.pr_number }} --body "YOUR_REVIEW_MARKDOWN"`
