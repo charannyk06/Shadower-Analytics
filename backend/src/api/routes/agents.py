@@ -24,7 +24,8 @@ async def list_agents(
     db=Depends(get_db),
 ):
     """List all agents with basic metrics."""
-    # Implementation will be added
+    # TODO: Implement agent listing with pagination and filtering
+    # Should query agent_analytics_summary for basic metrics
     return []
 
 
@@ -39,8 +40,8 @@ async def get_agent_analytics(
     ),
     skip_cache: bool = Query(False, description="Skip cache and fetch fresh data"),
     db=Depends(get_db),
-    # current_user=Depends(get_current_user),
-    # workspace_access=Depends(validate_workspace_access),
+    current_user=Depends(get_current_user),
+    workspace_access=Depends(validate_workspace_access),
 ):
     """
     Get comprehensive analytics for a specific agent.
@@ -96,7 +97,8 @@ async def get_agent_details(
     db=Depends(get_db),
 ):
     """Get detailed metrics for a specific agent."""
-    # Implementation will be added
+    # TODO: Implement detailed agent metrics for date range
+    # This endpoint differs from /analytics by focusing on time-series data
     return {
         "agent_id": agent_id,
         "total_executions": 0,
@@ -111,7 +113,7 @@ async def get_agent_statistics(
     db=Depends(get_db),
 ):
     """Get statistical analysis for an agent."""
-    # Implementation will be added
+    # TODO: Implement statistical analysis (distributions, correlations, outliers)
     return {
         "agent_id": agent_id,
         "stats": {},
@@ -126,5 +128,6 @@ async def get_agent_executions(
     db=Depends(get_db),
 ):
     """Get execution history for an agent."""
-    # Implementation will be added
+    # TODO: Implement execution history with pagination
+    # Should query agent_runs table with filters and sorting
     return {"executions": [], "total": 0}

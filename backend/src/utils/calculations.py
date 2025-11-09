@@ -4,12 +4,22 @@ from typing import List
 import statistics
 
 
-def calculate_percentage_change(old_value: float, new_value: float) -> float:
-    """Calculate percentage change between two values."""
-    if old_value == 0:
-        return 100.0 if new_value > 0 else 0.0
+def calculate_percentage_change(current: float, previous: float, round_to: int = 2) -> float:
+    """Calculate percentage change between two values.
 
-    return ((new_value - old_value) / old_value) * 100
+    Args:
+        current: Current value
+        previous: Previous value
+        round_to: Number of decimal places to round to (default: 2)
+
+    Returns:
+        Percentage change rounded to specified decimal places
+    """
+    if previous == 0:
+        return 100.0 if current > 0 else 0.0
+
+    change = ((current - previous) / previous) * 100
+    return round(change, round_to) if round_to >= 0 else change
 
 
 def calculate_average(values: List[float]) -> float:
