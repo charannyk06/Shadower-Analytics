@@ -3,7 +3,6 @@
 from fastapi import APIRouter, Depends, Response
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from ...core.database import get_db
-from ...core.redis import get_redis_client
 
 router = APIRouter(prefix="/api/v1", tags=["health"])
 
