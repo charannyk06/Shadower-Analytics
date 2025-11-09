@@ -4,8 +4,12 @@ import asyncio
 from datetime import datetime, timedelta
 from typing import Dict, List, Any
 import logging
+import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text
+from sqlalchemy import select, func, and_, desc, text
+from ..cache import cached, CacheKeys
+from ...utils.calculations import calculate_percentage_change
+from ...utils.datetime import calculate_start_date
 
 logger = logging.getLogger(__name__)
 
@@ -18,33 +22,43 @@ ERROR_RATE_THRESHOLD_PERCENT = 5
 SUCCESS_RATE_THRESHOLD_PERCENT = 90
 
 
-def calculate_start_date(timeframe: str) -> datetime:
-    """Calculate start date based on timeframe."""
-    now = datetime.utcnow()
-
-    timeframe_map = {
-        "24h": timedelta(hours=24),
-        "7d": timedelta(days=7),
-        "30d": timedelta(days=30),
-        "90d": timedelta(days=90),
-        "all": timedelta(days=365 * 10),
-    }
-
-    return now - timeframe_map.get(timeframe, timedelta(days=7))
-
-
-def calculate_percentage_change(current: float, previous: float) -> float:
-    """Calculate percentage change between two values."""
-    if previous == 0:
-        return 100.0 if current > 0 else 0.0
-    return round(((current - previous) / previous) * 100, 2)
-
-
 class AgentAnalyticsService:
     """Service for comprehensive agent analytics."""
 
+    # Query timeout in seconds (prevent long-running queries)
+    QUERY_TIMEOUT_SECONDS = 30
+
+    # Result limits to prevent memory issues
+    MAX_ERROR_PATTERNS = 20
+    MAX_TOP_USERS = 10
+    MAX_RECENT_FEEDBACK = 10
+    MAX_OPTIMIZATION_SUGGESTIONS = 10
+
     def __init__(self, db: AsyncSession):
         self.db = db
+
+    async def _execute_with_timeout(self, query, params: dict):
+        """Execute query with timeout protection.
+
+        Args:
+            query: SQL query text
+            params: Query parameters
+
+        Returns:
+            Query result
+
+        Raises:
+            TimeoutError: If query exceeds timeout
+        """
+        try:
+            # Set statement timeout for PostgreSQL
+            timeout_query = text(f"SET LOCAL statement_timeout = '{self.QUERY_TIMEOUT_SECONDS}s'")
+            await self.db.execute(timeout_query)
+            result = await self.db.execute(query, params)
+            return result
+        except Exception as e:
+            logger.error(f"Query execution failed: {str(e)}", exc_info=True)
+            raise
 
     async def get_agent_analytics(
         self,
@@ -53,27 +67,51 @@ class AgentAnalyticsService:
         timeframe: str = "7d",
         skip_cache: bool = False,
     ) -> Dict[str, Any]:
-        """Get comprehensive analytics for an agent."""
+        """Get comprehensive analytics for an agent.
+
+        TODO: Implement caching strategy using the skip_cache parameter.
+        Currently the parameter is accepted but not used. Should implement
+        Redis/in-memory caching with configurable TTL.
+        """
+
+        # Validate UUID format
+        try:
+            uuid.UUID(agent_id)
+            uuid.UUID(workspace_id)
+        except (ValueError, AttributeError) as e:
+            raise ValueError(f"Invalid UUID format: {str(e)}")
 
         end_date = datetime.utcnow()
         start_date = calculate_start_date(timeframe)
 
         # Parallel fetch all metrics
-        results = await asyncio.gather(
-            self._get_performance_metrics(agent_id, workspace_id, start_date, end_date),
-            self._get_resource_usage(agent_id, workspace_id, start_date, end_date),
-            self._get_error_analysis(agent_id, workspace_id, start_date, end_date),
-            self._get_user_metrics(agent_id, workspace_id, start_date, end_date),
-            self._get_comparison_metrics(agent_id, workspace_id, start_date, end_date),
-            self._get_optimization_suggestions(agent_id, workspace_id),
-            self._get_trend_data(agent_id, workspace_id, start_date, end_date),
-            return_exceptions=True,
-        )
+        # Note: Core metrics (performance, resources) will raise exceptions if they fail
+        # Optional metrics (errors, user metrics) will return empty data on failure
+        try:
+            results = await asyncio.gather(
+                self._get_performance_metrics(agent_id, workspace_id, start_date, end_date),
+                self._get_resource_usage(agent_id, workspace_id, start_date, end_date),
+                self._get_error_analysis(agent_id, workspace_id, start_date, end_date),
+                self._get_user_metrics(agent_id, workspace_id, start_date, end_date),
+                self._get_comparison_metrics(agent_id, workspace_id, start_date, end_date),
+                self._get_optimization_suggestions(agent_id, workspace_id),
+                self._get_trend_data(agent_id, workspace_id, start_date, end_date),
+                return_exceptions=True,
+            )
+        except Exception as e:
+            logger.error(f"Critical error fetching agent analytics: {str(e)}", exc_info=True)
+            raise
 
         # Handle any errors in parallel execution
+        # Fail fast for critical components (performance, resources)
+        critical_components = [0, 1]  # performance and resources are critical
         for i, result in enumerate(results):
             if isinstance(result, Exception):
-                logger.error(f"Error in analytics component {i}: {result}")
+                logger.error(f"Error in analytics component {i}: {result}", exc_info=True)
+                if i in critical_components:
+                    raise result
+                # Non-critical components return empty data with warning logged
+                logger.warning(f"Returning empty data for non-critical component {i}")
                 results[i] = {}
 
         return {
@@ -825,7 +863,13 @@ class AgentAnalyticsService:
     async def _get_optimization_suggestions(
         self, agent_id: str, workspace_id: str
     ) -> List[Dict[str, Any]]:
-        """Get optimization suggestions for the agent."""
+        """Get optimization suggestions for the agent.
+
+        TODO: Enhance with AI-generated suggestions using LLM analysis of metrics.
+        Currently generates rule-based suggestions from database or metrics-based heuristics.
+        Future enhancement: Use Claude/GPT to analyze agent behavior and generate
+        personalized optimization recommendations.
+        """
 
         # Get active suggestions from database
         query = text("""

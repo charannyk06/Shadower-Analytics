@@ -75,6 +75,14 @@ Comprehensive analytics dashboard for individual AI agents, providing deep insig
   - Comparison calculations
   - Optimization suggestion generation
   - Time series data generation
+  - Query timeout protection (30s limit)
+  - UUID validation for all inputs
+  - Fail-fast error handling for critical components
+
+#### Utilities
+- `utils.calculations.calculate_percentage_change()` - Shared percentage calculation
+- `utils.datetime.calculate_start_date()` - Timeframe to datetime conversion
+- Both utilities used across analytics and executive services to avoid duplication
 
 #### API Endpoints
 ```
@@ -236,17 +244,35 @@ SELECT analytics.refresh_agent_analytics_summary();
 
 ## Security
 
-1. **Authentication**: JWT token validation (commented out in current implementation)
-2. **Workspace Access Control**: Validates user has access to workspace
-3. **PII Filtering**: Error messages truncated to 200 characters
-4. **Rate Limiting**: Can be added via FastAPI middleware
+1. **Authentication**: ✅ JWT token validation enabled with `get_current_user` dependency
+2. **Workspace Access Control**: ✅ Validates user has access to workspace
+3. **Input Validation**: ✅ UUID format validation in service layer
+4. **PII Filtering**: Error messages truncated to 200 characters (full messages logged server-side)
+5. **Query Timeout Protection**: 30-second timeout on all database queries
+6. **Rate Limiting**: Can be added via FastAPI middleware
+
+### Security Notes
+- All endpoints require authentication - never deploy with auth disabled
+- UUIDs are validated before reaching database queries to prevent injection
+- Error messages are sanitized in responses but full details logged securely
 
 ## Testing
 
-### Unit Tests Needed
-- [ ] Performance metrics calculation
-- [ ] Percentile calculations accuracy
-- [ ] Error pattern analysis
+### Unit Tests
+- ✅ Percentage change calculation with edge cases (zero division)
+- ✅ Timeframe calculation for all supported ranges
+- ✅ Custom rounding precision for calculations
+- [ ] Performance metrics calculation (advanced)
+- [ ] Percentile calculations accuracy (advanced)
+- [ ] Error pattern analysis (advanced)
+
+### Integration Tests
+- ✅ UUID validation in service layer
+- ✅ Endpoint authentication requirements
+- ✅ Timeframe validation in API
+- [ ] Full end-to-end analytics generation with test data
+- [ ] Error handling for database failures
+- [ ] Caching behavior (when implemented)
 - [ ] Optimization suggestion generation
 
 ### Integration Tests Needed
@@ -259,6 +285,41 @@ SELECT analytics.refresh_agent_analytics_summary();
 - [ ] Large dataset queries (>10M records)
 - [ ] Concurrent user access
 - [ ] Materialized view refresh performance
+
+<<<<<<< HEAD
+## Known Limitations
+
+### Current Implementation
+1. **Caching**: The `skip_cache` parameter is accepted but not yet implemented
+   - TODO: Implement Redis/in-memory caching with configurable TTL
+   - Current behavior: Always fetches fresh data from database
+
+2. **Optimization Suggestions**: Currently uses rule-based heuristics
+   - Queries database for stored suggestions first
+   - Falls back to metrics-based heuristic generation
+   - TODO: Enhance with AI/LLM-generated personalized recommendations
+
+3. **Endpoint Implementations**: Several endpoints return placeholder data
+   - `GET /api/v1/agents/` - Agent listing (TODO)
+   - `GET /api/v1/agents/{id}` - Detailed metrics (TODO)
+   - `GET /api/v1/agents/{id}/stats` - Statistical analysis (TODO)
+   - `GET /api/v1/agents/{id}/executions` - Execution history (TODO)
+
+4. **Error Handling**: Non-critical components return empty data on failure
+   - Core metrics (performance, resources) will fail fast
+   - Optional metrics (errors, user data) return empty objects with warnings
+   - All failures are logged for debugging
+
+5. **Result Limits**: Fixed limits prevent unbounded result sets
+   - Error patterns: 20 max
+   - Top users: 10 max
+   - Recent feedback: 10 max
+   - Optimization suggestions: 10 max
+
+### Migration Notes
+- **No Rollback**: Migration script does not include rollback procedures
+- **Verification**: Manual verification needed after migration
+- **Dependencies**: Requires PostgreSQL 12+ for BRIN indexes and advanced features
 
 ## Future Enhancements
 

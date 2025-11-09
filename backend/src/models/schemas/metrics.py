@@ -1,15 +1,23 @@
 """Metric schemas."""
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, List
 from datetime import date, datetime
+
+
+def to_camel(string: str) -> str:
+    """Convert snake_case to camelCase."""
+    components = string.split('_')
+    return components[0] + ''.join(x.title() for x in components[1:])
 
 
 class TimeRange(BaseModel):
     """Time range for queries."""
 
-    start_date: date
-    end_date: date
+    model_config = ConfigDict(populate_by_name=True, alias_generator=lambda x: ''.join(word.capitalize() if i > 0 else word for i, word in enumerate(x.split('_'))))
+
+    start_date: date = Field(alias="startDate")
+    end_date: date = Field(alias="endDate")
 
 
 class Period(BaseModel):
@@ -22,9 +30,11 @@ class Period(BaseModel):
 class MetricValue(BaseModel):
     """Single metric value with timestamp."""
 
+    model_config = ConfigDict(populate_by_name=True, alias_generator=lambda x: ''.join(word.capitalize() if i > 0 else word for i, word in enumerate(x.split('_'))))
+
     timestamp: datetime
     value: float
-    metric_name: str
+    metric_name: str = Field(alias="metricName")
 
 
 class TimeSeriesData(BaseModel):
@@ -41,6 +51,11 @@ class TimeSeriesData(BaseModel):
 class UserMetrics(BaseModel):
     """User engagement metrics."""
 
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
     dau: int
     dau_change: float
     wau: int
@@ -54,6 +69,11 @@ class UserMetrics(BaseModel):
 
 class ExecutionMetrics(BaseModel):
     """Execution performance metrics."""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
 
     total_runs: int
     total_runs_change: float
@@ -70,6 +90,11 @@ class ExecutionMetrics(BaseModel):
 class BusinessMetrics(BaseModel):
     """Business and financial metrics."""
 
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
     mrr: float
     mrr_change: float
     arr: float
@@ -85,6 +110,11 @@ class BusinessMetrics(BaseModel):
 class TopAgent(BaseModel):
     """Top performing agent."""
 
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
     id: str
     name: str
     runs: int
@@ -95,6 +125,11 @@ class TopAgent(BaseModel):
 class AgentMetrics(BaseModel):
     """Agent performance metrics."""
 
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
     total_agents: int
     active_agents: int
     top_agents: List[TopAgent]
@@ -102,6 +137,11 @@ class AgentMetrics(BaseModel):
 
 class TopUser(BaseModel):
     """Top user by activity."""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
 
     id: str
     name: str
@@ -113,6 +153,11 @@ class TopUser(BaseModel):
 
 class Alert(BaseModel):
     """System alert."""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
 
     id: str
     type: str
@@ -133,18 +178,25 @@ class TrendData(BaseModel):
 class ExecutiveMetrics(BaseModel):
     """Legacy executive dashboard metrics."""
 
+    model_config = ConfigDict(populate_by_name=True, alias_generator=lambda x: ''.join(word.capitalize() if i > 0 else word for i, word in enumerate(x.split('_'))))
+
     mrr: float = Field(..., description="Monthly Recurring Revenue")
-    churn_rate: float = Field(..., description="Customer churn rate")
+    churn_rate: float = Field(..., description="Customer churn rate", alias="churnRate")
     ltv: float = Field(..., description="Customer Lifetime Value")
     dau: int = Field(..., description="Daily Active Users")
     wau: int = Field(..., description="Weekly Active Users")
     mau: int = Field(..., description="Monthly Active Users")
-    total_executions: int = Field(default=0)
-    success_rate: float = Field(default=0.0)
+    total_executions: int = Field(default=0, alias="totalExecutions")
+    success_rate: float = Field(default=0.0, alias="successRate")
 
 
 class ExecutiveDashboardResponse(BaseModel):
     """Comprehensive executive dashboard response."""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
 
     timeframe: str
     period: Period
@@ -160,7 +212,9 @@ class ExecutiveDashboardResponse(BaseModel):
 class MetricTrend(BaseModel):
     """Metric trend data."""
 
-    metric_name: str
+    model_config = ConfigDict(populate_by_name=True, alias_generator=lambda x: ''.join(word.capitalize() if i > 0 else word for i, word in enumerate(x.split('_'))))
+
+    metric_name: str = Field(alias="metricName")
     values: List[MetricValue]
-    trend_direction: str  # 'up', 'down', 'stable'
-    change_percentage: float
+    trend_direction: str = Field(alias="trendDirection")  # 'up', 'down', 'stable'
+    change_percentage: float = Field(alias="changePercentage")
