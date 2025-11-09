@@ -81,6 +81,8 @@ export function ErrorOverview({ overview }: ErrorOverviewProps) {
 // Error Timeline Component
 // ============================================================================
 
+const DEFAULT_TIMELINE_POINTS = 24;
+
 interface ErrorTimelineProps {
   timeline: ErrorTimelineType;
 }
@@ -94,7 +96,7 @@ export function ErrorTimeline({ timeline }: ErrorTimelineProps) {
 
       {/* Simple bar chart */}
       <div className="space-y-2 mb-6">
-        {timeline.errorsByTime.slice(-24).map((point, index) => (
+        {timeline.errorsByTime.slice(-DEFAULT_TIMELINE_POINTS).map((point, index) => (
           <div key={index} className="flex items-center gap-2">
             <div className="text-xs text-gray-500 w-32">
               {new Date(point.timestamp).toLocaleString(undefined, {

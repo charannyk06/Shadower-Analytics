@@ -89,7 +89,7 @@ export function useResolveError() {
       );
       return response.data;
     },
-    onSuccess: (_, variables) => {
+    onSuccess: () => {
       // Invalidate all error tracking queries
       queryClient.invalidateQueries({ queryKey: ['errorTracking'] });
     },

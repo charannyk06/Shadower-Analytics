@@ -8,7 +8,8 @@ from ...core.database import get_db
 from ...models.schemas.error_tracking import (
     ErrorTrackingResponse,
     TrackErrorRequest,
-    ResolveErrorRequest
+    ResolveErrorRequest,
+    TimeFrame
 )
 from ...services.analytics.error_tracking_service import ErrorTrackingService
 from ...middleware.auth import get_current_user
@@ -21,10 +22,9 @@ logger = logging.getLogger(__name__)
 @router.get("/{workspace_id}", response_model=ErrorTrackingResponse)
 async def get_error_tracking(
     workspace_id: str = Path(..., description="Workspace ID"),
-    timeframe: str = Query(
-        "7d",
-        description="Time range: 24h, 7d, 30d, 90d",
-        pattern="^(24h|7d|30d|90d)$",
+    timeframe: TimeFrame = Query(
+        TimeFrame.SEVEN_DAYS,
+        description="Time range: 24h, 7d, 30d, 90d"
     ),
     severity_filter: Optional[str] = Query(
         None,
@@ -62,7 +62,7 @@ async def get_error_tracking(
         service = ErrorTrackingService(db)
         tracking_data = await service.get_error_tracking(
             workspace_id=workspace_id,
-            timeframe=timeframe,
+            timeframe=timeframe.value,
             severity_filter=severity_filter
         )
 
