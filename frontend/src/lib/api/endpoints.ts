@@ -35,9 +35,17 @@ export const endpoints = {
   // Workspaces
   workspaces: `${API_VERSION}/workspaces`,
   workspaceDetail: (id: string) => `${API_VERSION}/workspaces/${id}`,
+  workspaceAnalytics: (id: string) => `${API_VERSION}/workspaces/${id}/analytics`,
 
   // Cache management (admin only)
   cacheStats: `${API_VERSION}/cache/stats`,
   cacheInvalidate: `${API_VERSION}/cache/invalidate`,
   cacheWarm: `${API_VERSION}/cache/warm`,
+
+  // User Activity Tracking
+  userActivityAnalytics: (workspaceId: string) => `${API_VERSION}/user-activity/${workspaceId}`,
+  retentionCurve: (workspaceId: string) => `${API_VERSION}/user-activity/${workspaceId}/retention/curve`,
+  cohortAnalysis: (workspaceId: string) => `${API_VERSION}/user-activity/${workspaceId}/retention/cohorts`,
+  churnAnalysis: (workspaceId: string) => `${API_VERSION}/user-activity/${workspaceId}/churn`,
+  trackActivity: (workspaceId: string) => `${API_VERSION}/user-activity/${workspaceId}/track`,
 } as const;

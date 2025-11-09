@@ -286,6 +286,7 @@ SELECT analytics.refresh_agent_analytics_summary();
 - [ ] Concurrent user access
 - [ ] Materialized view refresh performance
 
+<<<<<<< HEAD
 ## Known Limitations
 
 ### Current Implementation
