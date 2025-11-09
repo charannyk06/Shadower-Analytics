@@ -168,7 +168,7 @@ export function ExecutionMetricsDashboard({ workspaceId }: ExecutionMetricsDashb
 
           <MetricCard
             title="Median Latency"
-            value={data.latency.executionLatency.median}
+            value={data.latency.executionLatency.p50}
             format="duration"
             className="!shadow-none !p-4"
           />
