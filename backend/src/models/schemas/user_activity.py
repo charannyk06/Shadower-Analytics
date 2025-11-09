@@ -1,8 +1,25 @@
 """User activity tracking schemas."""
 
 from pydantic import BaseModel, Field
-from typing import List, Dict, Any, Optional, Literal
-from datetime import datetime
+from typing import List, Dict, Optional, Literal
+
+
+class TrackActivityRequest(BaseModel):
+    """Request model for tracking user activity."""
+
+    userId: str = Field(..., description="User ID (required)")
+    sessionId: Optional[str] = None
+    eventType: Optional[str] = "custom"
+    eventName: Optional[str] = None
+    pagePath: Optional[str] = None
+    ipAddress: Optional[str] = None
+    userAgent: Optional[str] = None
+    referrer: Optional[str] = None
+    deviceType: Optional[str] = None
+    browser: Optional[str] = None
+    os: Optional[str] = None
+    countryCode: Optional[str] = None
+    metadata: Optional[Dict[str, str]] = Field(default_factory=dict)
 
 
 class ActivityByDate(BaseModel):

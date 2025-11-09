@@ -3,7 +3,7 @@
 from typing import List, Dict, Any
 from datetime import datetime, timedelta, date
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, distinct, case
+from sqlalchemy import select, func, and_, distinct
 
 from ...models.database.tables import UserActivity
 
@@ -172,35 +172,29 @@ class RetentionAnalysisService:
     ) -> Dict[str, Any]:
         """Analyze user churn patterns."""
 
-        # Get total users at start of period
-        start_users_query = select(func.count(distinct(UserActivity.user_id))).where(
+        # Get users who were active before period
+        before_period_query = select(distinct(UserActivity.user_id)).where(
             and_(
                 UserActivity.workspace_id == workspace_id,
                 UserActivity.created_at < start_date
             )
         )
+        before_period_result = await self.db.execute(before_period_query)
+        before_period_users = set(row[0] for row in before_period_result.fetchall())
 
-        start_result = await self.db.execute(start_users_query)
-        start_users = start_result.scalar() or 0
-
-        # Get users who were active before period but not during
-        churned_query = select(func.count(distinct(UserActivity.user_id))).where(
+        # Get users who were active during the period
+        during_period_query = select(distinct(UserActivity.user_id)).where(
             and_(
                 UserActivity.workspace_id == workspace_id,
-                UserActivity.created_at < start_date,
-                ~UserActivity.user_id.in_(
-                    select(distinct(UserActivity.user_id)).where(
-                        and_(
-                            UserActivity.workspace_id == workspace_id,
-                            UserActivity.created_at.between(start_date, end_date)
-                        )
-                    )
-                )
+                UserActivity.created_at.between(start_date, end_date)
             )
         )
+        during_period_result = await self.db.execute(during_period_query)
+        during_period_users = set(row[0] for row in during_period_result.fetchall())
 
-        churned_result = await self.db.execute(churned_query)
-        churned_users = churned_result.scalar() or 0
+        # Users who churned: active before, not active during
+        churned_users = len(before_period_users - during_period_users)
+        start_users = len(before_period_users)
 
         churn_rate = (churned_users / start_users * 100) if start_users > 0 else 0
 
@@ -228,7 +222,7 @@ class RetentionAnalysisService:
 
         elif cohort_type == "weekly":
             # Start from the first Monday
-            while current_date.weekday() != 0:
+            while current_date.weekday() != 0 and current_date <= end_date:
                 current_date += timedelta(days=1)
 
             while current_date <= end_date:

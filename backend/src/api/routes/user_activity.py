@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ...core.database import get_db
 from ...services.analytics.user_activity import UserActivityService
 from ...services.analytics.retention_analysis import RetentionAnalysisService
-from ...models.schemas.user_activity import UserActivityData
+from ...models.schemas.user_activity import UserActivityData, TrackActivityRequest
 
 router = APIRouter(prefix="/api/v1/user-activity", tags=["user-activity"])
 
@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api/v1/user-activity", tags=["user-activity"])
 @router.get("/{workspace_id}", response_model=UserActivityData)
 async def get_user_activity(
     workspace_id: str,
-    timeframe: str = Query("30d", regex="^(7d|30d|90d|1y)$"),
+    timeframe: str = Query("30d", pattern="^(7d|30d|90d|1y)$"),
     segment_id: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
 ):
@@ -73,7 +73,7 @@ async def get_retention_curve(
 @router.get("/{workspace_id}/retention/cohorts")
 async def get_cohort_analysis(
     workspace_id: str,
-    cohort_type: str = Query("monthly", regex="^(daily|weekly|monthly)$"),
+    cohort_type: str = Query("monthly", pattern="^(daily|weekly|monthly)$"),
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
@@ -100,12 +100,12 @@ async def get_cohort_analysis(
         if start_date:
             start_date_obj = datetime.strptime(start_date, "%Y-%m-%d").date()
         else:
-            start_date_obj = (datetime.now() - timedelta(days=180)).date()
+            start_date_obj = (datetime.utcnow() - timedelta(days=180)).date()
 
         if end_date:
             end_date_obj = datetime.strptime(end_date, "%Y-%m-%d").date()
         else:
-            end_date_obj = datetime.now().date()
+            end_date_obj = datetime.utcnow().date()
 
         service = RetentionAnalysisService(db)
         cohorts = await service.generate_cohort_analysis(
@@ -125,7 +125,7 @@ async def get_cohort_analysis(
 @router.get("/{workspace_id}/churn")
 async def get_churn_analysis(
     workspace_id: str,
-    timeframe: str = Query("30d", regex="^(7d|30d|90d|1y)$"),
+    timeframe: str = Query("30d", pattern="^(7d|30d|90d|1y)$"),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -158,7 +158,7 @@ async def get_churn_analysis(
 @router.post("/{workspace_id}/track")
 async def track_activity(
     workspace_id: str,
-    event_data: dict,
+    event_data: TrackActivityRequest,
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -179,20 +179,20 @@ async def track_activity(
         # Create activity record
         activity = UserActivity(
             id=str(uuid.uuid4()),
-            user_id=event_data.get("userId"),
+            user_id=event_data.userId,
             workspace_id=workspace_id,
-            session_id=event_data.get("sessionId"),
-            event_type=event_data.get("eventType", "custom"),
-            event_name=event_data.get("eventName"),
-            page_path=event_data.get("pagePath"),
-            ip_address=event_data.get("ipAddress"),
-            user_agent=event_data.get("userAgent"),
-            referrer=event_data.get("referrer"),
-            device_type=event_data.get("deviceType"),
-            browser=event_data.get("browser"),
-            os=event_data.get("os"),
-            country_code=event_data.get("countryCode"),
-            metadata=event_data.get("metadata", {}),
+            session_id=event_data.sessionId,
+            event_type=event_data.eventType,
+            event_name=event_data.eventName,
+            page_path=event_data.pagePath,
+            ip_address=event_data.ipAddress,
+            user_agent=event_data.userAgent,
+            referrer=event_data.referrer,
+            device_type=event_data.deviceType,
+            browser=event_data.browser,
+            os=event_data.os,
+            country_code=event_data.countryCode,
+            metadata=event_data.metadata,
             created_at=datetime.utcnow()
         )
 
