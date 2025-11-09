@@ -134,9 +134,9 @@ FROM agent_metrics
 WHERE total_runs > 0
 ORDER BY total_runs DESC;
 
--- Unique index for concurrent refresh
+-- Unique index for concurrent refresh (include workspace_id for multi-tenancy)
 CREATE UNIQUE INDEX idx_mv_top_agents_enhanced_unique
-    ON analytics.mv_top_agents_enhanced(agent_id);
+    ON analytics.mv_top_agents_enhanced(agent_id, workspace_id);
 
 -- Additional indexes
 CREATE INDEX idx_mv_top_agents_enhanced_workspace
@@ -314,18 +314,69 @@ REFRESH MATERIALIZED VIEW analytics.mv_top_agents_enhanced;
 REFRESH MATERIALIZED VIEW analytics.mv_error_summary;
 
 -- =====================================================================
--- Grants
+-- Row-Level Security (RLS) for Multi-Tenant Workspace Isolation
 -- =====================================================================
 
--- Grant SELECT on all materialized views to analytics users
-GRANT SELECT ON analytics.mv_agent_performance TO PUBLIC;
-GRANT SELECT ON analytics.mv_workspace_metrics TO PUBLIC;
-GRANT SELECT ON analytics.mv_top_agents_enhanced TO PUBLIC;
-GRANT SELECT ON analytics.mv_error_summary TO PUBLIC;
-GRANT SELECT ON analytics.v_materialized_view_status TO PUBLIC;
+-- Enable RLS on all new materialized views
+ALTER MATERIALIZED VIEW analytics.mv_agent_performance ENABLE ROW LEVEL SECURITY;
+ALTER MATERIALIZED VIEW analytics.mv_workspace_metrics ENABLE ROW LEVEL SECURITY;
+ALTER MATERIALIZED VIEW analytics.mv_top_agents_enhanced ENABLE ROW LEVEL SECURITY;
+ALTER MATERIALIZED VIEW analytics.mv_error_summary ENABLE ROW LEVEL SECURITY;
 
--- Grant EXECUTE on refresh function (restrict to admin roles in production)
-GRANT EXECUTE ON FUNCTION analytics.refresh_all_materialized_views TO PUBLIC;
+-- Policy: Users can only view data from their own workspaces (mv_agent_performance)
+CREATE POLICY mv_agent_performance_select_policy ON analytics.mv_agent_performance
+    FOR SELECT
+    USING (workspace_id IN (SELECT analytics.get_user_workspaces()));
+
+-- Policy: Users can only view data from their own workspaces (mv_workspace_metrics)
+CREATE POLICY mv_workspace_metrics_select_policy ON analytics.mv_workspace_metrics
+    FOR SELECT
+    USING (workspace_id IN (SELECT analytics.get_user_workspaces()));
+
+-- Policy: Users can only view data from their own workspaces (mv_top_agents_enhanced)
+CREATE POLICY mv_top_agents_enhanced_select_policy ON analytics.mv_top_agents_enhanced
+    FOR SELECT
+    USING (workspace_id IN (SELECT analytics.get_user_workspaces()));
+
+-- Policy: Users can only view data from their own workspaces (mv_error_summary)
+CREATE POLICY mv_error_summary_select_policy ON analytics.mv_error_summary
+    FOR SELECT
+    USING (workspace_id IN (SELECT analytics.get_user_workspaces()));
+
+-- Comments on RLS policies
+COMMENT ON POLICY mv_agent_performance_select_policy ON analytics.mv_agent_performance
+    IS 'Enforce workspace isolation - users can only see data from their workspaces';
+COMMENT ON POLICY mv_workspace_metrics_select_policy ON analytics.mv_workspace_metrics
+    IS 'Enforce workspace isolation - users can only see data from their workspaces';
+COMMENT ON POLICY mv_top_agents_enhanced_select_policy ON analytics.mv_top_agents_enhanced
+    IS 'Enforce workspace isolation - users can only see data from their workspaces';
+COMMENT ON POLICY mv_error_summary_select_policy ON analytics.mv_error_summary
+    IS 'Enforce workspace isolation - users can only see data from their workspaces';
+
+-- =====================================================================
+-- Grants (Restricted Access)
+-- =====================================================================
+
+-- Grant SELECT on materialized views to authenticated role only (not PUBLIC)
+-- RLS policies will enforce workspace isolation
+GRANT SELECT ON analytics.mv_agent_performance TO authenticated;
+GRANT SELECT ON analytics.mv_workspace_metrics TO authenticated;
+GRANT SELECT ON analytics.mv_top_agents_enhanced TO authenticated;
+GRANT SELECT ON analytics.mv_error_summary TO authenticated;
+
+-- Grant SELECT on metadata view to authenticated users
+GRANT SELECT ON analytics.v_materialized_view_status TO authenticated;
+
+-- Grant EXECUTE on refresh function to service_role and postgres only (NOT PUBLIC)
+GRANT EXECUTE ON FUNCTION analytics.refresh_all_materialized_views TO service_role, postgres;
+
+-- Revoke any existing PUBLIC grants (defense in depth)
+REVOKE ALL ON analytics.mv_agent_performance FROM PUBLIC;
+REVOKE ALL ON analytics.mv_workspace_metrics FROM PUBLIC;
+REVOKE ALL ON analytics.mv_top_agents_enhanced FROM PUBLIC;
+REVOKE ALL ON analytics.mv_error_summary FROM PUBLIC;
+REVOKE ALL ON analytics.v_materialized_view_status FROM PUBLIC;
+REVOKE ALL ON FUNCTION analytics.refresh_all_materialized_views FROM PUBLIC;
 
 -- =====================================================================
 -- Migration Complete

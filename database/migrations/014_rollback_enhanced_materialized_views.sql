@@ -7,6 +7,35 @@
 SET search_path TO analytics, public;
 
 -- =====================================================================
+-- Revoke Grants
+-- =====================================================================
+
+REVOKE SELECT ON analytics.mv_agent_performance FROM authenticated;
+REVOKE SELECT ON analytics.mv_workspace_metrics FROM authenticated;
+REVOKE SELECT ON analytics.mv_top_agents_enhanced FROM authenticated;
+REVOKE SELECT ON analytics.mv_error_summary FROM authenticated;
+REVOKE SELECT ON analytics.v_materialized_view_status FROM authenticated;
+REVOKE EXECUTE ON FUNCTION analytics.refresh_all_materialized_views FROM service_role, postgres;
+
+-- =====================================================================
+-- Drop RLS Policies
+-- =====================================================================
+
+DROP POLICY IF EXISTS mv_agent_performance_select_policy ON analytics.mv_agent_performance;
+DROP POLICY IF EXISTS mv_workspace_metrics_select_policy ON analytics.mv_workspace_metrics;
+DROP POLICY IF EXISTS mv_top_agents_enhanced_select_policy ON analytics.mv_top_agents_enhanced;
+DROP POLICY IF EXISTS mv_error_summary_select_policy ON analytics.mv_error_summary;
+
+-- =====================================================================
+-- Disable RLS on Materialized Views
+-- =====================================================================
+
+ALTER MATERIALIZED VIEW analytics.mv_agent_performance DISABLE ROW LEVEL SECURITY;
+ALTER MATERIALIZED VIEW analytics.mv_workspace_metrics DISABLE ROW LEVEL SECURITY;
+ALTER MATERIALIZED VIEW analytics.mv_top_agents_enhanced DISABLE ROW LEVEL SECURITY;
+ALTER MATERIALIZED VIEW analytics.mv_error_summary DISABLE ROW LEVEL SECURITY;
+
+-- =====================================================================
 -- Drop Utility Function
 -- =====================================================================
 

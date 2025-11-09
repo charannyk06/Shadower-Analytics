@@ -193,6 +193,14 @@ class MaterializedViewRefreshService:
         """
         Get refresh status for all materialized views.
 
+        Returns view metadata (size, population status) for all managed views.
+        This returns metadata about the views themselves, not the data inside them.
+
+        Note: Row-Level Security (RLS) policies on the materialized views ensure
+        that when users query the actual view data, they only see rows from their
+        own workspaces. This metadata endpoint shows information about the views
+        themselves (size, indexes, etc.) which is not workspace-specific.
+
         Returns:
             List of view status information including size and population status
         """
@@ -304,9 +312,16 @@ class MaterializedViewRefreshService:
         Returns:
             Number of rows in the view
         """
+        # Validate view name against whitelist
         if view_name not in self.VIEWS:
             raise ValueError(f"Unknown materialized view: {view_name}")
 
+        # Additional SQL identifier validation for defense in depth
+        self._validate_sql_identifier(view_name)
+
+        # Safe to use f-string here because view_name has been validated against:
+        # 1. Whitelist (self.VIEWS)
+        # 2. SQL identifier regex pattern (lowercase letters, digits, underscores only)
         query = text(f"SELECT COUNT(*) as count FROM analytics.{view_name}")
         result = await self.db.execute(query)
         row = result.fetchone()
