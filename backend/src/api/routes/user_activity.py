@@ -191,11 +191,14 @@ async def get_advanced_cohort_analysis(
         from datetime import timedelta, timezone
         from ...services.analytics.cohort_analysis import CohortAnalysisService
 
-        # Parse dates with timezone-aware datetime
+        # Parse dates - using UTC as reference for "today" to ensure consistent behavior
+        # Note: .date() returns naive date objects (calendar dates without timezone)
+        # This is intentional - cohort dates represent calendar days, not specific moments in time
         now = datetime.now(timezone.utc).date()
 
         if start_date:
             try:
+                # Parse user input as calendar date (timezone-naive is correct here)
                 start_date_obj = datetime.strptime(start_date, "%Y-%m-%d").date()
             except ValueError:
                 raise HTTPException(
@@ -207,6 +210,7 @@ async def get_advanced_cohort_analysis(
 
         if end_date:
             try:
+                # Parse user input as calendar date (timezone-naive is correct here)
                 end_date_obj = datetime.strptime(end_date, "%Y-%m-%d").date()
             except ValueError:
                 raise HTTPException(

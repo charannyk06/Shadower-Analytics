@@ -143,7 +143,7 @@ export function AdvancedCohortAnalysis({ cohorts, comparison }: AdvancedCohortAn
                   {cohorts.map((cohort) => (
                     <tr
                       key={cohort.cohortId}
-                      className="border-b hover:bg-gray-50 cursor-pointer"
+                      className="border-b hover:bg-gray-50 cursor-pointer focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-inset"
                       onClick={() => setSelectedCohort(cohort)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
@@ -201,7 +201,7 @@ export function AdvancedCohortAnalysis({ cohorts, comparison }: AdvancedCohortAn
                   {cohorts.map((cohort) => (
                     <tr
                       key={cohort.cohortId}
-                      className="border-b hover:bg-gray-50 cursor-pointer"
+                      className="border-b hover:bg-gray-50 cursor-pointer focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-inset"
                       onClick={() => setSelectedCohort(cohort)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {

@@ -51,7 +51,16 @@ class CohortAnalysisService:
     # Maximum date range to prevent performance issues
     MAX_DATE_RANGE_DAYS = 90
 
+    # Maximum cohort size to prevent memory issues and database parameter limits
+    # SQLAlchemy/PostgreSQL has parameter limits (~32767) for IN clauses
+    # This also prevents excessive memory usage with large user lists
+    MAX_COHORT_SIZE = 10000
+
     # LTV calculation constants
+    # These constants are based on typical SaaS product engagement patterns:
+    # - Average user lifetime ~6-12 months for products with engagement scores 60-120
+    # - Engagement measured by events per user normalized to 0-100 scale
+    # - LTV calculated as: avg_revenue * expected_lifetime_months
     ENGAGEMENT_TO_LIFETIME_RATIO = 10  # Divide engagement score by this to get lifetime months
     MIN_LIFETIME_MONTHS = 1  # Minimum expected lifetime in months
     ENGAGEMENT_SCORE_EVENTS_DIVISOR = 10  # Events per user to calculate engagement score
@@ -281,7 +290,23 @@ class CohortAnalysisService:
             )
 
         result = await self.db.execute(query)
-        return [row[0] for row in result.fetchall()]
+        cohort_users = [row[0] for row in result.fetchall()]
+
+        # Validate cohort size to prevent memory issues and database parameter limits
+        if len(cohort_users) > self.MAX_COHORT_SIZE:
+            logger.warning(
+                f"Cohort size {len(cohort_users)} exceeds maximum {self.MAX_COHORT_SIZE}. "
+                f"Truncating to first {self.MAX_COHORT_SIZE} users.",
+                extra={
+                    "workspace_id": workspace_id,
+                    "cohort_date": cohort_date,
+                    "cohort_type": cohort_type,
+                    "original_size": len(cohort_users)
+                }
+            )
+            cohort_users = cohort_users[:self.MAX_COHORT_SIZE]
+
+        return cohort_users
 
     async def _calculate_retention_periods(
         self,
