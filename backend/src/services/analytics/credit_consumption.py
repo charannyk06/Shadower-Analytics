@@ -1,7 +1,7 @@
 """Credit consumption tracking and analytics service."""
 
-from typing import Dict, Any, List, Optional
-from datetime import datetime, timedelta, date
+from typing import Dict, Any, List
+from datetime import datetime, timedelta
 import asyncio
 import logging
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,13 +37,13 @@ class CreditConsumptionService:
 
             # Fetch all data in parallel
             results = await asyncio.gather(
-                self._get_current_status(workspace_id),
-                self._get_consumption_breakdown(workspace_id, start_date, end_date),
-                self._get_consumption_trends(workspace_id, start_date, end_date),
-                self._get_budget_status(workspace_id),
-                self._get_cost_analysis(workspace_id, start_date, end_date),
-                self._get_optimization_recommendations(workspace_id),
-                self._forecast_usage(workspace_id)
+                self.get_current_status(workspace_id),
+                self.get_consumption_breakdown(workspace_id, start_date, end_date),
+                self.get_consumption_trends(workspace_id, start_date, end_date),
+                self.get_budget_status(workspace_id),
+                self.get_cost_analysis(workspace_id, start_date, end_date),
+                self.get_optimization_recommendations(workspace_id),
+                self.forecast_usage(workspace_id)
             )
 
             return {
@@ -61,7 +61,7 @@ class CreditConsumptionService:
             logger.error(f"Error getting credit consumption: {e}", exc_info=True)
             raise
 
-    async def _get_current_status(
+    async def get_current_status(
         self,
         workspace_id: str
     ) -> Dict[str, Any]:
@@ -156,7 +156,7 @@ class CreditConsumptionService:
             "recommendedTopUp": round(recommended_top_up, 2) if recommended_top_up and recommended_top_up > 0 else None
         }
 
-    async def _get_consumption_breakdown(
+    async def get_consumption_breakdown(
         self,
         workspace_id: str,
         start_date: datetime,
@@ -234,8 +234,7 @@ class CreditConsumptionService:
                 "credits": round(float(agent.credits), 2),
                 "percentage": round(percentage, 2),
                 "runs": int(agent.runs),
-                "avgCreditsPerRun": round(float(agent.avg_credits_per_run), 2),
-                "efficiency": round(float(agent.avg_credits_per_run), 2)
+                "avgCreditsPerRun": round(float(agent.avg_credits_per_run), 2)
             })
 
         # Get breakdown by user
@@ -280,7 +279,7 @@ class CreditConsumptionService:
             "byFeature": []  # TODO: Implement feature tracking
         }
 
-    async def _get_consumption_trends(
+    async def get_consumption_trends(
         self,
         workspace_id: str,
         start_date: datetime,
@@ -402,7 +401,7 @@ class CreditConsumptionService:
             "growthRate": growth_rate
         }
 
-    async def _get_budget_status(
+    async def get_budget_status(
         self,
         workspace_id: str
     ) -> Dict[str, Any]:
@@ -485,7 +484,7 @@ class CreditConsumptionService:
             "agentLimits": []  # TODO: Implement agent limits
         }
 
-    async def _get_cost_analysis(
+    async def get_cost_analysis(
         self,
         workspace_id: str,
         start_date: datetime,
@@ -531,7 +530,7 @@ class CreditConsumptionService:
             "modelComparison": []  # TODO: Implement model cost comparison
         }
 
-    async def _get_optimization_recommendations(
+    async def get_optimization_recommendations(
         self,
         workspace_id: str
     ) -> List[Dict[str, Any]]:
@@ -603,7 +602,7 @@ class CreditConsumptionService:
 
         return recommendations
 
-    async def _forecast_usage(
+    async def forecast_usage(
         self,
         workspace_id: str
     ) -> Dict[str, Any]:

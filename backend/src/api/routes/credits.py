@@ -3,6 +3,7 @@
 from typing import Dict, Any
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
+from datetime import datetime
 import logging
 
 from ...core.database import get_db
@@ -82,7 +83,7 @@ async def get_credit_status(
 
         # Get only current status
         service = CreditConsumptionService(db)
-        status = await service._get_current_status(workspace_id)
+        status = await service.get_current_status(workspace_id)
 
         return {
             "workspaceId": workspace_id,
@@ -121,9 +122,9 @@ async def get_consumption_breakdown(
 
         service = CreditConsumptionService(db)
         start_date = service._calculate_start_date(timeframe)
-        end_date = service._calculate_start_date("0d")  # Now
+        end_date = datetime.utcnow()
 
-        breakdown = await service._get_consumption_breakdown(
+        breakdown = await service.get_consumption_breakdown(
             workspace_id, start_date, end_date
         )
 
@@ -165,9 +166,9 @@ async def get_consumption_trends(
 
         service = CreditConsumptionService(db)
         start_date = service._calculate_start_date(timeframe)
-        end_date = service._calculate_start_date("0d")  # Now
+        end_date = datetime.utcnow()
 
-        trends = await service._get_consumption_trends(
+        trends = await service.get_consumption_trends(
             workspace_id, start_date, end_date
         )
 
@@ -206,7 +207,7 @@ async def get_budget_status(
         await WorkspaceAccess.validate_workspace_access(current_user, workspace_id)
 
         service = CreditConsumptionService(db)
-        budget = await service._get_budget_status(workspace_id)
+        budget = await service.get_budget_status(workspace_id)
 
         return {
             "workspaceId": workspace_id,
@@ -245,7 +246,7 @@ async def get_optimization_recommendations(
         await WorkspaceAccess.validate_workspace_access(current_user, workspace_id)
 
         service = CreditConsumptionService(db)
-        optimizations = await service._get_optimization_recommendations(workspace_id)
+        optimizations = await service.get_optimization_recommendations(workspace_id)
 
         return {
             "workspaceId": workspace_id,
@@ -283,7 +284,7 @@ async def get_usage_forecast(
         await WorkspaceAccess.validate_workspace_access(current_user, workspace_id)
 
         service = CreditConsumptionService(db)
-        forecast = await service._forecast_usage(workspace_id)
+        forecast = await service.forecast_usage(workspace_id)
 
         return {
             "workspaceId": workspace_id,
