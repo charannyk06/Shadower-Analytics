@@ -194,7 +194,7 @@ jobs:
 
             ## Step 5: Output Format
 
-            Post your review as a GitHub PR comment using `gh pr comment` with this structure:
+            Write your review to `review_comment.md` file using this structure:
 
             ```markdown
             ## 🤖 Claude Code Review
@@ -269,34 +269,28 @@ jobs:
 
             ## Step 6: Post Review - CRITICAL STEP
 
-            **YOU MUST POST YOUR REVIEW AS A COMMENT ON THE PR USING GITHUB CLI.**
+            **YOU MUST WRITE YOUR REVIEW TO A FILE.**
 
-            After completing your analysis, you MUST execute this command to post your review:
+            After completing your analysis, write your complete review to `review_comment.md`:
 
             ```bash
-            gh pr comment ${{ steps.pr-info.outputs.pr_number }} --body "YOUR_REVIEW_CONTENT_HERE"
-            ```
-
-            **IMPORTANT**: 
-            - You MUST use the `gh pr comment` command - this is not optional
-            - The GITHUB_TOKEN environment variable is already set for authentication
-            - Replace `YOUR_REVIEW_CONTENT_HERE` with your formatted review markdown
-            - If the review is very large (>4000 characters), split it into multiple comments:
-              1. First comment: Critical blocking issues only
-              2. Second comment: Important issues
-              3. Third comment: Suggestions and detailed notes
-
-            **Example command**:
-            ```bash
-            gh pr comment ${{ steps.pr-info.outputs.pr_number }} --body "## 🤖 Claude Code Review
+            cat > review_comment.md << 'EOF'
+            ## 🤖 Claude Code Review
 
             ### 📊 Summary
             [Your summary here]
 
-            [Rest of your review...]"
+            [Rest of your review...]
+            EOF
             ```
 
-            **DO NOT SKIP THIS STEP.** Your review is not complete until you have posted it as a comment on the PR.
+            **IMPORTANT**: 
+            - Write the complete review to `review_comment.md` in the repository root
+            - The workflow will automatically post it as a PR comment
+            - If the review is very large (>4000 characters), you can split it into multiple files:
+              - `review_comment_part1.md` (Critical blocking issues)
+              - `review_comment_part2.md` (Important issues)
+              - `review_comment_part3.md` (Suggestions and detailed notes)
 
             ## Important Guidelines
 
@@ -325,5 +319,37 @@ jobs:
 
             Begin your review now. Use the GitHub CLI tools (`gh pr view`, `gh pr diff`) to gather all context, then provide your comprehensive analysis.
 
-            **REMINDER**: After completing your review, you MUST post it as a comment using:
-            `gh pr comment ${{ steps.pr-info.outputs.pr_number }} --body "YOUR_REVIEW_MARKDOWN"`
+            **CRITICAL**: Write your complete review to a file named `review_comment.md` in the repository root. The workflow will automatically post it as a PR comment. Use this format:
+
+            ```bash
+            cat > review_comment.md << 'EOF'
+            [Your complete review in markdown format]
+            EOF
+            ```
+
+            **DO NOT** try to use `gh pr comment` directly - write to `review_comment.md` instead.
+
+      - name: Post Review Comment
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUM="${{ steps.pr-info.outputs.pr_number }}"
+          
+          # Check if review file exists
+          if [ -f "review_comment.md" ]; then
+            echo "Found review_comment.md, posting to PR..."
+            gh pr comment $PR_NUM --body-file review_comment.md
+          elif [ -f "review_comment_part1.md" ]; then
+            echo "Found split review files, posting parts..."
+            # Post parts in order
+            for part in review_comment_part1.md review_comment_part2.md review_comment_part3.md; do
+              if [ -f "$part" ]; then
+                echo "Posting $part..."
+                gh pr comment $PR_NUM --body-file "$part"
+              fi
+            done
+          else
+            echo "No review file found. Claude may not have completed the review."
+            echo "Check the workflow logs for Claude's output."
+          fi
