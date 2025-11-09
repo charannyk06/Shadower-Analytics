@@ -1,7 +1,16 @@
 """Date and time utility functions."""
 
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from typing import Tuple, Optional
+
+
+def utc_now() -> datetime:
+    """Get current UTC time (Python 3.12+ compatible).
+
+    Returns:
+        Current datetime in UTC timezone
+    """
+    return datetime.now(timezone.utc)
 
 
 def get_date_range(timeframe: str) -> Tuple[date, date]:
@@ -74,7 +83,7 @@ def calculate_start_date(timeframe: str, from_date: Optional[datetime] = None) -
     Returns:
         Datetime representing the start of the timeframe
     """
-    now = from_date or datetime.utcnow()
+    now = from_date or utc_now()
 
     timeframe_map = {
         "24h": timedelta(hours=24),
