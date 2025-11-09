@@ -6,6 +6,7 @@ from datetime import datetime
 import logging
 
 from ...core.database import get_db
+from ...core.constants import TIMEFRAME_REGEX
 from ...models.schemas.metrics import (
     ExecutiveMetrics,
     ExecutiveDashboardResponse,
@@ -125,7 +126,7 @@ async def get_executive_overview(
 @router.get("/revenue")
 async def get_revenue_metrics(
     workspace_id: str = Query(None, description="Workspace ID to query"),
-    timeframe: str = Query("30d", regex="^(7d|30d|90d|1y)$"),
+    timeframe: str = Query("30d", regex=TIMEFRAME_REGEX),
     skip_cache: bool = Query(False, description="Skip cache"),
     current_user: Dict[str, Any] = Depends(require_owner_or_admin),
     db=Depends(get_db),

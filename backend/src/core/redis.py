@@ -1,11 +1,13 @@
 """Redis connection management and client wrapper."""
 
 import redis.asyncio as redis
+from redis.asyncio import ConnectionPool
 from typing import Optional, Any
 import json
 import pickle
 from .config import settings
 import logging
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -142,21 +144,46 @@ class RedisClient:
 
 # Global Redis client instance
 _redis_client: Optional[RedisClient] = None
+redis_pool: Optional[ConnectionPool] = None
 
 
-async def get_redis_client() -> RedisClient:
-    """Get or create global Redis client instance."""
+async def get_redis_client(max_retries: int = 5) -> Optional[RedisClient]:
+    """Get Redis client instance with retry logic.
+
+    Args:
+        max_retries: Maximum number of connection retry attempts
+
+    Returns:
+        RedisClient instance or None if connection fails
+    """
     global _redis_client
 
     if _redis_client is None:
-        try:
-            _redis_client = RedisClient(settings.REDIS_URL)
-            # Test connection
-            await _redis_client.ping()
-            logger.info("Redis connection established")
-        except Exception as e:
-            logger.error(f"Failed to connect to Redis: {e}")
-            raise
+        retry_count = 0
+        base_delay = 2  # Start with 2 second delay
+
+        while retry_count < max_retries:
+            try:
+                _redis_client = RedisClient(settings.REDIS_URL)
+                # Test connection
+                await _redis_client.ping()
+                logger.info("Redis connection established successfully")
+                return _redis_client
+            except Exception as e:
+                retry_count += 1
+                if retry_count >= max_retries:
+                    logger.error(
+                        f"Failed to connect to Redis after {max_retries} attempts: {e}"
+                    )
+                    return None
+
+                # Exponential backoff: 2s, 4s, 8s, 16s, 32s
+                delay = base_delay * (2 ** (retry_count - 1))
+                logger.warning(
+                    f"Redis connection attempt {retry_count}/{max_retries} failed: {e}. "
+                    f"Retrying in {delay} seconds..."
+                )
+                await asyncio.sleep(delay)
 
     return _redis_client
 
