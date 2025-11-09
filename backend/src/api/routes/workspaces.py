@@ -133,7 +133,6 @@ async def get_workspace_users(
     return {"users": [], "total": 0}
 
 
-<<<<<<< HEAD
 @router.get("/{workspace_id}/analytics")
 async def get_workspace_analytics(
     workspace_id: str = Path(

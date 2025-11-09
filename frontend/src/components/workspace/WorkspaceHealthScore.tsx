@@ -31,7 +31,7 @@ export function WorkspaceHealthScore({ score, factors, status }: WorkspaceHealth
   };
 
   const getStatusLabel = (status: WorkspaceStatus): string => {
-    return status.replace('_', ' ').toUpperCase();
+    return status.replace(/_/g, ' ').toUpperCase();
   };
 
   const HealthCircle = ({ value, label }: { value: number; label: string }) => {

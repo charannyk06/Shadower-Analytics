@@ -80,7 +80,7 @@ export function useWorkspaceAnalytics(
     enabled: enabled && !!workspaceId,
     refetchInterval,
     staleTime: skipCache ? 0 : cacheTime.LONG, // Consider data fresh for 30 minutes
-    gcTime: cacheTime.LONG, // Cache for 30 minutes
+    gcTime: skipCache ? 0 : cacheTime.LONG, // Cache for 30 minutes, or disable cache if skipCache
     retry: 3,
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
   })
