@@ -24,13 +24,22 @@ class AsyncDatabaseTask(Task):
     """Base task class that provides async database session handling."""
 
     def run_async(self, async_func, *args, **kwargs):
-        """Run an async function synchronously."""
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            # If loop is already running, create a new one
+        """Run an async function synchronously with proper cleanup."""
+        # Use asyncio.run() for proper event loop management and cleanup
+        # This creates a new loop, runs the coroutine, and cleans up
+        try:
+            return asyncio.run(async_func(*args, **kwargs))
+        except RuntimeError:
+            # Fallback for edge cases where asyncio.run() isn't available
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-        return loop.run_until_complete(async_func(*args, **kwargs))
+            try:
+                return loop.run_until_complete(async_func(*args, **kwargs))
+            finally:
+                try:
+                    loop.close()
+                finally:
+                    asyncio.set_event_loop(None)
 
 
 @celery_app.task(
@@ -243,6 +252,9 @@ def backfill_aggregations_task(
 
     Useful for historical data or fixing gaps in aggregations.
 
+    Note: Maximum of 1000 periods to prevent database overload.
+    For larger backfills, split into multiple tasks.
+
     Args:
         start_date: ISO format date string for start
         end_date: ISO format date string for end
@@ -257,29 +269,65 @@ def backfill_aggregations_task(
         start_dt = datetime.fromisoformat(start_date)
         end_dt = datetime.fromisoformat(end_date)
 
+        # Calculate number of periods
+        if granularity == 'hourly':
+            periods = int((end_dt - start_dt).total_seconds() / 3600)
+        elif granularity == 'daily':
+            periods = (end_dt - start_dt).days
+        else:
+            raise ValueError(f"Invalid granularity: {granularity}")
+
+        # Enforce max periods limit
+        from src.tasks.maintenance import MAX_BACKFILL_PERIODS
+        if periods > MAX_BACKFILL_PERIODS:
+            raise ValueError(
+                f"Backfill period too large: {periods} periods requested, "
+                f"maximum is {MAX_BACKFILL_PERIODS}. "
+                f"Please split into smaller batches."
+            )
+
+        if periods <= 0:
+            return {
+                'success': False,
+                'message': 'End date must be after start date',
+                'periods_processed': 0
+            }
+
         results = []
 
         async def run_backfill():
             async with async_session_maker() as db:
                 current = start_dt
+                processed = 0
 
                 if granularity == 'hourly':
-                    while current < end_dt:
+                    while current < end_dt and processed < MAX_BACKFILL_PERIODS:
                         result = await hourly_rollup(db, current)
                         results.append(result)
                         current += timedelta(hours=1)
+                        processed += 1
+
+                        # Log progress every 24 periods
+                        if processed % 24 == 0:
+                            logger.info(f"Backfill progress: {processed}/{periods} periods completed")
 
                 elif granularity == 'daily':
-                    while current < end_dt:
+                    while current < end_dt and processed < MAX_BACKFILL_PERIODS:
                         result = await daily_rollup(db, current)
                         results.append(result)
                         current += timedelta(days=1)
+                        processed += 1
+
+                        # Log progress every 7 periods
+                        if processed % 7 == 0:
+                            logger.info(f"Backfill progress: {processed}/{periods} periods completed")
 
                 return {
                     'success': True,
                     'granularity': granularity,
                     'start_date': start_date,
                     'end_date': end_date,
+                    'total_periods': periods,
                     'periods_processed': len(results),
                     'results': results
                 }

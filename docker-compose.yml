@@ -114,10 +114,13 @@ services:
     environment:
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
+      # Basic auth for Flower UI (change in production!)
+      # Format: username:password
+      FLOWER_BASIC_AUTH: admin:changeme_in_production
     depends_on:
       - redis
       - celery-worker
-    command: celery -A src.celery_app flower --port=5555
+    command: celery -A src.celery_app flower --port=5555 --basic-auth=admin:changeme_in_production
     restart: unless-stopped
 
   # Frontend Dashboard

@@ -112,29 +112,29 @@ async def aggregate_user_activity(
         SELECT
             workspace_id,
             user_id,
-            DATE_TRUNC('hour', created_at) as hour,
+            hour,
             COUNT(*) as total_events,
             COUNT(*) FILTER (WHERE event_type = 'page_view') as page_views,
             COUNT(DISTINCT session_id) as unique_sessions,
             -- Placeholder for active duration - would need session tracking
             0 as active_duration_seconds,
             0 as avg_session_duration,
-            jsonb_object_agg(event_type, event_count) as event_type_counts,
+            jsonb_object_agg(event_type, event_count) FILTER (WHERE event_type IS NOT NULL) as event_type_counts,
             NOW() as created_at,
             NOW() as updated_at
         FROM (
             SELECT
                 workspace_id,
                 user_id,
-                created_at,
+                DATE_TRUNC('hour', created_at) as hour,
                 session_id,
                 event_type,
                 COUNT(*) as event_count
             FROM analytics.user_activity
             WHERE created_at >= :start_time AND created_at < :end_time
-            GROUP BY workspace_id, user_id, created_at, session_id, event_type
+            GROUP BY workspace_id, user_id, DATE_TRUNC('hour', created_at), session_id, event_type
         ) subquery
-        GROUP BY workspace_id, user_id, DATE_TRUNC('hour', created_at)
+        GROUP BY workspace_id, user_id, hour
         ON CONFLICT (workspace_id, user_id, hour)
         DO UPDATE SET
             total_events = EXCLUDED.total_events,
@@ -185,8 +185,8 @@ async def aggregate_credit_consumption(
         )
         SELECT
             workspace_id,
-            user_id,
-            agent_id,
+            COALESCE(user_id, '') as user_id,
+            COALESCE(agent_id, '') as agent_id,
             DATE_TRUNC('hour', started_at) as hour,
             COALESCE(SUM(credits_used), 0) as total_credits,
             COALESCE(AVG(credits_used), 0) as avg_credits_per_execution,
@@ -203,7 +203,7 @@ async def aggregate_credit_consumption(
             NOW() as updated_at
         FROM execution_logs
         WHERE started_at >= :start_time AND started_at < :end_time
-        GROUP BY workspace_id, user_id, agent_id, DATE_TRUNC('hour', started_at)
+        GROUP BY workspace_id, COALESCE(user_id, ''), COALESCE(agent_id, ''), DATE_TRUNC('hour', started_at)
         ON CONFLICT (workspace_id, user_id, agent_id, hour)
         DO UPDATE SET
             total_credits = EXCLUDED.total_credits,

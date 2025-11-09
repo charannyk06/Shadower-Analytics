@@ -138,12 +138,14 @@ def upgrade():
     op.create_index('idx_user_activity_hourly_user_hour', 'user_activity_hourly', ['user_id', 'hour'], unique=False, schema='analytics')
 
     # Create credit_consumption_hourly table
+    # Note: user_id and agent_id use empty string as default instead of NULL
+    # to avoid NULL handling issues with unique constraints
     op.create_table(
         'credit_consumption_hourly',
         sa.Column('id', sa.Integer(), nullable=False),
         sa.Column('workspace_id', sa.String(), nullable=False),
-        sa.Column('user_id', sa.String(), nullable=True),
-        sa.Column('agent_id', sa.String(), nullable=True),
+        sa.Column('user_id', sa.String(), nullable=False, server_default=''),
+        sa.Column('agent_id', sa.String(), nullable=False, server_default=''),
         sa.Column('hour', sa.DateTime(), nullable=False),
 
         # Credit metrics

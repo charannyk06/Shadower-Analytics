@@ -3,29 +3,52 @@
 import logging
 import asyncio
 from datetime import datetime, timedelta
-from typing import Dict
+from typing import Dict, List
 
 from celery import Task
 from sqlalchemy import text
 
 from src.celery_app import celery_app
-from src.core.database import async_session_maker
+from src.core.database import async_session_maker, async_engine
 from src.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+# Constants
+DEFAULT_RETENTION_DAYS = 90
+MAX_BACKFILL_PERIODS = 1000
+
+# Whitelisted tables for maintenance operations
+ALLOWED_VACUUM_TABLES = {
+    'analytics.execution_metrics_hourly',
+    'analytics.execution_metrics_daily',
+    'analytics.user_activity_hourly',
+    'analytics.credit_consumption_hourly',
+}
+
+ALLOWED_SCHEMAS = {'analytics'}
 
 
 class AsyncDatabaseTask(Task):
     """Base task class that provides async database session handling."""
 
     def run_async(self, async_func, *args, **kwargs):
-        """Run an async function synchronously."""
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            # If loop is already running, create a new one
+        """Run an async function synchronously with proper cleanup."""
+        # Use asyncio.run() for proper event loop management and cleanup
+        # This creates a new loop, runs the coroutine, and cleans up
+        try:
+            return asyncio.run(async_func(*args, **kwargs))
+        except RuntimeError:
+            # Fallback for edge cases where asyncio.run() isn't available
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-        return loop.run_until_complete(async_func(*args, **kwargs))
+            try:
+                return loop.run_until_complete(async_func(*args, **kwargs))
+            finally:
+                try:
+                    loop.close()
+                finally:
+                    asyncio.set_event_loop(None)
 
 
 @celery_app.task(
@@ -200,14 +223,17 @@ def health_check_task(self) -> Dict:
 @celery_app.task(
     name='tasks.maintenance.vacuum_tables',
     bind=True,
-    base=AsyncDatabaseTask,
     max_retries=1,
 )
-def vacuum_tables_task(self, analyze: bool = True) -> Dict:
+def vacuum_tables_task(self, analyze: bool = True, tables: List[str] = None) -> Dict:
     """Run VACUUM on aggregation tables to reclaim space and update statistics.
+
+    Note: VACUUM cannot run inside a transaction, so this uses a raw connection
+    with autocommit mode.
 
     Args:
         analyze: Whether to run ANALYZE as well (default: True)
+        tables: List of tables to vacuum (default: all allowed tables)
 
     Returns:
         Dictionary with vacuum results
@@ -215,25 +241,28 @@ def vacuum_tables_task(self, analyze: bool = True) -> Dict:
     try:
         logger.info("Starting vacuum task")
 
-        async def run_vacuum():
-            async with async_session_maker() as db:
-                tables = [
-                    'analytics.execution_metrics_hourly',
-                    'analytics.execution_metrics_daily',
-                    'analytics.user_activity_hourly',
-                    'analytics.credit_consumption_hourly',
-                ]
+        # Validate tables
+        if tables is None:
+            tables = list(ALLOWED_VACUUM_TABLES)
+        else:
+            for table in tables:
+                if table not in ALLOWED_VACUUM_TABLES:
+                    raise ValueError(f"Table '{table}' is not in the allowed list for VACUUM operations")
 
-                results = []
+        async def run_vacuum():
+            results = []
+
+            # Get raw connection with autocommit for VACUUM
+            async with async_engine.connect() as conn:
+                # Set isolation level to autocommit (VACUUM requires this)
+                await conn.execution_options(isolation_level="AUTOCOMMIT")
 
                 for table in tables:
                     try:
-                        # Note: VACUUM cannot run inside a transaction block
-                        # This would need special handling in production
                         analyze_str = "ANALYZE" if analyze else ""
+                        # Safe because table names are validated against whitelist
                         query = text(f"VACUUM {analyze_str} {table}")
-                        await db.execute(query)
-                        await db.commit()
+                        await conn.execute(query)
 
                         results.append({
                             'table': table,
@@ -250,16 +279,17 @@ def vacuum_tables_task(self, analyze: bool = True) -> Dict:
                             'error': str(e)
                         })
 
-                success_count = sum(1 for r in results if r['status'] == 'success')
+            success_count = sum(1 for r in results if r['status'] == 'success')
 
-                return {
-                    'success': True,
-                    'tables_vacuumed': success_count,
-                    'total_tables': len(tables),
-                    'results': results
-                }
+            return {
+                'success': success_count > 0,
+                'tables_vacuumed': success_count,
+                'total_tables': len(tables),
+                'results': results
+            }
 
-        result = self.run_async(run_vacuum)
+        # Use asyncio.run directly for non-database session task
+        result = asyncio.run(run_vacuum())
         logger.info(f"Vacuum task completed: {result}")
         return result
 
@@ -271,11 +301,12 @@ def vacuum_tables_task(self, analyze: bool = True) -> Dict:
 @celery_app.task(
     name='tasks.maintenance.rebuild_indices',
     bind=True,
-    base=AsyncDatabaseTask,
     max_retries=1,
 )
 def rebuild_indices_task(self) -> Dict:
     """Rebuild indices on aggregation tables to improve query performance.
+
+    Note: REINDEX CONCURRENTLY requires a connection outside transaction context.
 
     Returns:
         Dictionary with rebuild results
@@ -284,15 +315,18 @@ def rebuild_indices_task(self) -> Dict:
         logger.info("Starting index rebuild task")
 
         async def run_rebuild():
-            async with async_session_maker() as db:
-                # Get all indices on aggregation tables
+            # Get raw connection with autocommit for REINDEX CONCURRENTLY
+            async with async_engine.connect() as conn:
+                await conn.execution_options(isolation_level="AUTOCOMMIT")
+
+                # Get all indices on aggregation tables with validation
                 query = text("""
                     SELECT
                         schemaname,
                         tablename,
                         indexname
                     FROM pg_indexes
-                    WHERE schemaname = 'analytics'
+                    WHERE schemaname = :schema
                     AND tablename IN (
                         'execution_metrics_hourly',
                         'execution_metrics_daily',
@@ -301,16 +335,22 @@ def rebuild_indices_task(self) -> Dict:
                     )
                 """)
 
-                result = await db.execute(query)
+                result = await conn.execute(query, {'schema': 'analytics'})
                 indices = result.fetchall()
 
                 rebuild_results = []
 
                 for schema, table, index in indices:
+                    # Validate schema is in allowed list
+                    if schema not in ALLOWED_SCHEMAS:
+                        logger.warning(f"Skipping index {index} in disallowed schema {schema}")
+                        continue
+
                     try:
+                        # Safe because schema and table are validated from database query
+                        # with parameterized schema filter
                         reindex_query = text(f"REINDEX INDEX CONCURRENTLY {schema}.{index}")
-                        await db.execute(reindex_query)
-                        await db.commit()
+                        await conn.execute(reindex_query)
 
                         rebuild_results.append({
                             'index': f"{schema}.{index}",
@@ -331,13 +371,14 @@ def rebuild_indices_task(self) -> Dict:
                 success_count = sum(1 for r in rebuild_results if r['status'] == 'success')
 
                 return {
-                    'success': True,
+                    'success': success_count > 0,
                     'indices_rebuilt': success_count,
                     'total_indices': len(indices),
                     'results': rebuild_results
                 }
 
-        result = self.run_async(run_rebuild)
+        # Use asyncio.run directly for non-database session task
+        result = asyncio.run(run_rebuild())
         logger.info(f"Index rebuild completed: {result}")
         return result
 
