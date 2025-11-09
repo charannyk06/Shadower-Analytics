@@ -10,7 +10,7 @@ SET search_path TO analytics, public;
 -- Materialized View: mv_agent_performance
 -- Description: Agent performance summary from agent_runs
 -- Refresh: Daily
--- Dependencies: public.agent_runs
+-- Dependencies: analytics.agent_runs
 -- =====================================================================
 
 CREATE MATERIALIZED VIEW analytics.mv_agent_performance AS
@@ -24,13 +24,13 @@ SELECT
     PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ar.runtime_seconds) as median_runtime,
     PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY ar.runtime_seconds) as p95_runtime,
     SUM(ar.credits_consumed) as total_credits
-FROM public.agent_runs ar
+FROM analytics.agent_runs ar
 WHERE ar.started_at >= CURRENT_DATE - INTERVAL '30 days'
 GROUP BY ar.agent_id, ar.workspace_id, DATE(ar.started_at);
 
 -- Unique index for concurrent refresh
 CREATE UNIQUE INDEX idx_mv_agent_performance_unique
-    ON analytics.mv_agent_performance(agent_id, run_date);
+    ON analytics.mv_agent_performance(agent_id, workspace_id, run_date);
 
 -- Additional indexes for performance
 CREATE INDEX idx_mv_agent_performance_workspace
@@ -47,7 +47,7 @@ COMMENT ON MATERIALIZED VIEW analytics.mv_agent_performance IS 'Agent performanc
 -- Materialized View: mv_workspace_metrics
 -- Description: Workspace-level metrics summary
 -- Refresh: Daily
--- Dependencies: public.agent_runs
+-- Dependencies: analytics.agent_runs
 -- =====================================================================
 
 CREATE MATERIALIZED VIEW analytics.mv_workspace_metrics AS
@@ -60,7 +60,7 @@ WITH workspace_stats AS (
         AVG(CASE WHEN status = 'completed' THEN 100.0 ELSE 0 END) as success_rate,
         SUM(credits_consumed) as credits_consumed,
         MAX(started_at) as last_activity
-    FROM public.agent_runs
+    FROM analytics.agent_runs
     WHERE started_at >= CURRENT_DATE - INTERVAL '30 days'
     GROUP BY workspace_id, user_id, agent_id
 )
@@ -151,7 +151,7 @@ COMMENT ON MATERIALIZED VIEW analytics.mv_top_agents_enhanced IS 'Enhanced top a
 -- Materialized View: mv_error_summary
 -- Description: Error summary and patterns
 -- Refresh: Hourly
--- Dependencies: public.agent_errors
+-- Dependencies: analytics.agent_errors
 -- =====================================================================
 
 CREATE MATERIALIZED VIEW analytics.mv_error_summary AS
@@ -170,7 +170,7 @@ SELECT
         [1:5] as sample_messages,
     MIN(ae.created_at) as first_occurrence,
     MAX(ae.created_at) as last_occurrence
-FROM public.agent_errors ae
+FROM analytics.agent_errors ae
 WHERE ae.created_at >= CURRENT_DATE - INTERVAL '30 days'
 GROUP BY
     DATE(ae.created_at),
@@ -197,6 +197,8 @@ CREATE INDEX idx_mv_error_summary_date
     ON analytics.mv_error_summary(error_date DESC);
 CREATE INDEX idx_mv_error_summary_workspace
     ON analytics.mv_error_summary(workspace_id, error_date DESC);
+CREATE INDEX idx_mv_error_summary_agent
+    ON analytics.mv_error_summary(agent_id, error_date DESC);
 CREATE INDEX idx_mv_error_summary_severity
     ON analytics.mv_error_summary(error_severity, error_count DESC);
 

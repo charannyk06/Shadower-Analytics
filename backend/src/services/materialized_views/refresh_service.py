@@ -9,6 +9,7 @@ Handles refresh operations for materialized views including:
 """
 
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any
 from sqlalchemy import text
@@ -86,6 +87,29 @@ class MaterializedViewRefreshService:
 
         return results
 
+    @staticmethod
+    def _validate_sql_identifier(identifier: str) -> None:
+        """
+        Validate SQL identifier to prevent SQL injection.
+
+        Ensures identifier matches PostgreSQL naming rules:
+        - Starts with letter or underscore
+        - Contains only letters, digits, and underscores
+        - Maximum length 63 characters
+
+        Args:
+            identifier: SQL identifier to validate
+
+        Raises:
+            ValueError: If identifier format is invalid
+        """
+        if not re.match(r'^[a-z_][a-z0-9_]{0,62}$', identifier):
+            raise ValueError(
+                f"Invalid SQL identifier format: {identifier}. "
+                "Must start with letter or underscore and contain only "
+                "lowercase letters, digits, and underscores."
+            )
+
     async def refresh_view(
         self,
         view_name: str,
@@ -104,9 +128,12 @@ class MaterializedViewRefreshService:
         start_time = datetime.now(timezone.utc)
 
         try:
-            # Validate view name
+            # Validate view name against whitelist
             if view_name not in self.VIEWS:
                 raise ValueError(f"Unknown materialized view: {view_name}")
+
+            # Additional SQL identifier validation
+            self._validate_sql_identifier(view_name)
 
             # Build refresh command
             concurrent_keyword = "CONCURRENTLY" if concurrent else ""

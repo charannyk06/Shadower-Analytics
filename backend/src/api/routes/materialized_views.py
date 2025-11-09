@@ -8,13 +8,14 @@ Provides endpoints for:
 """
 
 import logging
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.database import get_db
 from src.services.materialized_views import MaterializedViewRefreshService
+from src.api.dependencies.auth import require_admin, get_current_active_user
 
 logger = logging.getLogger(__name__)
 
@@ -122,13 +123,16 @@ class HealthCheckResponse(BaseModel):
 @router.post("/refresh", response_model=RefreshResponse)
 async def refresh_materialized_views(
     request: RefreshRequest,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(require_admin)
 ):
     """
-    Refresh materialized views.
+    Refresh materialized views (Admin only).
 
     This endpoint refreshes one or more materialized views. By default, it refreshes
     all views, but you can specify a subset of views to refresh.
+
+    **Authentication**: Required (Admin role)
 
     Parameters:
     - **views**: Optional list of view names to refresh
@@ -176,10 +180,13 @@ async def refresh_materialized_views(
 async def refresh_single_view(
     view_name: str,
     concurrent: bool = Query(True, description="Use CONCURRENTLY option"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(require_admin)
 ):
     """
-    Refresh a single materialized view.
+    Refresh a single materialized view (Admin only).
+
+    **Authentication**: Required (Admin role)
 
     Parameters:
     - **view_name**: Name of the materialized view to refresh
@@ -206,10 +213,13 @@ async def refresh_single_view(
 
 @router.get("/status", response_model=List[ViewStatus])
 async def get_views_status(
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_current_active_user)
 ):
     """
     Get status information for all materialized views.
+
+    **Authentication**: Required
 
     Returns:
     - List of view status including size, population status, and description
@@ -231,10 +241,13 @@ async def get_views_status(
 @router.get("/statistics/{view_name}", response_model=ViewStatistics)
 async def get_view_statistics(
     view_name: str,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_current_active_user)
 ):
     """
     Get detailed statistics for a specific materialized view.
+
+    **Authentication**: Required
 
     Parameters:
     - **view_name**: Name of the materialized view
@@ -272,10 +285,13 @@ async def get_view_statistics(
 
 @router.get("/health", response_model=HealthCheckResponse)
 async def check_views_health(
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_current_active_user)
 ):
     """
     Check the health of all materialized views.
+
+    **Authentication**: Required
 
     Performs health checks including:
     - View population status
@@ -311,10 +327,13 @@ async def check_views_health(
 @router.get("/{view_name}/row-count")
 async def get_view_row_count(
     view_name: str,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_current_active_user)
 ):
     """
     Get the number of rows in a materialized view.
+
+    **Authentication**: Required
 
     Parameters:
     - **view_name**: Name of the materialized view
