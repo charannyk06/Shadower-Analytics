@@ -8,6 +8,7 @@ import logging
 
 from ...core.database import get_db
 from ...services.metrics.execution_metrics import ExecutionMetricsService
+from ...services.analytics.trend_analysis_service import TrendAnalysisService
 from ..dependencies.auth import get_current_user
 from ..middleware.workspace import WorkspaceAccess
 from ..middleware.rate_limit import RateLimiter
@@ -262,4 +263,60 @@ async def get_execution_latency(
         raise HTTPException(
             status_code=500,
             detail=f"Failed to fetch latency metrics for workspace '{workspace_id}' and timeframe '{timeframe}'"
+        )
+
+
+@router.get("/trends/analysis")
+async def get_trend_analysis(
+    workspace_id: str = Query(..., description="Workspace ID"),
+    metric: str = Query(
+        ...,
+        regex="^(executions|users|credits|errors|success_rate|revenue)$",
+        description="Metric to analyze"
+    ),
+    timeframe: str = Query(
+        "30d",
+        regex="^(7d|30d|90d|1y)$",
+        description="Time window for analysis"
+    ),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get comprehensive trend analysis for a metric.
+
+    Performs advanced time-series analysis including:
+    - Trend decomposition (trend, seasonal, residual)
+    - Seasonality detection and pattern recognition
+    - Growth rate calculations and projections
+    - Anomaly detection in trends
+    - Period-over-period comparisons
+    - Predictive forecasting (short and long term)
+    - Actionable insights and recommendations
+
+    Args:
+        workspace_id: Workspace to analyze
+        metric: Metric to analyze (executions, users, credits, errors, success_rate, revenue)
+        timeframe: Time window (7d, 30d, 90d, 1y)
+
+    Returns:
+        Comprehensive trend analysis with forecasts, patterns, and insights
+    """
+    try:
+        # Validate workspace access
+        await WorkspaceAccess.validate_workspace_access(current_user, workspace_id)
+
+        # Get trend analysis
+        service = TrendAnalysisService(db)
+        analysis = await service.analyze_trend(workspace_id, metric, timeframe)
+
+        return analysis
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching trend analysis: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch trend analysis for workspace '{workspace_id}', "
+                   f"metric '{metric}', and timeframe '{timeframe}'"
         )
