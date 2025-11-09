@@ -3,28 +3,49 @@
 import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
-from typing import List, Dict
+from typing import List, Dict, Any
 
 logger = logging.getLogger(__name__)
+
+# Whitelisted materialized views that are safe to refresh
+ALLOWED_MATERIALIZED_VIEWS = {
+    "analytics.mv_daily_user_metrics",
+    "analytics.mv_daily_agent_metrics",
+    "analytics.mv_hourly_execution_stats",
+    "analytics.mv_workspace_summary",
+}
 
 
 async def refresh_materialized_view(
     db: AsyncSession,
     view_name: str,
     concurrently: bool = True
-) -> Dict[str, any]:
+) -> Dict[str, Any]:
     """Refresh a specific materialized view.
 
     Args:
         db: Database session
-        view_name: Name of the materialized view to refresh
+        view_name: Name of the materialized view to refresh (must be in whitelist)
         concurrently: If True, use CONCURRENTLY to avoid locking
 
     Returns:
         Dictionary with refresh status
     """
+    # SECURITY: Validate view_name against whitelist before string interpolation
+    if view_name not in ALLOWED_MATERIALIZED_VIEWS:
+        error_msg = f"View '{view_name}' is not in the allowed materialized views list"
+        logger.error(error_msg)
+        return {
+            'view_name': view_name,
+            'success': False,
+            'error': error_msg,
+            'concurrent': concurrently
+        }
+
     try:
         concurrent_str = "CONCURRENTLY" if concurrently else ""
+        # SAFETY: view_name validated against ALLOWED_MATERIALIZED_VIEWS above
+        # This f-string is safe because view_name can only be one of the whitelisted values
         query = text(f"REFRESH MATERIALIZED VIEW {concurrent_str} {view_name}")
 
         logger.info(f"Refreshing materialized view: {view_name}")
@@ -49,7 +70,7 @@ async def refresh_materialized_view(
         }
 
 
-async def refresh_all_materialized_views(db: AsyncSession) -> Dict[str, any]:
+async def refresh_all_materialized_views(db: AsyncSession) -> Dict[str, Any]:
     """Refresh all materialized views.
 
     Args:
@@ -58,14 +79,8 @@ async def refresh_all_materialized_views(db: AsyncSession) -> Dict[str, any]:
     Returns:
         Dictionary with refresh results for all views
     """
-    # Define materialized views to refresh
-    # Note: These would need to be created via migrations
-    views = [
-        "analytics.mv_daily_user_metrics",
-        "analytics.mv_daily_agent_metrics",
-        "analytics.mv_hourly_execution_stats",
-        "analytics.mv_workspace_summary",
-    ]
+    # Use the whitelist directly to ensure only allowed views are refreshed
+    views = list(ALLOWED_MATERIALIZED_VIEWS)
 
     results = []
     success_count = 0
@@ -95,7 +110,7 @@ async def refresh_all_materialized_views(db: AsyncSession) -> Dict[str, any]:
     }
 
 
-async def create_materialized_views(db: AsyncSession) -> Dict[str, any]:
+async def create_materialized_views(db: AsyncSession) -> Dict[str, Any]:
     """Create materialized views if they don't exist.
 
     This should be called during initial setup or migrations.

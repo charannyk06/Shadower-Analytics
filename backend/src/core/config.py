@@ -84,15 +84,31 @@ class Settings(BaseSettings):
     @field_validator("REDIS_URL", "CELERY_BROKER_URL", "CELERY_RESULT_BACKEND")
     @classmethod
     def validate_redis_urls(cls, v: str, info) -> str:
-        """Validate Redis URLs are configured."""
+        """Validate Redis URLs are configured in production.
+
+        In development/test environments, these can be empty to allow
+        running the app without Redis/Celery configured.
+        """
         field_name = info.field_name
-        
-        if not v or v == "":
+        app_env = info.data.get("APP_ENV", "development")
+
+        # Only enforce in production
+        if app_env == "production" and (not v or v == ""):
             raise ValueError(
-                f"{field_name} must be set via environment variable or .env file. "
+                f"{field_name} must be set in production environment. "
+                f"Generate strong credentials and set via environment variable. "
                 f"See backend/.env.example for configuration examples."
             )
-        
+
+        # Warn in development if not set
+        if app_env != "production" and (not v or v == ""):
+            import warnings
+            warnings.warn(
+                f"{field_name} is not set in {app_env} environment. "
+                f"Celery tasks will not function without proper configuration.",
+                UserWarning
+            )
+
         return v
 
     @field_validator("JWT_SECRET_KEY")
