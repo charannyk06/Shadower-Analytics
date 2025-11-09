@@ -1,14 +1,21 @@
 """Comprehensive agent analytics service."""
 
 import asyncio
-from datetime import datetime, timedelta, date
-from typing import Dict, List, Any, Optional
+from datetime import datetime, timedelta
+from typing import Dict, List, Any
 import logging
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, desc, text
-from ..cache import cached, CacheKeys
+from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
+
+# Constants for cost and threshold calculations
+CREDIT_TO_DOLLAR_RATE = 0.01
+MAX_ERROR_MESSAGE_LENGTH = 200
+PERFORMANCE_THRESHOLD_SECONDS = 30
+TOKEN_USAGE_THRESHOLD = 5000
+ERROR_RATE_THRESHOLD_PERCENT = 5
+SUCCESS_RATE_THRESHOLD_PERCENT = 90
 
 
 def calculate_start_date(timeframe: str) -> datetime:
@@ -247,8 +254,8 @@ class AgentAnalyticsService:
             "avgCreditsPerRun": round(avg_credits, 2),
             "totalTokensUsed": row.total_tokens or 0,
             "avgTokensPerRun": round(float(row.avg_tokens_per_run or 0), 0),
-            "costPerRun": round(avg_credits * 0.01, 4),  # Assuming $0.01 per credit
-            "totalCost": round(total_credits * 0.01, 2),
+            "costPerRun": round(avg_credits * CREDIT_TO_DOLLAR_RATE, 4),
+            "totalCost": round(total_credits * CREDIT_TO_DOLLAR_RATE, 2),
             "modelUsage": model_usage,
         }
 
@@ -302,7 +309,7 @@ class AgentAnalyticsService:
                 "category": error.error_category,
                 "severity": error.error_severity,
                 "lastOccurred": error.last_occurred.isoformat() if error.last_occurred else None,
-                "exampleMessage": error.example_message[:200] if error.example_message else "",
+                "exampleMessage": error.example_message[:MAX_ERROR_MESSAGE_LENGTH] if error.example_message else "",
                 "avgRecoveryTime": round(float(error.avg_recovery_time or 0), 2),
                 "autoRecoveryRate": round(
                     (error.auto_recovered_count / error.count * 100) if error.count > 0 else 0, 2
@@ -888,24 +895,24 @@ class AgentAnalyticsService:
 
         if stats:
             # Performance suggestions
-            if float(stats.avg_runtime or 0) > 30:
+            if float(stats.avg_runtime or 0) > PERFORMANCE_THRESHOLD_SECONDS:
                 suggestions.append(
                     {
                         "type": "performance",
                         "title": "Reduce execution time",
-                        "description": "Average runtime exceeds 30 seconds. Consider optimizing prompts, caching results, or breaking into smaller tasks.",
+                        "description": f"Average runtime exceeds {PERFORMANCE_THRESHOLD_SECONDS} seconds. Consider optimizing prompts, caching results, or breaking into smaller tasks.",
                         "estimatedImpact": "20-30% runtime reduction",
                         "effort": "medium",
                     }
                 )
 
             # Cost suggestions
-            if float(stats.avg_tokens_per_run or 0) > 5000:
+            if float(stats.avg_tokens_per_run or 0) > TOKEN_USAGE_THRESHOLD:
                 suggestions.append(
                     {
                         "type": "cost",
                         "title": "Optimize token usage",
-                        "description": "High token consumption detected. Use more concise prompts, implement response caching, or switch to a more efficient model.",
+                        "description": f"High token consumption detected (>{TOKEN_USAGE_THRESHOLD} tokens). Use more concise prompts, implement response caching, or switch to a more efficient model.",
                         "estimatedImpact": "15-25% cost reduction",
                         "effort": "low",
                     }
@@ -915,7 +922,7 @@ class AgentAnalyticsService:
             error_rate = (
                 (stats.total_errors / stats.total_runs * 100) if stats.total_runs > 0 else 0
             )
-            if error_rate > 5:
+            if error_rate > ERROR_RATE_THRESHOLD_PERCENT:
                 suggestions.append(
                     {
                         "type": "reliability",
@@ -927,7 +934,7 @@ class AgentAnalyticsService:
                 )
 
             # Success rate suggestions
-            if float(stats.success_rate or 0) < 90:
+            if float(stats.success_rate or 0) < SUCCESS_RATE_THRESHOLD_PERCENT:
                 suggestions.append(
                     {
                         "type": "reliability",
