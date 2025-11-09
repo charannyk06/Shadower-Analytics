@@ -1,11 +1,17 @@
 """General metrics and analytics routes."""
 
-from typing import List, Optional
-from fastapi import APIRouter, Depends, Query
+from typing import List, Optional, Dict, Any
+from fastapi import APIRouter, Depends, Query, HTTPException
 from datetime import date, timedelta
+from sqlalchemy.ext.asyncio import AsyncSession
+import logging
 
 from ...core.database import get_db
+from ...services.metrics.execution_metrics import ExecutionMetricsService
+from ..dependencies.auth import get_current_user
+from ..middleware.workspace import WorkspaceAccess
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/metrics", tags=["metrics"])
 
 
@@ -66,3 +72,167 @@ async def get_realtime_metrics(
         "active_executions": 0,
         "requests_per_second": 0,
     }
+
+
+@router.get("/execution")
+async def get_execution_metrics(
+    workspace_id: str = Query(..., description="Workspace ID"),
+    timeframe: str = Query("1h", regex="^(1h|6h|24h|7d|30d|90d)$", description="Time window"),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get comprehensive execution metrics.
+
+    Returns real-time and historical execution metrics including:
+    - Real-time execution status (currently running, queue depth)
+    - Throughput metrics (executions per minute/hour/day)
+    - Latency percentiles (p50, p75, p90, p95, p99)
+    - Performance metrics (success rates, failures)
+    - Execution patterns and anomalies
+    - Resource utilization
+
+    Args:
+        workspace_id: Workspace to query metrics for
+        timeframe: Time window (1h, 6h, 24h, 7d, 30d, 90d)
+
+    Returns:
+        Comprehensive execution metrics object
+    """
+    try:
+        # Validate workspace access
+        await WorkspaceAccess.validate_workspace_access(current_user, workspace_id)
+
+        # Get execution metrics
+        service = ExecutionMetricsService(db)
+        metrics = await service.get_execution_metrics(workspace_id, timeframe)
+
+        return metrics
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching execution metrics: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to fetch execution metrics"
+        )
+
+
+@router.get("/execution/realtime")
+async def get_execution_realtime(
+    workspace_id: str = Query(..., description="Workspace ID"),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get real-time execution status only.
+
+    Lightweight endpoint for frequent polling of real-time execution status.
+    Returns only currently running executions and queue status.
+
+    Args:
+        workspace_id: Workspace to query
+
+    Returns:
+        Real-time execution status including running executions and queue depth
+    """
+    try:
+        # Validate workspace access
+        await WorkspaceAccess.validate_workspace_access(current_user, workspace_id)
+
+        # Get only realtime metrics
+        service = ExecutionMetricsService(db)
+        realtime = await service._get_realtime_metrics(workspace_id)
+
+        return {
+            "workspaceId": workspace_id,
+            "realtime": realtime
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching realtime execution metrics: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to fetch realtime execution metrics"
+        )
+
+
+@router.get("/execution/throughput")
+async def get_execution_throughput(
+    workspace_id: str = Query(..., description="Workspace ID"),
+    timeframe: str = Query("24h", regex="^(1h|6h|24h|7d|30d)$"),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get execution throughput metrics and trends.
+
+    Args:
+        workspace_id: Workspace to query
+        timeframe: Time window
+
+    Returns:
+        Throughput metrics including executions per time unit and trends
+    """
+    try:
+        # Validate workspace access
+        await WorkspaceAccess.validate_workspace_access(current_user, workspace_id)
+
+        # Get throughput metrics
+        service = ExecutionMetricsService(db)
+        metrics = await service.get_execution_metrics(workspace_id, timeframe)
+
+        return {
+            "workspaceId": workspace_id,
+            "timeframe": timeframe,
+            "throughput": metrics['throughput']
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching throughput metrics: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to fetch throughput metrics"
+        )
+
+
+@router.get("/execution/latency")
+async def get_execution_latency(
+    workspace_id: str = Query(..., description="Workspace ID"),
+    timeframe: str = Query("24h", regex="^(1h|6h|24h|7d|30d)$"),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get execution latency metrics and distribution.
+
+    Args:
+        workspace_id: Workspace to query
+        timeframe: Time window
+
+    Returns:
+        Latency percentiles and distribution
+    """
+    try:
+        # Validate workspace access
+        await WorkspaceAccess.validate_workspace_access(current_user, workspace_id)
+
+        # Get latency metrics
+        service = ExecutionMetricsService(db)
+        metrics = await service.get_execution_metrics(workspace_id, timeframe)
+
+        return {
+            "workspaceId": workspace_id,
+            "timeframe": timeframe,
+            "latency": metrics['latency']
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching latency metrics: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to fetch latency metrics"
+        )

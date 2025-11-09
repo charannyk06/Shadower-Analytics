@@ -76,6 +76,25 @@ class EventBroadcaster:
         logger.debug(f"Broadcasted metrics_update to workspace {workspace_id}")
 
     @staticmethod
+    async def broadcast_execution_update(
+        workspace_id: str, realtime_metrics: Dict[str, Any]
+    ):
+        """Broadcast real-time execution metrics update.
+
+        Args:
+            workspace_id: Target workspace
+            realtime_metrics: Real-time execution metrics (currently running, queue depth, etc.)
+        """
+        message = {
+            "event": "execution_update",
+            "data": realtime_metrics,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
+        await manager.broadcast_to_workspace(workspace_id, message)
+        logger.debug(f"Broadcasted execution_update to workspace {workspace_id}")
+
+    @staticmethod
     async def broadcast_alert(
         workspace_id: str, alert_type: str, alert_data: Dict[str, Any]
     ):
