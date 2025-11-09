@@ -392,16 +392,16 @@ async def get_view_row_count(
 
 @router.get("/views/list")
 async def list_available_views(
-    current_user: Dict[str, Any] = Depends(get_current_active_user)
+    current_user: Dict[str, Any] = Depends(require_admin)
 ):
     """
     List all available materialized views managed by this service.
 
-    **Authentication**: Required
+    **Authentication**: Required (Admin role)
     
-    Note: While this endpoint only returns public metadata (view names),
-    authentication is required for consistency with other endpoints and
-    to prevent unnecessary API discovery by unauthenticated clients.
+    Note: This endpoint returns metadata about materialized views.
+    Restricted to admin users to prevent information leakage about
+    system architecture and available views.
 
     Returns:
     - List of view names

@@ -116,8 +116,11 @@ class TestWorkspaceIsolation:
                 assert len(workspace2_rows) == 0, "User should not see data from other workspaces"
 
         except Exception as e:
-            # If tables don't exist or migrations aren't applied, skip the test
-            pytest.skip(f"Test requires database setup: {str(e)}")
+            # CRITICAL: Fail instead of skip - RLS tests must pass for security
+            pytest.fail(
+                f"CRITICAL: Test requires database setup with migrations 014 and 015. "
+                f"RLS enforcement cannot be verified without proper setup: {str(e)}"
+            )
 
     @pytest.mark.asyncio
     async def test_materialized_views_enforce_workspace_isolation(self, db_session):
@@ -194,7 +197,11 @@ class TestWorkspaceIsolation:
                 "User should only see their workspace data"
 
         except Exception as e:
-            pytest.skip(f"Test requires database setup with migrations: {str(e)}")
+            # CRITICAL: Fail instead of skip - RLS tests must pass for security
+            pytest.fail(
+                f"CRITICAL: Test requires database setup with migrations 014 and 015. "
+                f"RLS enforcement cannot be verified without proper setup: {str(e)}"
+            )
 
     @pytest.mark.asyncio
     async def test_admin_can_see_all_workspaces(self, db_session):
@@ -264,7 +271,11 @@ class TestWorkspaceIsolation:
             assert workspace2_id in workspace_ids, "Admin should see workspace2 data"
 
         except Exception as e:
-            pytest.skip(f"Test requires database setup: {str(e)}")
+            # CRITICAL: Fail instead of skip - RLS tests must pass for security
+            pytest.fail(
+                f"CRITICAL: Test requires database setup with migrations 014 and 015. "
+                f"RLS enforcement cannot be verified without proper setup: {str(e)}"
+            )
 
 
 # =====================================================================

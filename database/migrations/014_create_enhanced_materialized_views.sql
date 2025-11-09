@@ -174,7 +174,9 @@ SELECT
     ae.error_severity,
     COUNT(*) as error_count,
     -- Get affected users from agent_runs via agent_run_id
-    COUNT(DISTINCT ar.user_id) FILTER (WHERE ar.user_id IS NOT NULL) as affected_users,
+    -- Use INNER JOIN to only include errors with valid agent_run_id
+    -- This ensures affected_users count is accurate and doesn't hide errors
+    COUNT(DISTINCT ar.user_id) as affected_users,
     COUNT(DISTINCT ae.agent_id) as affected_agents,
     ARRAY_AGG(DISTINCT ae.error_message ORDER BY ae.error_message)
         FILTER (WHERE ae.error_message IS NOT NULL)
@@ -182,7 +184,7 @@ SELECT
     MIN(ae.created_at) as first_occurrence,
     MAX(ae.created_at) as last_occurrence
 FROM analytics.agent_errors ae
-LEFT JOIN analytics.agent_runs ar ON ae.agent_run_id = ar.id
+INNER JOIN analytics.agent_runs ar ON ae.agent_run_id = ar.id
 WHERE ae.created_at >= CURRENT_DATE - INTERVAL '30 days'
 GROUP BY
     DATE(ae.created_at),

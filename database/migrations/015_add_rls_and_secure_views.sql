@@ -58,6 +58,17 @@ CREATE POLICY agent_errors_service_policy ON analytics.agent_errors
 -- Description: Create views with RLS filtering over materialized views
 -- Note: Materialized views don't support RLS directly, so we create
 -- regular views that filter by workspace_id using get_user_workspaces()
+-- 
+-- SECURITY DEFINER NOTE:
+-- The get_user_workspaces() function is SECURITY DEFINER, which means it
+-- runs with the privileges of the function owner. However, auth.uid() inside
+-- the function still reads from the current session's JWT claims, not the
+-- function owner's context. This is the correct behavior - the function
+-- has elevated privileges to query workspace_members, but auth.uid() still
+-- returns the current user's ID from the session context.
+-- 
+-- Testing: See test_rls_materialized_views.py for verification that this
+-- works correctly with role switching.
 -- =====================================================================
 
 -- Secure view for mv_agent_performance
