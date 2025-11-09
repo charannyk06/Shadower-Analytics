@@ -28,6 +28,25 @@ jobs:
           # Checkout the PR head ref for pull_request events
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
+      - name: Set PR number
+        id: pr-info
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "pr_number=${{ github.event.inputs.pr_number }}" >> $GITHUB_OUTPUT
+          else
+            echo "pr_number=${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Install GitHub CLI and jq
+        run: |
+          # Install GitHub CLI
+          type -p curl >/dev/null || (apt update && apt install curl -y)
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+          && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+          && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+          && apt update \
+          && apt install gh jq -y
+
       - name: Gather PR context
         id: pr-context
         env:
@@ -35,8 +54,8 @@ jobs:
         run: |
           PR_NUM="${{ steps.pr-info.outputs.pr_number }}"
           
-          # GitHub CLI will automatically use GH_TOKEN from environment
-          # No need to authenticate - GITHUB_TOKEN is already set by GitHub Actions
+          # Authenticate GitHub CLI
+          echo "$GH_TOKEN" | gh auth login --with-token
           
           # Get PR details (with error handling)
           if gh pr view $PR_NUM --json title,body,author,files > pr_details.json 2>/dev/null; then
@@ -62,15 +81,6 @@ jobs:
             echo "author=unknown" >> $GITHUB_OUTPUT
             echo "files=" >> $GITHUB_OUTPUT
             echo "files_count=0" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Set PR number
-        id: pr-info
-        run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            echo "pr_number=${{ github.event.inputs.pr_number }}" >> $GITHUB_OUTPUT
-          else
-            echo "pr_number=${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
           fi
 
       - name: Run Claude Code Review
@@ -319,15 +329,33 @@ jobs:
 
             Begin your review now. Use the GitHub CLI tools (`gh pr view`, `gh pr diff`) to gather all context, then provide your comprehensive analysis.
 
-            **CRITICAL**: Write your complete review to a file named `review_comment.md` in the repository root. The workflow will automatically post it as a PR comment. Use this format:
+            **CRITICAL FINAL STEP - YOU MUST DO THIS**: 
+            
+            After completing your review analysis, you MUST write your complete review to a file named `review_comment.md` in the repository root directory. Use the Bash tool to execute this command:
 
             ```bash
-            cat > review_comment.md << 'EOF'
-            [Your complete review in markdown format]
-            EOF
+            cat > review_comment.md << 'REVIEW_EOF'
+            [Paste your complete review in markdown format here]
+            REVIEW_EOF
             ```
 
-            **DO NOT** try to use `gh pr comment` directly - write to `review_comment.md` instead.
+            **VERIFICATION**: After writing the file, verify it was created by running: `ls -la review_comment.md` and `wc -l review_comment.md`
+
+            **DO NOT** try to use `gh pr comment` directly - the workflow will handle posting. Just write the file.
+            
+            **IF YOU DO NOT WRITE THIS FILE, YOUR REVIEW WILL NOT BE POSTED TO THE PR.**
+
+      - name: Debug - Check Claude Output
+        if: always()
+        run: |
+          echo "=== Claude Review Step Status ==="
+          echo "Outcome: ${{ steps.claude-review.outcome }}"
+          echo "Conclusion: ${{ steps.claude-review.conclusion }}"
+          echo "================================"
+          echo ""
+          echo "=== Checking for review files ==="
+          find . -name "review_comment*.md" -type f 2>/dev/null || echo "No review files found"
+          echo "================================"
 
       - name: Post Review Comment
         if: always()
@@ -336,20 +364,51 @@ jobs:
         run: |
           PR_NUM="${{ steps.pr-info.outputs.pr_number }}"
           
+          # Authenticate GitHub CLI
+          echo "$GH_TOKEN" | gh auth login --with-token
+          
+          # Debug: List files in current directory
+          echo "=== Current directory contents ==="
+          ls -la
+          echo "=================================="
+          
           # Check if review file exists
           if [ -f "review_comment.md" ]; then
-            echo "Found review_comment.md, posting to PR..."
-            gh pr comment $PR_NUM --body-file review_comment.md
+            echo "✅ Found review_comment.md"
+            echo "File size: $(wc -c < review_comment.md) bytes"
+            echo "Posting to PR #$PR_NUM..."
+            if gh pr comment $PR_NUM --body-file review_comment.md; then
+              echo "✅ Successfully posted review comment"
+            else
+              echo "❌ Failed to post review comment"
+              exit 1
+            fi
           elif [ -f "review_comment_part1.md" ]; then
-            echo "Found split review files, posting parts..."
+            echo "✅ Found split review files, posting parts..."
             # Post parts in order
             for part in review_comment_part1.md review_comment_part2.md review_comment_part3.md; do
               if [ -f "$part" ]; then
-                echo "Posting $part..."
-                gh pr comment $PR_NUM --body-file "$part"
+                echo "Posting $part (size: $(wc -c < "$part") bytes)..."
+                if gh pr comment $PR_NUM --body-file "$part"; then
+                  echo "✅ Successfully posted $part"
+                else
+                  echo "❌ Failed to post $part"
+                  exit 1
+                fi
               fi
             done
           else
-            echo "No review file found. Claude may not have completed the review."
-            echo "Check the workflow logs for Claude's output."
+            echo "❌ No review file found!"
+            echo "Expected files: review_comment.md or review_comment_part*.md"
+            echo ""
+            echo "Checking Claude's output..."
+            echo "Claude step status: ${{ steps.claude-review.outcome }}"
+            echo ""
+            echo "This usually means:"
+            echo "1. Claude didn't write the review file as instructed"
+            echo "2. The file was written to a different location"
+            echo "3. Claude encountered an error during execution"
+            echo ""
+            echo "Please check the 'Run Claude Code Review' step logs for details."
+            exit 1
           fi
