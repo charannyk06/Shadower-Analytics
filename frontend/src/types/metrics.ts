@@ -21,3 +21,13 @@ export interface MetricTrend {
   trend_direction: 'up' | 'down' | 'stable'
   change_percentage: number
 }
+
+// Re-export types from executive dashboard
+export type {
+  ExecutiveDashboardData,
+  UserMetrics,
+  ExecutionMetrics,
+  BusinessMetrics,
+  AgentMetrics,
+  Timeframe,
+} from './executive'
