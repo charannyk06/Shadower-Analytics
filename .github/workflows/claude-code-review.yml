@@ -44,8 +44,8 @@ jobs:
         run: |
           PR_NUM="${{ steps.pr-info.outputs.pr_number }}"
           
-          # Authenticate GitHub CLI
-          echo "$GH_TOKEN" | gh auth login --with-token
+          # GitHub CLI will automatically use GH_TOKEN from environment
+          # No need to authenticate - GITHUB_TOKEN is already set by GitHub Actions
           
           # Get PR details (with error handling)
           if gh pr view $PR_NUM --json title,body,author,files > pr_details.json 2>/dev/null; then
