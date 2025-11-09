@@ -1,18 +1,55 @@
 """Cohort analysis for user retention and behavioral tracking."""
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Dict, List, Any, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, distinct, case
+from sqlalchemy import select, func, and_, distinct
 import asyncio
+from asyncio import Semaphore
+from enum import Enum
+import logging
 
 from ...models.database.tables import UserActivity, ExecutionLog
 from ..cache.decorator import cached
 from ..cache.keys import CacheKeys
 
+logger = logging.getLogger(__name__)
+
+
+class CohortType(str, Enum):
+    """Enum for cohort types."""
+    SIGNUP = "signup"
+    ACTIVATION = "activation"
+    FEATURE_ADOPTION = "feature_adoption"
+    CUSTOM = "custom"
+
+
+class CohortPeriod(str, Enum):
+    """Enum for cohort periods."""
+    DAILY = "daily"
+    WEEKLY = "weekly"
+    MONTHLY = "monthly"
+
 
 class CohortAnalysisService:
     """Advanced cohort analysis service for user retention and LTV calculation."""
+
+    # Constants for retention periods
+    RETENTION_PERIODS = {
+        "day0": 0,
+        "day1": 1,
+        "day7": 7,
+        "day14": 14,
+        "day30": 30,
+        "day60": 60,
+        "day90": 90
+    }
+
+    # Limit concurrent cohort processing to prevent connection pool exhaustion
+    MAX_CONCURRENT_COHORTS = 10
+
+    # Maximum date range to prevent performance issues
+    MAX_DATE_RANGE_DAYS = 90
 
     def __init__(self, db: AsyncSession):
         self.db = db
@@ -30,8 +67,8 @@ class CohortAnalysisService:
     async def generate_cohort_analysis(
         self,
         workspace_id: str,
-        cohort_type: str = "signup",
-        cohort_period: str = "monthly",
+        cohort_type: str = CohortType.SIGNUP,
+        cohort_period: str = CohortPeriod.MONTHLY,
         start_date: Optional[date] = None,
         end_date: Optional[date] = None,
     ) -> Dict[str, Any]:
@@ -46,24 +83,68 @@ class CohortAnalysisService:
 
         Returns:
             Complete cohort analysis with metrics and comparisons
+
+        Raises:
+            ValueError: If date range exceeds maximum allowed
         """
+        # Use timezone-aware datetime
+        now = datetime.now(timezone.utc).date()
+
         if not start_date:
-            start_date = date.today() - timedelta(days=180)
+            start_date = now - timedelta(days=180)
         if not end_date:
-            end_date = date.today()
+            end_date = now
+
+        # Validate date range to prevent performance issues
+        date_range_days = (end_date - start_date).days
+        if date_range_days > self.MAX_DATE_RANGE_DAYS:
+            logger.warning(
+                "Date range exceeds maximum allowed",
+                extra={
+                    "workspace_id": workspace_id,
+                    "requested_days": date_range_days,
+                    "max_days": self.MAX_DATE_RANGE_DAYS
+                }
+            )
+            raise ValueError(
+                f"Date range cannot exceed {self.MAX_DATE_RANGE_DAYS} days. "
+                f"Requested: {date_range_days} days"
+            )
+
+        logger.info(
+            "Advanced cohort analysis requested",
+            extra={
+                "workspace_id": workspace_id,
+                "cohort_type": cohort_type,
+                "cohort_period": cohort_period,
+                "date_range": f"{start_date} to {end_date}"
+            }
+        )
 
         # Generate cohort dates based on period
         cohort_dates = self._generate_cohort_dates(cohort_period, start_date, end_date)
 
-        # Process cohorts in parallel for better performance
-        cohort_tasks = [
-            self._analyze_cohort(workspace_id, cohort_date, cohort_type)
-            for cohort_date in cohort_dates
-        ]
+        # Process cohorts in parallel with concurrency limit
+        semaphore = Semaphore(self.MAX_CONCURRENT_COHORTS)
+
+        async def _analyze_with_limit(cohort_date: date) -> Optional[Dict[str, Any]]:
+            async with semaphore:
+                return await self._analyze_cohort(workspace_id, cohort_date, cohort_type)
+
+        cohort_tasks = [_analyze_with_limit(cohort_date) for cohort_date in cohort_dates]
         cohorts_data = await asyncio.gather(*cohort_tasks)
 
         # Filter out empty cohorts
         cohorts = [c for c in cohorts_data if c is not None]
+
+        logger.info(
+            "Cohort analysis completed",
+            extra={
+                "workspace_id": workspace_id,
+                "total_cohorts": len(cohorts),
+                "empty_cohorts": len([c for c in cohorts_data if c is None])
+            }
+        )
 
         # Calculate comparison metrics
         comparison = self._calculate_comparison(cohorts)
@@ -91,26 +172,30 @@ class CohortAnalysisService:
 
         cohort_size = len(cohort_users)
 
-        # Calculate retention metrics
-        retention = await self._calculate_retention_periods(
+        # Calculate all metrics in parallel for better performance
+        retention_task = self._calculate_retention_periods(
             workspace_id,
             cohort_users,
             cohort_date
         )
 
-        # Calculate revenue and LTV metrics
-        metrics = await self._calculate_cohort_metrics(
+        metrics_task = self._calculate_cohort_metrics(
             workspace_id,
             cohort_users,
             cohort_date,
             cohort_size
         )
 
-        # Get segment breakdown
-        segments = await self._calculate_segment_retention(
+        segments_task = self._calculate_segment_retention(
             workspace_id,
             cohort_users,
             cohort_date
+        )
+
+        retention, metrics, segments = await asyncio.gather(
+            retention_task,
+            metrics_task,
+            segments_task
         )
 
         return {
@@ -130,7 +215,14 @@ class CohortAnalysisService:
     ) -> List[str]:
         """Get users for a cohort based on cohort type."""
 
-        if cohort_type == "signup":
+        # Validate cohort type
+        try:
+            cohort_type_enum = CohortType(cohort_type)
+        except ValueError:
+            logger.warning(f"Invalid cohort type: {cohort_type}, defaulting to signup")
+            cohort_type_enum = CohortType.SIGNUP
+
+        if cohort_type_enum == CohortType.SIGNUP:
             # Users who first appeared on this date
             query = select(distinct(UserActivity.user_id)).where(
                 and_(
@@ -138,7 +230,7 @@ class CohortAnalysisService:
                     func.date(UserActivity.created_at) == cohort_date
                 )
             )
-        elif cohort_type == "activation":
+        elif cohort_type_enum == CohortType.ACTIVATION:
             # Users who had their first meaningful action on this date
             query = select(distinct(UserActivity.user_id)).where(
                 and_(
@@ -147,7 +239,7 @@ class CohortAnalysisService:
                     UserActivity.event_type == 'feature_use'
                 )
             )
-        elif cohort_type == "feature_adoption":
+        elif cohort_type_enum == CohortType.FEATURE_ADOPTION:
             # Users who adopted a key feature on this date
             query = select(distinct(UserActivity.user_id)).where(
                 and_(
@@ -156,7 +248,7 @@ class CohortAnalysisService:
                     UserActivity.event_name.like('%feature%')
                 )
             )
-        else:  # custom
+        else:  # CUSTOM
             # Default to signup behavior
             query = select(distinct(UserActivity.user_id)).where(
                 and_(
@@ -176,18 +268,11 @@ class CohortAnalysisService:
     ) -> Dict[str, float]:
         """Calculate retention for standard periods."""
 
-        periods = {
-            "day0": 0,
-            "day1": 1,
-            "day7": 7,
-            "day14": 14,
-            "day30": 30,
-            "day60": 60,
-            "day90": 90
-        }
-
         cohort_size = len(cohort_users)
-        max_days = max(periods.values())
+        if cohort_size == 0:
+            return {period: 0.0 for period in self.RETENTION_PERIODS.keys()}
+
+        max_days = max(self.RETENTION_PERIODS.values())
         end_date = cohort_date + timedelta(days=max_days)
 
         # Optimized: Get all retention data in single query
@@ -210,7 +295,7 @@ class CohortAnalysisService:
 
         # Calculate retention percentages
         retention = {}
-        for period_name, days_offset in periods.items():
+        for period_name, days_offset in self.RETENTION_PERIODS.items():
             check_date = cohort_date + timedelta(days=days_offset)
             retained_users = retention_data.get(check_date, 0)
             retention_rate = (retained_users / cohort_size * 100) if cohort_size > 0 else 0
@@ -225,12 +310,21 @@ class CohortAnalysisService:
         cohort_date: date,
         cohort_size: int
     ) -> Dict[str, float]:
-        """Calculate revenue, LTV, churn rate, and engagement metrics."""
+        """Calculate revenue, LTV, churn rate, and engagement metrics using combined query."""
 
-        # Calculate average revenue (from credits used)
+        if cohort_size == 0:
+            return {
+                "avgRevenue": 0.0,
+                "ltv": 0.0,
+                "churnRate": 0.0,
+                "engagementScore": 0.0
+            }
+
+        # Combine revenue and engagement queries
         revenue_query = select(
             func.avg(ExecutionLog.credits_used).label('avg_revenue'),
-            func.sum(ExecutionLog.credits_used).label('total_revenue')
+            func.sum(ExecutionLog.credits_used).label('total_revenue'),
+            func.count(ExecutionLog.id).label('total_executions')
         ).where(
             and_(
                 ExecutionLog.workspace_id == workspace_id,
@@ -238,13 +332,6 @@ class CohortAnalysisService:
             )
         )
 
-        revenue_result = await self.db.execute(revenue_query)
-        revenue_data = revenue_result.fetchone()
-
-        avg_revenue = revenue_data.avg_revenue or 0.0
-        total_revenue = revenue_data.total_revenue or 0.0
-
-        # Calculate engagement score
         engagement_query = select(
             func.count(UserActivity.id).label('total_events')
         ).where(
@@ -254,13 +341,9 @@ class CohortAnalysisService:
             )
         )
 
-        engagement_result = await self.db.execute(engagement_query)
-        total_events = engagement_result.scalar() or 0
-        engagement_score = min(100.0, (total_events / cohort_size / 10)) if cohort_size > 0 else 0
-
-        # Calculate churn rate (users who haven't been active in 30 days)
-        thirty_days_ago = date.today() - timedelta(days=30)
-        active_recent_query = select(func.count(distinct(UserActivity.user_id))).where(
+        # Use timezone-aware datetime for churn calculation
+        thirty_days_ago = datetime.now(timezone.utc).date() - timedelta(days=30)
+        churn_query = select(func.count(distinct(UserActivity.user_id))).where(
             and_(
                 UserActivity.workspace_id == workspace_id,
                 UserActivity.user_id.in_(cohort_users),
@@ -268,7 +351,23 @@ class CohortAnalysisService:
             )
         )
 
-        active_result = await self.db.execute(active_recent_query)
+        # Execute queries in parallel
+        revenue_result, engagement_result, active_result = await asyncio.gather(
+            self.db.execute(revenue_query),
+            self.db.execute(engagement_query),
+            self.db.execute(churn_query)
+        )
+
+        # Process revenue data
+        revenue_data = revenue_result.fetchone()
+        avg_revenue = revenue_data.avg_revenue or 0.0
+        total_revenue = revenue_data.total_revenue or 0.0
+
+        # Process engagement data
+        total_events = engagement_result.scalar() or 0
+        engagement_score = min(100.0, (total_events / cohort_size / 10)) if cohort_size > 0 else 0
+
+        # Process churn data
         active_users = active_result.scalar() or 0
         churned_users = cohort_size - active_users
         churn_rate = (churned_users / cohort_size * 100) if cohort_size > 0 else 0
@@ -293,6 +392,9 @@ class CohortAnalysisService:
     ) -> List[Dict[str, Any]]:
         """Calculate retention by user segments (device type, country, etc.)."""
 
+        if not cohort_users:
+            return []
+
         # Segment by device type
         device_query = select(
             UserActivity.device_type,
@@ -308,9 +410,9 @@ class CohortAnalysisService:
         device_result = await self.db.execute(device_query)
         segments = []
 
+        cohort_size = len(cohort_users)
         for row in device_result.fetchall():
             segment_users = row.user_count or 0
-            cohort_size = len(cohort_users)
             retention_rate = (segment_users / cohort_size * 100) if cohort_size > 0 else 0
 
             segments.append({
@@ -346,11 +448,14 @@ class CohortAnalysisService:
         # Calculate average retention
         avg_retention = sum(c[1] for c in cohorts_with_retention) / len(cohorts_with_retention) if cohorts_with_retention else 0
 
-        # Determine trend (compare first half vs second half)
-        mid_point = len(cohorts_with_retention) // 2
+        # Determine trend (compare first half vs second half chronologically)
+        # Sort by cohort date to ensure chronological order
+        cohorts_sorted = sorted(cohorts, key=lambda x: x["cohortDate"])
+        mid_point = len(cohorts_sorted) // 2
+
         if mid_point > 0:
-            first_half_avg = sum(c[1] for c in cohorts_with_retention[:mid_point]) / mid_point
-            second_half_avg = sum(c[1] for c in cohorts_with_retention[mid_point:]) / (len(cohorts_with_retention) - mid_point)
+            first_half_avg = sum(c["retention"].get("day30", 0) for c in cohorts_sorted[:mid_point]) / mid_point
+            second_half_avg = sum(c["retention"].get("day30", 0) for c in cohorts_sorted[mid_point:]) / (len(cohorts_sorted) - mid_point)
 
             if second_half_avg > first_half_avg * 1.1:
                 trend = "improving"
@@ -376,24 +481,40 @@ class CohortAnalysisService:
     ) -> List[date]:
         """Generate list of cohort dates based on period."""
 
+        # Validate cohort period
+        try:
+            period_enum = CohortPeriod(cohort_period)
+        except ValueError:
+            logger.warning(f"Invalid cohort period: {cohort_period}, defaulting to monthly")
+            period_enum = CohortPeriod.MONTHLY
+
         cohort_dates = []
         current_date = start_date
 
-        if cohort_period == "daily":
+        if period_enum == CohortPeriod.DAILY:
             while current_date <= end_date:
                 cohort_dates.append(current_date)
                 current_date += timedelta(days=1)
 
-        elif cohort_period == "weekly":
-            # Start from the first Monday
-            while current_date.weekday() != 0 and current_date <= end_date:
-                current_date += timedelta(days=1)
+        elif period_enum == CohortPeriod.WEEKLY:
+            # Find first Monday on or after start_date
+            first_monday = current_date
+            while first_monday.weekday() != 0:
+                first_monday += timedelta(days=1)
+                if first_monday > end_date:
+                    break
 
+            # If start_date to first Monday is >= 3 days, include start_date as partial week
+            if (first_monday - current_date).days >= 3 and current_date <= end_date:
+                cohort_dates.append(current_date)
+
+            # Add weekly cohorts from first Monday
+            current_date = first_monday
             while current_date <= end_date:
                 cohort_dates.append(current_date)
                 current_date += timedelta(weeks=1)
 
-        elif cohort_period == "monthly":
+        elif period_enum == CohortPeriod.MONTHLY:
             # Start from the first day of the month
             current_date = current_date.replace(day=1)
 

@@ -77,10 +77,12 @@ export default function CohortAnalysisDashboard() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             {/* Cohort Type */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label htmlFor="cohort-type" className="block text-sm font-medium text-gray-700 mb-2">
                 Cohort Type
               </label>
               <select
+                id="cohort-type"
+                aria-label="Select cohort type"
                 value={cohortType}
                 onChange={(e) => setCohortType(e.target.value as CohortType)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
@@ -94,10 +96,12 @@ export default function CohortAnalysisDashboard() {
 
             {/* Cohort Period */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label htmlFor="cohort-period" className="block text-sm font-medium text-gray-700 mb-2">
                 Period
               </label>
               <select
+                id="cohort-period"
+                aria-label="Select cohort period"
                 value={cohortPeriod}
                 onChange={(e) => setCohortPeriod(e.target.value as CohortPeriod)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
@@ -110,11 +114,13 @@ export default function CohortAnalysisDashboard() {
 
             {/* Start Date */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label htmlFor="start-date" className="block text-sm font-medium text-gray-700 mb-2">
                 Start Date
               </label>
               <input
+                id="start-date"
                 type="date"
+                aria-label="Select start date"
                 value={dateRange.start}
                 onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
@@ -123,11 +129,13 @@ export default function CohortAnalysisDashboard() {
 
             {/* End Date */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label htmlFor="end-date" className="block text-sm font-medium text-gray-700 mb-2">
                 End Date
               </label>
               <input
+                id="end-date"
                 type="date"
+                aria-label="Select end date"
                 value={dateRange.end}
                 onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
@@ -138,8 +146,16 @@ export default function CohortAnalysisDashboard() {
           <div className="mt-4 flex justify-end">
             <button
               onClick={() => refetch()}
-              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
+              aria-label="Apply cohort analysis filters"
+              disabled={isLoading}
+              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
+              {isLoading && (
+                <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+              )}
               Apply Filters
             </button>
           </div>

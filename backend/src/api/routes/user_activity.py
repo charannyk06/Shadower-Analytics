@@ -169,6 +169,8 @@ async def get_advanced_cohort_analysis(
 
     Requires: owner or admin role
 
+    Performance: Limited to 90-day date ranges. Use pagination for longer periods.
+
     Args:
         workspace_id: The workspace ID
         cohort_type: Type of cohort (signup, activation, feature_adoption, custom)
@@ -178,27 +180,59 @@ async def get_advanced_cohort_analysis(
 
     Returns:
         Advanced cohort analysis data with metrics and comparisons
+
+    Raises:
+        HTTPException: 400 for invalid date format or range, 403 for unauthorized access, 500 for server errors
     """
     try:
         # Validate workspace access
         await WorkspaceAccess.validate_workspace_access(current_user, workspace_id)
 
-        from datetime import timedelta
+        from datetime import timedelta, timezone
         from ...services.analytics.cohort_analysis import CohortAnalysisService
 
-        # Parse dates
-        start_date_obj = None
-        end_date_obj = None
+        # Parse dates with timezone-aware datetime
+        now = datetime.now(timezone.utc).date()
 
         if start_date:
-            start_date_obj = datetime.strptime(start_date, "%Y-%m-%d").date()
+            try:
+                start_date_obj = datetime.strptime(start_date, "%Y-%m-%d").date()
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid start_date format. Use YYYY-MM-DD"
+                )
         else:
-            start_date_obj = (datetime.utcnow() - timedelta(days=180)).date()
+            start_date_obj = now - timedelta(days=180)
 
         if end_date:
-            end_date_obj = datetime.strptime(end_date, "%Y-%m-%d").date()
+            try:
+                end_date_obj = datetime.strptime(end_date, "%Y-%m-%d").date()
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid end_date format. Use YYYY-MM-DD"
+                )
         else:
-            end_date_obj = datetime.utcnow().date()
+            end_date_obj = now
+
+        # Validate date range
+        if start_date_obj > end_date_obj:
+            raise HTTPException(
+                status_code=400,
+                detail="start_date must be before end_date"
+            )
+
+        logger.info(
+            "Advanced cohort analysis requested",
+            extra={
+                "workspace_id": workspace_id,
+                "cohort_type": cohort_type,
+                "cohort_period": cohort_period,
+                "date_range": f"{start_date_obj} to {end_date_obj}",
+                "user_id": current_user.get("user_id")
+            }
+        )
 
         service = CohortAnalysisService(db)
         analysis = await service.generate_cohort_analysis(
@@ -210,12 +244,21 @@ async def get_advanced_cohort_analysis(
         )
 
         return analysis
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+    except ValueError as e:
+        # Handle date range validation errors from service
+        logger.warning(
+            f"Date range validation error: {e}",
+            extra={"workspace_id": workspace_id}
+        )
+        raise HTTPException(status_code=400, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error generating advanced cohort analysis: {e}", exc_info=True)
+        logger.error(
+            f"Error generating advanced cohort analysis: {e}",
+            extra={"workspace_id": workspace_id},
+            exc_info=True
+        )
         raise HTTPException(status_code=500, detail="Failed to generate advanced cohort analysis")
 
 
