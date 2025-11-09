@@ -190,23 +190,50 @@ class CohortAnalysisService:
         max_days = max(periods.values())
         end_date = cohort_date + timedelta(days=max_days)
 
-        # Optimized: Get all retention data in single query
-        retention_query = select(
-            func.date(UserActivity.created_at).label('activity_date'),
-            func.count(distinct(UserActivity.user_id)).label('active_users')
-        ).where(
-            and_(
-                UserActivity.workspace_id == workspace_id,
-                UserActivity.user_id.in_(cohort_users),
-                func.date(UserActivity.created_at) >= cohort_date,
-                func.date(UserActivity.created_at) <= end_date
+        # Performance optimization: batch processing for large cohorts
+        # PostgreSQL typically supports up to 32,767 parameters
+        batch_size = 5000
+        retention_data = {}
+        
+        if len(cohort_users) <= batch_size:
+            # Single query for small cohorts
+            retention_query = select(
+                func.date(UserActivity.created_at).label('activity_date'),
+                func.count(distinct(UserActivity.user_id)).label('active_users')
+            ).where(
+                and_(
+                    UserActivity.workspace_id == workspace_id,
+                    UserActivity.user_id.in_(cohort_users),
+                    func.date(UserActivity.created_at) >= cohort_date,
+                    func.date(UserActivity.created_at) <= end_date
+                )
+            ).group_by(
+                func.date(UserActivity.created_at)
             )
-        ).group_by(
-            func.date(UserActivity.created_at)
-        )
 
-        result = await self.db.execute(retention_query)
-        retention_data = {row.activity_date: row.active_users for row in result.fetchall()}
+            result = await self.db.execute(retention_query)
+            retention_data = {row.activity_date: row.active_users for row in result.fetchall()}
+        else:
+            # Batch processing for large cohorts
+            for i in range(0, len(cohort_users), batch_size):
+                batch = cohort_users[i:i + batch_size]
+                retention_query = select(
+                    func.date(UserActivity.created_at).label('activity_date'),
+                    func.count(distinct(UserActivity.user_id)).label('active_users')
+                ).where(
+                    and_(
+                        UserActivity.workspace_id == workspace_id,
+                        UserActivity.user_id.in_(batch),
+                        func.date(UserActivity.created_at) >= cohort_date,
+                        func.date(UserActivity.created_at) <= end_date
+                    )
+                ).group_by(
+                    func.date(UserActivity.created_at)
+                )
+
+                result = await self.db.execute(retention_query)
+                for row in result.fetchall():
+                    retention_data[row.activity_date] = retention_data.get(row.activity_date, 0) + row.active_users
 
         # Calculate retention percentages
         retention = {}
@@ -225,7 +252,12 @@ class CohortAnalysisService:
         cohort_date: date,
         cohort_size: int
     ) -> Dict[str, float]:
-        """Calculate revenue, LTV, churn rate, and engagement metrics."""
+        """Calculate revenue, LTV, churn rate, and engagement metrics.
+        
+        Note: This method uses in_() with cohort_users list. For very large cohorts
+        (>5000 users), consider implementing batching similar to _calculate_retention_periods.
+        However, cohort sizes are typically bounded by daily/weekly/monthly signups.
+        """
 
         # Calculate average revenue (from credits used)
         revenue_query = select(
@@ -290,7 +322,12 @@ class CohortAnalysisService:
         cohort_users: List[str],
         cohort_date: date
     ) -> List[Dict[str, Any]]:
-        """Calculate retention by user segments (device type, country, etc.)."""
+        """Calculate retention by user segments (device type, country, etc.).
+        
+        Note: This method uses in_() with cohort_users list. For very large cohorts
+        (>5000 users), consider implementing batching similar to _calculate_retention_periods.
+        However, cohort sizes are typically bounded by daily/weekly/monthly signups.
+        """
 
         # Segment by device type
         device_query = select(
