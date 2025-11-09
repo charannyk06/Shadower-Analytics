@@ -1,7 +1,6 @@
 """Redis connection management and client wrapper."""
 
 import redis.asyncio as redis
-from redis.asyncio import ConnectionPool
 from typing import Optional, Any
 import json
 import pickle
@@ -144,7 +143,6 @@ class RedisClient:
 
 # Global Redis client instance
 _redis_client: Optional[RedisClient] = None
-redis_pool: Optional[ConnectionPool] = None
 
 
 async def get_redis_client(max_retries: int = 5) -> Optional[RedisClient]:
