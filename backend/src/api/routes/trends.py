@@ -98,15 +98,24 @@ async def get_trends_overview(
         metrics = ['executions', 'users', 'credits', 'success_rate']
 
         async def get_metric_overview(metric: str) -> tuple[str, Dict[str, Any]]:
-            try:
-                analysis = await service.analyze_trend(workspace_id, metric, timeframe)
-                return metric, analysis.get('overview', {})
-            except Exception as e:
-                logger.warning(f"Failed to get trend for {metric} in workspace {workspace_id}: {e}")
-                return metric, {"error": "Failed to analyze", "trend": "unknown"}
+            analysis = await service.analyze_trend(workspace_id, metric, timeframe)
+            return metric, analysis.get('overview', {})
 
-        results = await asyncio.gather(*[get_metric_overview(m) for m in metrics])
-        overviews = dict(results)
+        # Use return_exceptions=True to handle individual metric failures
+        results = await asyncio.gather(
+            *[get_metric_overview(m) for m in metrics],
+            return_exceptions=True
+        )
+
+        # Process results, handling any exceptions
+        overviews = {}
+        for i, result in enumerate(results):
+            metric = metrics[i]
+            if isinstance(result, Exception):
+                logger.warning(f"Failed to get trend for {metric} in workspace {workspace_id}: {result}")
+                overviews[metric] = {"error": "Failed to analyze", "trend": "unknown"}
+            else:
+                overviews[metric] = result[1]  # result is tuple (metric, overview)
 
         return {
             "workspaceId": workspace_id,
@@ -267,7 +276,7 @@ async def get_metric_insights(
 @router.delete("/{workspace_id}/cache", dependencies=[Depends(trends_limiter)])
 async def clear_trend_cache(
     workspace_id: str,
-    metric: str = Query(None, regex="^(executions|users|credits|errors|success_rate|revenue)?$"),
+    metric: str = Query(None, regex="^(executions|users|credits|errors|success_rate|revenue)$"),
     current_user: Dict[str, Any] = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):

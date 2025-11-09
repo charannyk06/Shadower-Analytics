@@ -18,7 +18,7 @@ try:
     PROPHET_AVAILABLE = True
 except ImportError:
     PROPHET_AVAILABLE = False
-    logging.warning("Prophet not available. Forecasting features will be limited.")
+    # Warning will be logged at runtime when forecasting is attempted
 
 from . import trend_analysis_constants as const
 
@@ -519,7 +519,11 @@ class TrendAnalysisService:
 
     async def _generate_forecast(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Generate time series forecast."""
-        if not PROPHET_AVAILABLE or len(df) < 14:
+        if not PROPHET_AVAILABLE:
+            logger.warning("Prophet not available. Using simple linear forecasting instead.")
+            return self._simple_forecast(df)
+
+        if len(df) < 14:
             return self._simple_forecast(df)
 
         try:
