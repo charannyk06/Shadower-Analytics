@@ -1,20 +1,84 @@
-"""Workspace metrics routes."""
+"""Workspace metrics routes with proper authentication and access control."""
 
-import logging
+from typing import List, Optional, Dict, Any
+from fastapi import APIRouter, Depends, Query, Path, HTTPException, status
 from datetime import date, timedelta
-from typing import Any, Dict, List
-
-from fastapi import APIRouter, Depends, HTTPException, Path, Query
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
+import logging
 
 from ...core.database import get_db
-from ...models.schemas.workspaces import WorkspaceAnalytics, WorkspaceMetrics, WorkspaceStats
-from ...services.metrics.workspace_analytics_service import get_workspace_analytics
+from ...models.schemas.workspaces import WorkspaceMetrics, WorkspaceStats, WorkspaceAnalytics
+from ...services.metrics.workspace_analytics_service import WorkspaceAnalyticsService
 from ..dependencies.auth import get_current_user
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/workspaces", tags=["workspaces"])
+
+
+async def verify_workspace_access(
+    workspace_id: str,
+    user_id: str,
+    db,
+) -> bool:
+    """
+    Verify that a user has access to a specific workspace.
+
+    Args:
+        workspace_id: Workspace identifier
+        user_id: User identifier
+        db: Database session
+
+    Returns:
+        True if user has access, raises HTTPException otherwise
+
+    Raises:
+        HTTPException: 403 if access denied, 404 if workspace not found
+    """
+    try:
+        # First check if workspace exists
+        workspace_exists_query = text("""
+            SELECT 1 FROM public.workspaces
+            WHERE workspace_id = :workspace_id
+        """)
+        result = await db.execute(workspace_exists_query, {"workspace_id": workspace_id})
+        if not result.fetchone():
+            logger.warning(f"Workspace {workspace_id} not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Workspace {workspace_id} not found"
+            )
+
+        # Check if user is a member of the workspace
+        access_query = text("""
+            SELECT 1 FROM public.workspace_members
+            WHERE workspace_id = :workspace_id AND user_id = :user_id
+        """)
+        access_result = await db.execute(
+            access_query,
+            {"workspace_id": workspace_id, "user_id": user_id}
+        )
+
+        if not access_result.fetchone():
+            logger.warning(
+                f"Access denied for user {user_id} to workspace {workspace_id}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this workspace"
+            )
+
+        return True
+
+    except HTTPException:
+        raise
+    except SQLAlchemyError as e:
+        logger.error(f"Database error verifying workspace access: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error verifying workspace access"
+        )
 
 
 @router.get("/", response_model=List[WorkspaceMetrics])
@@ -69,65 +133,3 @@ async def get_workspace_users(
     return {"users": [], "total": 0}
 
 
-@router.get("/{workspace_id}/analytics", response_model=WorkspaceAnalytics)
-async def get_workspace_analytics_endpoint(
-    workspace_id: str = Path(..., description="Workspace ID"),
-    timeframe: str = Query(
-        "30d", pattern="^(24h|7d|30d|90d|all)$", description="Time period for analytics"
-    ),
-    include_comparison: bool = Query(
-        False, description="Include cross-workspace comparison (admin only)"
-    ),
-    current_user: Dict[str, Any] = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Get comprehensive workspace analytics.
-
-    Returns detailed analytics for a workspace including:
-    - Overview metrics (members, activity, health score)
-    - Member analytics (roles, activity distribution, top contributors)
-    - Agent usage (performance, efficiency)
-    - Resource utilization (credits, storage, API)
-    - Billing information
-    - Workspace comparison (admin only)
-
-    Args:
-        workspace_id: The workspace ID
-        timeframe: Time period (24h, 7d, 30d, 90d, all)
-        include_comparison: Include comparison data (requires admin role)
-        current_user: Current authenticated user
-        db: Database session
-
-    Returns:
-        WorkspaceAnalytics: Complete workspace analytics data
-
-    Raises:
-        HTTPException: If workspace not found or access denied
-    """
-
-    # Check workspace access
-    # TODO: Implement proper workspace access validation
-    # For now, allow any authenticated user
-
-    # If comparison is requested, verify admin role
-    if include_comparison:
-        user_role = current_user.get("role", "").lower()
-        if user_role not in ["owner", "admin"]:
-            raise HTTPException(
-                status_code=403, detail="Workspace comparison data is only available to admins"
-            )
-
-    try:
-        analytics = await get_workspace_analytics(
-            db=db,
-            workspace_id=workspace_id,
-            timeframe=timeframe,
-            include_comparison=include_comparison,
-        )
-        return analytics
-
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        logger.error(f"Error fetching workspace analytics for {workspace_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to fetch workspace analytics")

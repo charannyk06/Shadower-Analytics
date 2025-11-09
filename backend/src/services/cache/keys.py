@@ -102,6 +102,67 @@ class CacheKeys:
         return f"{CacheKeys.USER_PREFIX}:metrics:{user_id}:{timeframe}"
 
     @staticmethod
+    def user_activity_analytics(workspace_id: str, timeframe: str, segment_id: str = None) -> str:
+        """
+        Key for user activity analytics data.
+
+        Args:
+            workspace_id: Workspace identifier
+            timeframe: Time period (e.g., '7d', '30d', '90d')
+            segment_id: Optional segment identifier
+
+        Returns:
+            Cache key string
+        """
+        segment_part = f":{segment_id}" if segment_id else ""
+        return f"{CacheKeys.USER_PREFIX}:analytics:{workspace_id}:{timeframe}{segment_part}"
+
+    @staticmethod
+    def retention_curve(workspace_id: str, cohort_date: str, days: int) -> str:
+        """
+        Key for retention curve data.
+
+        Args:
+            workspace_id: Workspace identifier
+            cohort_date: Cohort date in YYYY-MM-DD format
+            days: Number of days for retention analysis
+
+        Returns:
+            Cache key string
+        """
+        return f"{CacheKeys.USER_PREFIX}:retention:curve:{workspace_id}:{cohort_date}:{days}"
+
+    @staticmethod
+    def cohort_analysis(workspace_id: str, cohort_type: str, start_date: str, end_date: str) -> str:
+        """
+        Key for cohort analysis data.
+
+        Args:
+            workspace_id: Workspace identifier
+            cohort_type: Type of cohort (daily, weekly, monthly)
+            start_date: Start date in YYYY-MM-DD format
+            end_date: End date in YYYY-MM-DD format
+
+        Returns:
+            Cache key string
+        """
+        return f"{CacheKeys.USER_PREFIX}:cohort:{workspace_id}:{cohort_type}:{start_date}:{end_date}"
+
+    @staticmethod
+    def churn_analysis(workspace_id: str, timeframe: str) -> str:
+        """
+        Key for churn analysis data.
+
+        Args:
+            workspace_id: Workspace identifier
+            timeframe: Time period
+
+        Returns:
+            Cache key string
+        """
+        return f"{CacheKeys.USER_PREFIX}:churn:{workspace_id}:{timeframe}"
+
+    @staticmethod
     def workspace_metrics(workspace_id: str, metric_type: str, date: str) -> str:
         """
         Key for workspace metrics.
@@ -130,6 +191,20 @@ class CacheKeys:
             Cache key string
         """
         return f"{CacheKeys.WORKSPACE_PREFIX}:overview:{workspace_id}"
+
+    @staticmethod
+    def workspace_analytics(workspace_id: str, timeframe: str) -> str:
+        """
+        Key for workspace analytics data.
+
+        Args:
+            workspace_id: Workspace identifier
+            timeframe: Time period (e.g., '24h', '7d', '30d')
+
+        Returns:
+            Cache key string
+        """
+        return f"{CacheKeys.WORKSPACE_PREFIX}:analytics:{workspace_id}:{timeframe}"
 
     @staticmethod
     def query_result(query_hash: str) -> str:

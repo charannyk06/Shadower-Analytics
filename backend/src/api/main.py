@@ -16,6 +16,7 @@ from .routes import (
     reports_router,
     health_router,
     websocket_router,
+    user_activity_router,
 )
 from .middleware.cors import setup_cors
 from .middleware.logging import RequestLoggingMiddleware
@@ -52,6 +53,7 @@ app.include_router(metrics_router)
 app.include_router(exports_router)
 app.include_router(reports_router)
 app.include_router(websocket_router)
+app.include_router(user_activity_router)
 
 
 @app.on_event("startup")

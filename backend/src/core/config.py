@@ -25,14 +25,17 @@ class Settings(BaseSettings):
     DB_POOL_RECYCLE: int = 3600
 
     # Redis
-    # For development with password: redis://:password@localhost:6379/0
-    # For production: Use strong password from environment variable
-    REDIS_URL: str = "redis://:shadower_redis_dev_password_change_in_production@localhost:6379/0"
-    REDIS_PASSWORD: Optional[str] = "shadower_redis_dev_password_change_in_production"
+    # IMPORTANT: Set these in environment variables or .env file
+    # For development: Use .env with weak password
+    # For production: Set strong password via environment variable (generate with: openssl rand -base64 32)
+    # Empty defaults require configuration to prevent accidental production use without proper credentials
+    REDIS_URL: str = ""
+    REDIS_PASSWORD: Optional[str] = None
 
     # Celery
-    CELERY_BROKER_URL: str = "redis://:shadower_redis_dev_password_change_in_production@localhost:6379/1"
-    CELERY_RESULT_BACKEND: str = "redis://:shadower_redis_dev_password_change_in_production@localhost:6379/2"
+    # IMPORTANT: Set these in environment variables or .env file
+    CELERY_BROKER_URL: str = ""
+    CELERY_RESULT_BACKEND: str = ""
 
     # Security & Authentication
     JWT_SECRET_KEY: str = "your-secret-key-change-in-production"
@@ -77,6 +80,20 @@ class Settings(BaseSettings):
     DAILY_ROLLUP_ENABLED: bool = True
     WEEKLY_ROLLUP_ENABLED: bool = True
     MONTHLY_ROLLUP_ENABLED: bool = True
+
+    @field_validator("REDIS_URL", "CELERY_BROKER_URL", "CELERY_RESULT_BACKEND")
+    @classmethod
+    def validate_redis_urls(cls, v: str, info) -> str:
+        """Validate Redis URLs are configured."""
+        field_name = info.field_name
+        
+        if not v or v == "":
+            raise ValueError(
+                f"{field_name} must be set via environment variable or .env file. "
+                f"See backend/.env.example for configuration examples."
+            )
+        
+        return v
 
     @field_validator("JWT_SECRET_KEY")
     @classmethod

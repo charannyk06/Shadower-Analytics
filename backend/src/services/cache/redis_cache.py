@@ -1,7 +1,6 @@
 """Enhanced Redis cache implementation with warming and invalidation."""
 
 import asyncio
-import json
 import re
 from typing import Any, Optional, Callable, Dict
 import logging
@@ -10,7 +9,6 @@ from .metrics import (
     record_cache_miss,
     record_cache_error,
     record_cache_invalidation,
-    track_cache_operation,
 )
 from ...core.constants import CACHE_KEY_MAX_LENGTH, CACHE_KEY_PATTERN
 
@@ -167,22 +165,38 @@ class CacheService:
         Returns:
             Cached or computed value
         """
-        # Check cache first
-        value = await self.get(key)
+        try:
+            # Validate key once at the beginning
+            self._validate_cache_key(key)
+            
+            # Check cache directly without extra validation/metrics
+            value = await self.redis.get(key)
 
-        if value is not None:
-            logger.debug(f"Cache hit for key: {key}")
+            if value is not None:
+                logger.debug(f"Cache hit for key: {key}")
+                record_cache_hit("get_or_compute", self._get_key_pattern(key))
+                return value
+
+            # Cache miss - compute value
+            logger.debug(f"Cache miss for key: {key}, computing...")
+            record_cache_miss("get_or_compute", self._get_key_pattern(key))
+            value = await compute_func()
+
+            # Cache the result
+            await self.redis.set(key, value, expire=ttl)
+            logger.debug(f"Cached computed value for key: {key}")
+
             return value
-
-        # Cache miss - compute value
-        logger.debug(f"Cache miss for key: {key}, computing...")
-        value = await compute_func()
-
-        # Cache the result
-        await self.set(key, value, ttl=ttl)
-        logger.debug(f"Cached computed value for key: {key}")
-
-        return value
+        except CacheKeyValidationError as e:
+            logger.warning(f"Invalid cache key: {e}")
+            record_cache_error("get_or_compute", "ValidationError")
+            # Still compute and return value even if caching fails
+            return await compute_func()
+        except Exception as e:
+            logger.error(f"Cache get_or_compute error: {e}")
+            record_cache_error("get_or_compute", type(e).__name__)
+            # Fallback to computing without cache on error
+            return await compute_func()
 
     async def invalidate_workspace(self, workspace_id: str) -> int:
         """
@@ -370,25 +384,10 @@ class CacheService:
         invalidation use cases.
         """
         try:
-            cursor = 0
-            deleted_count = 0
-
-            while True:
-                cursor, keys = await self.redis.redis.scan(
-                    cursor=cursor, match=pattern, count=100
-                )
-
-                if keys:
-                    await self.redis.redis.delete(*keys)
-                    deleted_count += len(keys)
-
-                if cursor == 0:
-                    break
-
+            deleted_count = await self.redis.flush_pattern(pattern)
             if deleted_count > 0:
                 logger.info(f"Cleared {deleted_count} keys matching pattern: {pattern}")
                 record_cache_invalidation(pattern)
-
             return deleted_count
         except Exception as e:
             logger.error(f"Cache clear pattern error: {e}")
