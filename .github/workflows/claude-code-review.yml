@@ -80,6 +80,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           show_full_output: true
           prompt: |
             You are an expert code reviewer performing a comprehensive security, quality, and correctness analysis of pull request #${{ steps.pr-info.outputs.pr_number }} in the ${{ github.repository }} repository.
