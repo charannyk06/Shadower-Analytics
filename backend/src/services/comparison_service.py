@@ -3,16 +3,15 @@ Comparison Service
 Business logic for comparison views
 """
 
-import asyncio
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
-from uuid import uuid4
 
 import numpy as np
 from scipy import stats
 from sqlalchemy import select, func, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.utils.datetime import utc_now
 from src.models.comparison_views import (
     AgentComparison,
     AgentComparisonItem,
@@ -20,6 +19,7 @@ from src.models.comparison_views import (
     BenchmarkMetrics,
     ChangeDetail,
     ChangeMetrics,
+    ComparisonError,
     ComparisonFilters,
     ComparisonInsight,
     ComparisonOptions,
@@ -60,6 +60,43 @@ from src.models.comparison_views import (
     DiffColor,
 )
 
+# ============================================================================
+# Constants
+# ============================================================================
+
+# Comparison limits
+MIN_AGENTS_FOR_COMPARISON = 2
+MAX_AGENTS_FOR_COMPARISON = 10
+MIN_WORKSPACES_FOR_COMPARISON = 2
+MAX_WORKSPACES_FOR_COMPARISON = 20
+MIN_ENTITIES_FOR_METRIC_COMPARISON = 2
+
+# Performance thresholds
+ERROR_RATE_HIGH_THRESHOLD = 10.0
+COST_VARIANCE_THRESHOLD = 50.0
+RUNTIME_VARIANCE_THRESHOLD = 100.0
+
+# Statistical thresholds
+OUTLIER_ZSCORE_THRESHOLD = 2.0
+MODERATE_OUTLIER_ZSCORE_THRESHOLD = 2.5
+EXTREME_OUTLIER_ZSCORE_THRESHOLD = 3.0
+SIGNIFICANT_CHANGE_THRESHOLD = 10.0
+STABLE_CHANGE_THRESHOLD = 5.0
+
+# Scoring weights
+DEFAULT_SCORING_WEIGHTS = {
+    "success_rate": 0.3,
+    "error_rate": 0.2,
+    "throughput": 0.2,
+    "user_satisfaction": 0.15,
+    "cost": 0.15,
+}
+
+# Pagination
+DEFAULT_PAGE_SIZE = 100
+MAX_PAGE_SIZE = 1000
+MAX_TIME_SERIES_POINTS = 1000
+
 
 class ComparisonService:
     """Service for handling comparison operations"""
@@ -88,7 +125,7 @@ class ComparisonService:
         Returns:
             ComparisonResponse with results
         """
-        start_time = datetime.utcnow()
+        start_time = utc_now()
 
         try:
             # Use default options if not provided
@@ -108,7 +145,7 @@ class ComparisonService:
                 raise ValueError(f"Unknown comparison type: {comparison_type}")
 
             # Calculate processing time
-            processing_time = (datetime.utcnow() - start_time).total_seconds()
+            processing_time = (utc_now() - start_time).total_seconds()
 
             # Count entities and data points
             entity_count = self._count_entities(comparison_data)
@@ -118,7 +155,7 @@ class ComparisonService:
                 success=True,
                 data=comparison_data,
                 metadata=ComparisonMetadata(
-                    generated_at=datetime.utcnow(),
+                    generated_at=utc_now(),
                     processing_time=processing_time,
                     entity_count=entity_count,
                     data_points=data_points,
@@ -126,16 +163,16 @@ class ComparisonService:
             )
 
         except Exception as e:
-            processing_time = (datetime.utcnow() - start_time).total_seconds()
+            processing_time = (utc_now() - start_time).total_seconds()
             return ComparisonResponse(
                 success=False,
                 metadata=ComparisonMetadata(
-                    generated_at=datetime.utcnow(),
+                    generated_at=utc_now(),
                     processing_time=processing_time,
                     entity_count=0,
                     data_points=0,
                 ),
-                error={"code": "COMPARISON_ERROR", "message": str(e)},
+                error=ComparisonError(code="COMPARISON_ERROR", message=str(e)),
             )
 
     # ========================================================================
@@ -174,17 +211,23 @@ class ComparisonService:
 
         return ComparisonViews(
             type=ComparisonType.AGENTS,
-            timestamp=datetime.utcnow(),
+            timestamp=utc_now(),
             agent_comparison=agent_comparison,
         )
 
     async def _fetch_agent_metrics(
         self, filters: ComparisonFilters
     ) -> List[AgentComparisonItem]:
-        """Fetch metrics for agents"""
+        """Fetch metrics for agents
 
-        # This is a mock implementation
-        # In production, this would query the database
+        TODO: Replace with real database queries
+        WARNING: Current implementation returns mock data for demonstration
+        """
+
+        # MOCK IMPLEMENTATION - Replace with real database queries
+        # TODO: Query from agent_metrics table with proper filters
+        # TODO: Add proper error handling and validation
+        # TODO: Add pagination support
         agents = []
         agent_ids = filters.agent_ids or []
 
@@ -278,13 +321,13 @@ class ComparisonService:
 
         scores = {}
         for agent in agents:
-            # Weighted composite score
+            # Weighted composite score using default weights
             score = (
-                agent.metrics.success_rate * 0.3
-                + (100 - min(agent.metrics.error_rate, 100)) * 0.2
-                + min(agent.metrics.throughput / 10, 100) * 0.2
-                + (agent.metrics.user_satisfaction or 0) * 20 * 0.15
-                + max(100 - agent.metrics.cost_per_run * 100, 0) * 0.15
+                agent.metrics.success_rate * DEFAULT_SCORING_WEIGHTS["success_rate"]
+                + (100 - min(agent.metrics.error_rate, 100)) * DEFAULT_SCORING_WEIGHTS["error_rate"]
+                + min(agent.metrics.throughput / 10, 100) * DEFAULT_SCORING_WEIGHTS["throughput"]
+                + (agent.metrics.user_satisfaction or 0) * 20 * DEFAULT_SCORING_WEIGHTS["user_satisfaction"]
+                + max(100 - agent.metrics.cost_per_run * 100, 0) * DEFAULT_SCORING_WEIGHTS["cost"]
             )
             scores[agent.id] = score
 
@@ -304,7 +347,7 @@ class ComparisonService:
 
         # Check error rates
         high_error_agents = [
-            a for a in agents if a.metrics.error_rate > 10
+            a for a in agents if a.metrics.error_rate > ERROR_RATE_HIGH_THRESHOLD
         ]
         if high_error_agents:
             recommendations.append(
@@ -312,13 +355,13 @@ class ComparisonService:
                     type=RecommendationType.RELIABILITY,
                     priority=RecommendationPriority.HIGH,
                     title="High Error Rates Detected",
-                    description=f"{len(high_error_agents)} agent(s) have error rates above 10%. Consider reviewing error logs and implementing retry logic.",
+                    description=f"{len(high_error_agents)} agent(s) have error rates above {ERROR_RATE_HIGH_THRESHOLD}%. Consider reviewing error logs and implementing retry logic.",
                     affected_agents=[a.id for a in high_error_agents],
                 )
             )
 
         # Check costs
-        if differences["cost"].delta_percent > 50:
+        if differences["cost"].delta_percent > COST_VARIANCE_THRESHOLD:
             recommendations.append(
                 Recommendation(
                     type=RecommendationType.COST,
@@ -334,7 +377,7 @@ class ComparisonService:
             )
 
         # Check performance
-        if differences["runtime"].delta_percent > 100:
+        if differences["runtime"].delta_percent > RUNTIME_VARIANCE_THRESHOLD:
             recommendations.append(
                 Recommendation(
                     type=RecommendationType.PERFORMANCE,
@@ -358,7 +401,7 @@ class ComparisonService:
 
         # Calculate period boundaries
         if not filters.end_date:
-            filters.end_date = datetime.utcnow()
+            filters.end_date = utc_now()
         if not filters.start_date:
             filters.start_date = filters.end_date - timedelta(days=7)
 
@@ -402,16 +445,20 @@ class ComparisonService:
 
         return ComparisonViews(
             type=ComparisonType.PERIODS,
-            timestamp=datetime.utcnow(),
+            timestamp=utc_now(),
             period_comparison=period_comparison,
         )
 
     async def _fetch_period_metrics(
         self, start: datetime, end: datetime, period_name: str
     ) -> PeriodMetrics:
-        """Fetch metrics for a time period"""
+        """Fetch metrics for a time period
 
-        # Mock implementation
+        TODO: Replace with real database queries
+        WARNING: Current implementation returns mock data
+        """
+
+        # MOCK IMPLEMENTATION - Replace with real database aggregation queries
         return PeriodMetrics(
             period=period_name,
             start_date=start,
@@ -437,14 +484,14 @@ class ComparisonService:
             absolute = curr_val - prev_val
             percent = (absolute / prev_val * 100) if prev_val != 0 else 0
 
-            if abs(percent) < 5:
+            if abs(percent) < STABLE_CHANGE_THRESHOLD:
                 trend = TrendDirection.STABLE
             elif absolute > 0:
                 trend = TrendDirection.UP
             else:
                 trend = TrendDirection.DOWN
 
-            significant = abs(percent) > 10
+            significant = abs(percent) > SIGNIFICANT_CHANGE_THRESHOLD
 
             if higher_is_better:
                 direction = (
@@ -602,16 +649,20 @@ class ComparisonService:
 
         return ComparisonViews(
             type=ComparisonType.WORKSPACES,
-            timestamp=datetime.utcnow(),
+            timestamp=utc_now(),
             workspace_comparison=workspace_comparison,
         )
 
     async def _fetch_workspace_metrics(
         self, filters: ComparisonFilters
     ) -> List[WorkspaceMetrics]:
-        """Fetch metrics for workspaces"""
+        """Fetch metrics for workspaces
 
-        # Mock implementation
+        TODO: Replace with real database queries
+        WARNING: Current implementation returns mock data
+        """
+
+        # MOCK IMPLEMENTATION - Replace with real database workspace queries
         workspaces = []
         workspace_ids = filters.workspace_ids or []
 
@@ -645,15 +696,15 @@ class ComparisonService:
         avg_cost = np.mean([w.total_cost for w in workspaces])
         avg_throughput = np.mean([w.throughput for w in workspaces])
 
-        # Calculate composite scores
+        # Calculate composite scores using default weights
         scores = {}
         for ws in workspaces:
             score = (
-                ws.success_rate * 0.3
-                + (100 - min(ws.error_rate, 100)) * 0.2
-                + min(ws.throughput / 10, 100) * 0.2
-                + (ws.user_satisfaction or 0) * 20 * 0.15
-                + max(100 - ws.total_cost / 100, 0) * 0.15
+                ws.success_rate * DEFAULT_SCORING_WEIGHTS["success_rate"]
+                + (100 - min(ws.error_rate, 100)) * DEFAULT_SCORING_WEIGHTS["error_rate"]
+                + min(ws.throughput / 10, 100) * DEFAULT_SCORING_WEIGHTS["throughput"]
+                + (ws.user_satisfaction or 0) * 20 * DEFAULT_SCORING_WEIGHTS["user_satisfaction"]
+                + max(100 - ws.total_cost / 100, 0) * DEFAULT_SCORING_WEIGHTS["cost"]
             )
             scores[ws.workspace_id] = (score, ws.workspace_name)
 
@@ -682,15 +733,15 @@ class ComparisonService:
     ) -> RankingMetrics:
         """Generate workspace rankings"""
 
-        # Calculate scores
+        # Calculate scores using default weights
         scores = []
         for ws in workspaces:
             score = (
-                ws.success_rate * 0.3
-                + (100 - min(ws.error_rate, 100)) * 0.2
-                + min(ws.throughput / 10, 100) * 0.2
-                + (ws.user_satisfaction or 0) * 20 * 0.15
-                + max(100 - ws.total_cost / 100, 0) * 0.15
+                ws.success_rate * DEFAULT_SCORING_WEIGHTS["success_rate"]
+                + (100 - min(ws.error_rate, 100)) * DEFAULT_SCORING_WEIGHTS["error_rate"]
+                + min(ws.throughput / 10, 100) * DEFAULT_SCORING_WEIGHTS["throughput"]
+                + (ws.user_satisfaction or 0) * 20 * DEFAULT_SCORING_WEIGHTS["user_satisfaction"]
+                + max(100 - ws.total_cost / 100, 0) * DEFAULT_SCORING_WEIGHTS["cost"]
             )
             scores.append((ws, score))
 
@@ -736,13 +787,7 @@ class ComparisonService:
         return RankingMetrics(
             rankings=rankings,
             score_method="weighted",
-            weights={
-                "success_rate": 0.3,
-                "error_rate": 0.2,
-                "throughput": 0.2,
-                "user_satisfaction": 0.15,
-                "cost": 0.15,
-            },
+            weights=DEFAULT_SCORING_WEIGHTS,
         )
 
     def _generate_workspace_insights(
@@ -841,16 +886,20 @@ class ComparisonService:
 
         return ComparisonViews(
             type=ComparisonType.METRICS,
-            timestamp=datetime.utcnow(),
+            timestamp=utc_now(),
             metric_comparison=metric_comparison,
         )
 
     async def _fetch_metric_entities(
         self, metric_name: str, filters: ComparisonFilters
     ) -> List[MetricEntity]:
-        """Fetch metric values for entities"""
+        """Fetch metric values for entities
 
-        # Mock implementation
+        TODO: Replace with real database queries
+        WARNING: Current implementation returns mock data
+        """
+
+        # MOCK IMPLEMENTATION - Replace with real database metric queries
         entities = []
         entity_count = 20
 
@@ -955,12 +1004,12 @@ class ComparisonService:
             )
 
             # Determine if outlier
-            if abs(z_score) > 2:
+            if abs(z_score) > OUTLIER_ZSCORE_THRESHOLD:
                 outlier_type = OutlierType.HIGH if z_score > 0 else OutlierType.LOW
 
-                if abs(z_score) > 3:
+                if abs(z_score) > EXTREME_OUTLIER_ZSCORE_THRESHOLD:
                     severity = OutlierSeverity.EXTREME
-                elif abs(z_score) > 2.5:
+                elif abs(z_score) > MODERATE_OUTLIER_ZSCORE_THRESHOLD:
                     severity = OutlierSeverity.MODERATE
                 else:
                     severity = OutlierSeverity.MILD
@@ -981,9 +1030,13 @@ class ComparisonService:
     async def _calculate_metric_correlations(
         self, metric_name: str, filters: ComparisonFilters
     ) -> List[MetricCorrelation]:
-        """Calculate correlations with other metrics"""
+        """Calculate correlations with other metrics
 
-        # Mock implementation
+        TODO: Replace with real correlation calculations
+        WARNING: Current implementation returns mock data
+        """
+
+        # MOCK IMPLEMENTATION - Replace with real correlation analysis
         correlations = []
 
         other_metrics = [
