@@ -51,6 +51,22 @@ class CohortAnalysisService:
     # Maximum date range to prevent performance issues
     MAX_DATE_RANGE_DAYS = 90
 
+    # LTV calculation constants
+    ENGAGEMENT_TO_LIFETIME_RATIO = 10  # Divide engagement score by this to get lifetime months
+    MIN_LIFETIME_MONTHS = 1  # Minimum expected lifetime in months
+    ENGAGEMENT_SCORE_EVENTS_DIVISOR = 10  # Events per user to calculate engagement score
+    MAX_ENGAGEMENT_SCORE = 100.0  # Maximum engagement score
+
+    # Churn calculation constants
+    CHURN_LOOKBACK_DAYS = 30  # Days to look back for churn calculation
+
+    # Partial week threshold
+    PARTIAL_WEEK_MIN_DAYS = 3  # Minimum days to include partial week in weekly cohorts
+
+    # Trend detection thresholds
+    TREND_IMPROVEMENT_THRESHOLD = 1.1  # 10% improvement
+    TREND_DECLINE_THRESHOLD = 0.9  # 10% decline
+
     def __init__(self, db: AsyncSession):
         self.db = db
 
@@ -213,14 +229,21 @@ class CohortAnalysisService:
         cohort_date: date,
         cohort_type: str
     ) -> List[str]:
-        """Get users for a cohort based on cohort type."""
+        """Get users for a cohort based on cohort type.
 
-        # Validate cohort type
+        Raises:
+            ValueError: If cohort_type is invalid
+        """
+
+        # Validate cohort type - raise error instead of silent fallback
         try:
             cohort_type_enum = CohortType(cohort_type)
-        except ValueError:
-            logger.warning(f"Invalid cohort type: {cohort_type}, defaulting to signup")
-            cohort_type_enum = CohortType.SIGNUP
+        except ValueError as e:
+            logger.error(f"Invalid cohort type: {cohort_type}")
+            raise ValueError(
+                f"Invalid cohort_type '{cohort_type}'. "
+                f"Must be one of: {', '.join([t.value for t in CohortType])}"
+            )
 
         if cohort_type_enum == CohortType.SIGNUP:
             # Users who first appeared on this date
@@ -342,12 +365,12 @@ class CohortAnalysisService:
         )
 
         # Use timezone-aware datetime for churn calculation
-        thirty_days_ago = datetime.now(timezone.utc).date() - timedelta(days=30)
+        churn_lookback = datetime.now(timezone.utc).date() - timedelta(days=self.CHURN_LOOKBACK_DAYS)
         churn_query = select(func.count(distinct(UserActivity.user_id))).where(
             and_(
                 UserActivity.workspace_id == workspace_id,
                 UserActivity.user_id.in_(cohort_users),
-                func.date(UserActivity.created_at) >= thirty_days_ago
+                func.date(UserActivity.created_at) >= churn_lookback
             )
         )
 
@@ -365,16 +388,22 @@ class CohortAnalysisService:
 
         # Process engagement data
         total_events = engagement_result.scalar() or 0
-        engagement_score = min(100.0, (total_events / cohort_size / 10)) if cohort_size > 0 else 0
+        engagement_score = min(
+            self.MAX_ENGAGEMENT_SCORE,
+            (total_events / cohort_size / self.ENGAGEMENT_SCORE_EVENTS_DIVISOR)
+        ) if cohort_size > 0 else 0
 
         # Process churn data
         active_users = active_result.scalar() or 0
         churned_users = cohort_size - active_users
         churn_rate = (churned_users / cohort_size * 100) if cohort_size > 0 else 0
 
-        # Simple LTV calculation: average revenue * expected lifetime (in months)
+        # LTV calculation: average revenue * expected lifetime (in months)
         # Using engagement score as a proxy for lifetime
-        expected_lifetime_months = max(1, engagement_score / 10)
+        expected_lifetime_months = max(
+            self.MIN_LIFETIME_MONTHS,
+            engagement_score / self.ENGAGEMENT_TO_LIFETIME_RATIO
+        )
         ltv = avg_revenue * expected_lifetime_months
 
         return {
@@ -452,14 +481,16 @@ class CohortAnalysisService:
         # Sort by cohort date to ensure chronological order
         cohorts_sorted = sorted(cohorts, key=lambda x: x["cohortDate"])
         mid_point = len(cohorts_sorted) // 2
+        second_half_size = len(cohorts_sorted) - mid_point
 
-        if mid_point > 0:
+        # Prevent division by zero - need both halves to have data
+        if mid_point > 0 and second_half_size > 0:
             first_half_avg = sum(c["retention"].get("day30", 0) for c in cohorts_sorted[:mid_point]) / mid_point
-            second_half_avg = sum(c["retention"].get("day30", 0) for c in cohorts_sorted[mid_point:]) / (len(cohorts_sorted) - mid_point)
+            second_half_avg = sum(c["retention"].get("day30", 0) for c in cohorts_sorted[mid_point:]) / second_half_size
 
-            if second_half_avg > first_half_avg * 1.1:
+            if second_half_avg > first_half_avg * self.TREND_IMPROVEMENT_THRESHOLD:
                 trend = "improving"
-            elif second_half_avg < first_half_avg * 0.9:
+            elif second_half_avg < first_half_avg * self.TREND_DECLINE_THRESHOLD:
                 trend = "declining"
             else:
                 trend = "stable"
@@ -479,14 +510,21 @@ class CohortAnalysisService:
         start_date: date,
         end_date: date
     ) -> List[date]:
-        """Generate list of cohort dates based on period."""
+        """Generate list of cohort dates based on period.
 
-        # Validate cohort period
+        Raises:
+            ValueError: If cohort_period is invalid
+        """
+
+        # Validate cohort period - raise error instead of silent fallback
         try:
             period_enum = CohortPeriod(cohort_period)
         except ValueError:
-            logger.warning(f"Invalid cohort period: {cohort_period}, defaulting to monthly")
-            period_enum = CohortPeriod.MONTHLY
+            logger.error(f"Invalid cohort period: {cohort_period}")
+            raise ValueError(
+                f"Invalid cohort_period '{cohort_period}'. "
+                f"Must be one of: {', '.join([p.value for p in CohortPeriod])}"
+            )
 
         cohort_dates = []
         current_date = start_date
@@ -504,8 +542,8 @@ class CohortAnalysisService:
                 if first_monday > end_date:
                     break
 
-            # If start_date to first Monday is >= 3 days, include start_date as partial week
-            if (first_monday - current_date).days >= 3 and current_date <= end_date:
+            # If start_date to first Monday is >= threshold days, include start_date as partial week
+            if (first_monday - current_date).days >= self.PARTIAL_WEEK_MIN_DAYS and current_date <= end_date:
                 cohort_dates.append(current_date)
 
             # Add weekly cohorts from first Monday
