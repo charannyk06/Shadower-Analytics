@@ -111,6 +111,9 @@ CREATE INDEX idx_execution_queue_agent_id
     ON analytics.execution_queue(agent_id);
 CREATE INDEX idx_execution_queue_priority
     ON analytics.execution_queue(priority DESC, queued_at ASC) WHERE status = 'queued';
+-- Composite index for common query pattern (workspace + status)
+CREATE INDEX idx_execution_queue_workspace_status_composite
+    ON analytics.execution_queue(workspace_id, status, queued_at DESC);
 
 -- Comments
 COMMENT ON TABLE analytics.execution_queue IS 'Tracks queued executions for queue depth and wait time metrics';
@@ -292,3 +295,24 @@ VALUES
     ('q2', 'ws1', 'agent2', 'user1', 5, 'queued'),
     ('q3', 'ws1', 'agent3', 'user2', 8, 'queued');
 */
+
+-- =====================================================================
+-- ROLLBACK SCRIPT
+-- =====================================================================
+-- To rollback this migration, run the following SQL:
+--
+-- SET search_path TO analytics, public;
+--
+-- -- Drop function
+-- DROP FUNCTION IF EXISTS analytics.aggregate_execution_metrics_minute(VARCHAR, TIMESTAMPTZ);
+--
+-- -- Drop views
+-- DROP VIEW IF EXISTS analytics.v_execution_latency_distribution;
+-- DROP VIEW IF EXISTS analytics.v_current_executions;
+--
+-- -- Drop tables (in reverse order of creation)
+-- DROP TABLE IF EXISTS analytics.execution_patterns;
+-- DROP TABLE IF EXISTS analytics.execution_queue;
+-- DROP TABLE IF EXISTS analytics.execution_metrics_minute;
+--
+-- =====================================================================

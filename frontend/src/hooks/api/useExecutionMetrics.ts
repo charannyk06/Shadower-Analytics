@@ -12,6 +12,12 @@ import {
   LatencyMetrics,
 } from '@/types/execution'
 
+// Cache and polling configuration constants
+const METRICS_STALE_TIME_MS = 30000 // 30 seconds - how long data is considered fresh
+const REALTIME_POLL_INTERVAL_MS = 5000 // 5 seconds - polling frequency for realtime data
+const REALTIME_STALE_TIME_MS = 1000 // 1 second - realtime data becomes stale quickly
+const THROUGHPUT_LATENCY_STALE_TIME_MS = 60000 // 1 minute - longer cache for historical data
+
 interface ExecutionMetricsParams {
   workspaceId: string
   timeframe?: ExecutionTimeframe
@@ -34,7 +40,7 @@ export function useExecutionMetrics(
       })
       return response.data
     },
-    staleTime: 30000, // Consider data stale after 30 seconds
+    staleTime: METRICS_STALE_TIME_MS,
     ...options,
   })
 }
@@ -54,8 +60,8 @@ export function useExecutionRealtime(
       })
       return response.data
     },
-    refetchInterval: 5000, // Poll every 5 seconds
-    staleTime: 1000, // Consider stale after 1 second
+    refetchInterval: REALTIME_POLL_INTERVAL_MS,
+    staleTime: REALTIME_STALE_TIME_MS,
     ...options,
   })
 }
@@ -77,7 +83,7 @@ export function useExecutionThroughput(
       })
       return response.data
     },
-    staleTime: 60000, // Consider data stale after 1 minute
+    staleTime: THROUGHPUT_LATENCY_STALE_TIME_MS,
     ...options,
   })
 }
@@ -99,7 +105,7 @@ export function useExecutionLatency(
       })
       return response.data
     },
-    staleTime: 60000, // Consider data stale after 1 minute
+    staleTime: THROUGHPUT_LATENCY_STALE_TIME_MS,
     ...options,
   })
 }
