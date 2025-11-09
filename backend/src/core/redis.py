@@ -93,17 +93,23 @@ class RedisClient:
             logger.error(f"Cache get_ttl error for key {key}: {e}")
             return -2
 
-    async def flush_pattern(self, pattern: str) -> int:
+    async def flush_pattern(self, pattern: str, count: int = 1000) -> int:
         """
         Delete all keys matching pattern using SCAN (production-safe).
         Returns number of keys deleted.
+
+        Args:
+            pattern (str): The key pattern to match.
+            count (int, optional): The number of keys Redis should try to return per SCAN iteration. Default is 1000.
         """
         try:
             cursor = 0
             deleted = 0
 
             while True:
-                cursor, keys = await self.redis.scan(cursor=cursor, match=pattern, count=100)
+                cursor, keys = await self.redis.scan(
+                    cursor=cursor, match=pattern, count=count
+                )
 
                 if keys:
                     deleted += await self.redis.delete(*keys)

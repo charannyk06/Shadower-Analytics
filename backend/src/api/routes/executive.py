@@ -2,7 +2,7 @@
 
 from typing import List, Dict, Any
 from fastapi import APIRouter, Depends, Query
-from datetime import date, timedelta, datetime
+from datetime import datetime
 
 from ...core.database import get_db
 from ...models.schemas.metrics import ExecutiveMetrics, TimeRange
@@ -16,7 +16,9 @@ router = APIRouter(prefix="/api/v1/executive", tags=["executive"])
 @router.get("/overview")
 async def get_executive_overview(
     workspace_id: str = Query(None, description="Workspace ID to query"),
-    timeframe: str = Query("30d", regex="^(24h|7d|30d|90d)$", description="Time period"),
+    timeframe: str = Query(
+        "30d", regex="^(24h|7d|30d|90d)$", description="Time period"
+    ),
     skip_cache: bool = Query(False, description="Skip cache and fetch fresh data"),
     current_user: Dict[str, Any] = Depends(require_owner_or_admin),
     db=Depends(get_db),

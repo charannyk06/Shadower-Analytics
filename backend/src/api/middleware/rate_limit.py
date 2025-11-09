@@ -4,7 +4,9 @@ from typing import Optional, Callable
 from fastapi import Request, HTTPException, status
 from datetime import datetime
 import logging
+import time
 from functools import wraps
+from collections import defaultdict
 
 from ...core.redis import get_redis_client
 from ...core.config import settings
@@ -288,3 +290,30 @@ class RateLimitMiddleware:
 
         response = await call_next(request)
         return response
+
+
+class InMemoryRateLimiter:
+    """Simple in-memory rate limiter (for development)."""
+
+    def __init__(self, calls: int = 60, period: int = 60):
+        self.calls = calls
+        self.period = period
+        self.clients = defaultdict(list)
+
+    def is_allowed(self, client_id: str) -> bool:
+        """Check if client is allowed to make request."""
+        now = time.time()
+        # Remove old entries
+        self.clients[client_id] = [
+            timestamp
+            for timestamp in self.clients[client_id]
+            if now - timestamp < self.period
+        ]
+
+        # Check limit
+        if len(self.clients[client_id]) >= self.calls:
+            return False
+
+        # Add new timestamp
+        self.clients[client_id].append(now)
+        return True

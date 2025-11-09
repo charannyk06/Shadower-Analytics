@@ -1,8 +1,7 @@
 """Enhanced Redis cache implementation with warming and invalidation."""
 
 import asyncio
-from typing import Any, Optional, Callable, Dict, List
-from datetime import datetime
+from typing import Any, Optional, Callable, Dict
 import logging
 
 from .keys import CacheKeys
@@ -118,7 +117,9 @@ class CacheService:
             deleted = await self.redis.flush_pattern(pattern)
             total_deleted += deleted
 
-        logger.info(f"Invalidated {total_deleted} cache entries for workspace {workspace_id}")
+        logger.info(
+            f"Invalidated {total_deleted} cache entries for workspace {workspace_id}"
+        )
         return total_deleted
 
     async def invalidate_agent(self, agent_id: str) -> int:

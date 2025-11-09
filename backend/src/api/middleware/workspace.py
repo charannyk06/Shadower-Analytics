@@ -8,7 +8,9 @@ class WorkspaceAccess:
     """Workspace access validation utilities."""
 
     @staticmethod
-    async def validate_workspace_access(user: Dict[str, Any], workspace_id: str) -> bool:
+    async def validate_workspace_access(
+        user: Dict[str, Any], workspace_id: str
+    ) -> bool:
         """Check if user has access to workspace."""
         if not user:
             raise HTTPException(

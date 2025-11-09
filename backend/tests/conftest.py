@@ -11,11 +11,15 @@ from src.core.database import Base, get_db
 from src.core.config import settings
 
 # Test database URL
-TEST_DATABASE_URL = "postgresql+asyncpg://postgres:postgres@localhost:5432/shadower_analytics_test"
+TEST_DATABASE_URL = (
+    "postgresql+asyncpg://postgres:postgres@localhost:5432/shadower_analytics_test"
+)
 
 # Create test engine
 test_engine = create_async_engine(TEST_DATABASE_URL, echo=False)
-test_session_maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+test_session_maker = async_sessionmaker(
+    test_engine, class_=AsyncSession, expire_on_commit=False
+)
 
 
 @pytest.fixture(scope="session")

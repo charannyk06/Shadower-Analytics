@@ -1,11 +1,10 @@
 """Executive metrics service with caching."""
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from datetime import date, timedelta
 import logging
 
 from ..cache import cached, CacheKeys
-from ...core.database import get_db
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +32,9 @@ class ExecutiveMetricsService:
         Returns:
             Dictionary with executive metrics
         """
-        logger.info(f"Fetching executive overview for workspace {workspace_id}, timeframe {timeframe}")
+        logger.info(
+            f"Fetching executive overview for workspace {workspace_id}, timeframe {timeframe}"
+        )
 
         # Parse timeframe
         days = self._parse_timeframe(timeframe)
@@ -77,7 +78,9 @@ class ExecutiveMetricsService:
         Returns:
             Revenue metrics and trends
         """
-        logger.info(f"Fetching revenue metrics for workspace {workspace_id}, timeframe {timeframe}")
+        logger.info(
+            f"Fetching revenue metrics for workspace {workspace_id}, timeframe {timeframe}"
+        )
 
         # Placeholder implementation
         return {

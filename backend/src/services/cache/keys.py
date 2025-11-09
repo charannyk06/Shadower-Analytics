@@ -1,6 +1,6 @@
 """Cache key management and naming conventions."""
 
-from typing import Optional, List, Dict, Any
+from typing import List, Dict, Any
 import hashlib
 import json
 
@@ -60,10 +60,16 @@ class CacheKeys:
         Args:
             workspace_id: Workspace identifier
             timeframe: Time period
-            limit: Number of top agents
+            limit: Number of top agents (default: 10)
 
         Returns:
             Cache key string
+
+        Note:
+            The limit parameter is included in the cache key, meaning that calls
+            with different limit values will create separate cache entries. This
+            includes the case where limit is omitted (using default of 10) vs
+            explicitly passing limit=10 - both will use the same cache entry.
         """
         return f"{CacheKeys.AGENT_PREFIX}:top:{workspace_id}:{timeframe}:{limit}"
 
@@ -108,7 +114,9 @@ class CacheKeys:
         Returns:
             Cache key string
         """
-        return f"{CacheKeys.WORKSPACE_PREFIX}:metrics:{workspace_id}:{metric_type}:{date}"
+        return (
+            f"{CacheKeys.WORKSPACE_PREFIX}:metrics:{workspace_id}:{metric_type}:{date}"
+        )
 
     @staticmethod
     def workspace_overview(workspace_id: str) -> str:
