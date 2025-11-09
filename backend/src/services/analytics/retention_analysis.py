@@ -37,24 +37,35 @@ class RetentionAnalysisService:
         if cohort_size == 0:
             return []
 
-        retention_curve = []
+        # Optimize: Fetch all activities for cohort users in date range with a single query
+        end_date = cohort_date + timedelta(days=days)
+        activity_query = select(
+            func.date(UserActivity.created_at).label('activity_date'),
+            UserActivity.user_id
+        ).where(
+            and_(
+                UserActivity.workspace_id == workspace_id,
+                UserActivity.user_id.in_(cohort_users),
+                func.date(UserActivity.created_at).between(cohort_date, end_date)
+            )
+        ).distinct()
+
+        activity_result = await self.db.execute(activity_query)
+        activities = activity_result.fetchall()
+
+        # Group activities by date
+        activity_by_date = {}
+        for activity in activities:
+            activity_date = activity.activity_date
+            if activity_date not in activity_by_date:
+                activity_by_date[activity_date] = set()
+            activity_by_date[activity_date].add(activity.user_id)
 
         # Calculate retention for each day
+        retention_curve = []
         for day_offset in range(days + 1):
             check_date = cohort_date + timedelta(days=day_offset)
-
-            # Count how many cohort users were active on this day
-            retention_query = select(func.count(distinct(UserActivity.user_id))).where(
-                and_(
-                    UserActivity.workspace_id == workspace_id,
-                    UserActivity.user_id.in_(cohort_users),
-                    func.date(UserActivity.created_at) == check_date
-                )
-            )
-
-            result = await self.db.execute(retention_query)
-            retained_users = result.scalar() or 0
-
+            retained_users = len(activity_by_date.get(check_date, set()))
             retention_rate = (retained_users / cohort_size * 100) if cohort_size > 0 else 0
 
             retention_curve.append({
@@ -144,21 +155,30 @@ class RetentionAnalysisService:
         cohort_result = await self.db.execute(cohort_query)
         cohort_users = [row[0] for row in cohort_result.fetchall()]
 
+        if not cohort_users:
+            return {period: 0.0 for period in periods.keys()}
+
+        # Optimize: Fetch all activities for the retention periods with a single query
+        check_dates = [cohort_date + timedelta(days=offset) for offset in periods.values()]
+        
+        activity_query = select(
+            func.date(UserActivity.created_at).label('activity_date'),
+            func.count(distinct(UserActivity.user_id)).label('user_count')
+        ).where(
+            and_(
+                UserActivity.workspace_id == workspace_id,
+                UserActivity.user_id.in_(cohort_users),
+                func.date(UserActivity.created_at).in_(check_dates)
+            )
+        ).group_by(func.date(UserActivity.created_at))
+
+        activity_result = await self.db.execute(activity_query)
+        activities = {row.activity_date: row.user_count for row in activity_result.fetchall()}
+
+        # Calculate retention for each period
         for period_name, days_offset in periods.items():
             check_date = cohort_date + timedelta(days=days_offset)
-
-            # Count retained users
-            retention_query = select(func.count(distinct(UserActivity.user_id))).where(
-                and_(
-                    UserActivity.workspace_id == workspace_id,
-                    UserActivity.user_id.in_(cohort_users),
-                    func.date(UserActivity.created_at) == check_date
-                )
-            )
-
-            result = await self.db.execute(retention_query)
-            retained_users = result.scalar() or 0
-
+            retained_users = activities.get(check_date, 0)
             retention_rate = (retained_users / cohort_size * 100) if cohort_size > 0 else 0
             retention[period_name] = round(retention_rate, 2)
 
