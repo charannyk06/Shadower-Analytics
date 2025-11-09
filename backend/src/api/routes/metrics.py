@@ -1,6 +1,6 @@
 """General metrics and analytics routes."""
 
-from typing import List, Optional, Dict, Any
+from typing import Dict, Any
 from fastapi import APIRouter, Depends, Query, HTTPException
 from datetime import date, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -114,7 +114,7 @@ async def get_execution_metrics(
         logger.error(f"Error fetching execution metrics: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail="Failed to fetch execution metrics"
+            detail=f"Failed to fetch execution metrics for workspace '{workspace_id}' and timeframe '{timeframe}'"
         )
 
 
@@ -141,7 +141,7 @@ async def get_execution_realtime(
 
         # Get only realtime metrics
         service = ExecutionMetricsService(db)
-        realtime = await service._get_realtime_metrics(workspace_id)
+        realtime = await service.get_realtime_metrics(workspace_id)
 
         return {
             "workspaceId": workspace_id,
@@ -154,7 +154,7 @@ async def get_execution_realtime(
         logger.error(f"Error fetching realtime execution metrics: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail="Failed to fetch realtime execution metrics"
+            detail=f"Failed to fetch realtime execution metrics for workspace '{workspace_id}'"
         )
 
 
@@ -194,7 +194,7 @@ async def get_execution_throughput(
         logger.error(f"Error fetching throughput metrics: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail="Failed to fetch throughput metrics"
+            detail=f"Failed to fetch throughput metrics for workspace '{workspace_id}' and timeframe '{timeframe}'"
         )
 
 
@@ -234,5 +234,5 @@ async def get_execution_latency(
         logger.error(f"Error fetching latency metrics: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail="Failed to fetch latency metrics"
+            detail=f"Failed to fetch latency metrics for workspace '{workspace_id}' and timeframe '{timeframe}'"
         )
