@@ -1,138 +1,138 @@
 /**
  * Forecast Chart Component
- *
- * Displays short-term and long-term forecasts with accuracy metrics
  */
 
-import React from 'react';
-import type { Forecast } from '@/types/trend-analysis';
+'use client';
+
+import { useMemo } from 'react';
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  Area,
+  ComposedChart,
+} from 'recharts';
+import { Forecast, TimeSeriesPoint } from '@/hooks/api/useTrendAnalysis';
 
 interface ForecastChartProps {
   forecast: Forecast;
-  className?: string;
+  historical: TimeSeriesPoint[];
 }
 
-export function ForecastChart({ forecast, className = '' }: ForecastChartProps) {
-  const { shortTerm, longTerm, accuracy } = forecast;
+export function ForecastChart({ forecast, historical }: ForecastChartProps) {
+  const chartData = useMemo(() => {
+    // Combine historical and forecast data
+    const historicalData = historical.map((point) => ({
+      timestamp: new Date(point.timestamp).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+      }),
+      actual: point.value,
+      type: 'historical',
+    }));
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric'
-    });
-  };
+    const forecastData = forecast.shortTerm.map((point) => ({
+      timestamp: new Date(point.timestamp).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+      }),
+      predicted: point.predicted,
+      upper: point.upper,
+      lower: point.lower,
+      type: 'forecast',
+    }));
 
-  const getAccuracyColor = (r2: number) => {
-    if (r2 >= 0.8) return 'text-green-600';
-    if (r2 >= 0.5) return 'text-yellow-600';
-    return 'text-red-600';
-  };
-
-  if (!shortTerm || shortTerm.length === 0) {
-    return (
-      <div className={`bg-white rounded-lg shadow p-6 ${className}`}>
-        <h3 className="text-lg font-semibold mb-4">Forecast</h3>
-        <p className="text-gray-500 text-center py-8">
-          Insufficient data for forecasting
-        </p>
-      </div>
-    );
-  }
+    return [...historicalData, ...forecastData];
+  }, [historical, forecast.shortTerm]);
 
   return (
-    <div className={`bg-white rounded-lg shadow p-6 ${className}`}>
-      <h3 className="text-lg font-semibold mb-4">Forecast</h3>
-
+    <div className="space-y-4">
       {/* Accuracy Metrics */}
-      <div className="mb-6 p-4 bg-gray-50 rounded-lg">
-        <div className="text-sm font-medium text-gray-700 mb-3">Model Accuracy</div>
-        <div className="grid grid-cols-3 gap-4">
-          <div>
-            <div className="text-xs text-gray-500">R² Score</div>
-            <div className={`text-lg font-bold ${getAccuracyColor(accuracy.r2)}`}>
-              {accuracy.r2.toFixed(3)}
+      {forecast.accuracy && (
+        <div className="grid grid-cols-3 gap-3">
+          <div className="bg-gray-50 p-3 rounded-lg">
+            <div className="text-xs font-medium text-gray-600 mb-1">MAPE</div>
+            <div className="text-sm font-semibold text-gray-900">
+              {forecast.accuracy.mape.toFixed(2)}%
             </div>
           </div>
-          <div>
-            <div className="text-xs text-gray-500">MAPE</div>
-            <div className="text-lg font-bold text-gray-700">
-              {accuracy.mape.toFixed(1)}%
+          <div className="bg-gray-50 p-3 rounded-lg">
+            <div className="text-xs font-medium text-gray-600 mb-1">RMSE</div>
+            <div className="text-sm font-semibold text-gray-900">
+              {forecast.accuracy.rmse.toFixed(2)}
             </div>
           </div>
-          <div>
-            <div className="text-xs text-gray-500">RMSE</div>
-            <div className="text-lg font-bold text-gray-700">
-              {accuracy.rmse.toFixed(2)}
+          <div className="bg-gray-50 p-3 rounded-lg">
+            <div className="text-xs font-medium text-gray-600 mb-1">R²</div>
+            <div className="text-sm font-semibold text-gray-900">
+              {forecast.accuracy.r2.toFixed(3)}
             </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Short-term Forecast (7 days) */}
-      <div className="mb-6">
-        <h4 className="font-medium text-gray-700 mb-3">7-Day Forecast</h4>
-        <div className="space-y-2">
-          {shortTerm.map((item, index) => (
-            <div key={index} className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
-              <div className="flex-1">
-                <div className="text-sm font-medium">
-                  {formatDate(item.timestamp)}
-                </div>
-                <div className="text-xs text-gray-600">
-                  Range: {item.lower.toFixed(0)} - {item.upper.toFixed(0)}
-                </div>
-              </div>
-              <div className="text-right">
-                <div className="text-lg font-bold text-blue-700">
-                  {item.predicted.toFixed(0)}
-                </div>
-                <div className="text-xs text-gray-600">
-                  {(item.confidence * 100).toFixed(0)}% conf.
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Long-term Forecast (3 months) */}
-      {longTerm && longTerm.length > 0 && (
-        <div>
-          <h4 className="font-medium text-gray-700 mb-3">Long-term Forecast (Monthly)</h4>
-          <div className="space-y-2">
-            {longTerm.map((item, index) => (
-              <div key={index} className="p-3 bg-purple-50 rounded-lg">
-                <div className="flex justify-between items-start mb-2">
-                  <div className="font-medium">{item.period}</div>
-                  <div className="text-lg font-bold text-purple-700">
-                    {item.predicted.toFixed(0)}
-                  </div>
-                </div>
-                <div className="grid grid-cols-3 gap-2 text-xs">
-                  <div>
-                    <div className="text-gray-500">Optimistic</div>
-                    <div className="font-semibold text-green-600">
-                      {item.range.optimistic.toFixed(0)}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-gray-500">Realistic</div>
-                    <div className="font-semibold text-blue-600">
-                      {item.range.realistic.toFixed(0)}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-gray-500">Pessimistic</div>
-                    <div className="font-semibold text-red-600">
-                      {item.range.pessimistic.toFixed(0)}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
           </div>
         </div>
       )}
+
+      {/* Chart */}
+      <div className="h-80">
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart data={chartData}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+            <XAxis dataKey="timestamp" tick={{ fontSize: 12 }} stroke="#6b7280" />
+            <YAxis tick={{ fontSize: 12 }} stroke="#6b7280" />
+            <Tooltip
+              contentStyle={{
+                backgroundColor: 'white',
+                border: '1px solid #e5e7eb',
+                borderRadius: '8px',
+              }}
+            />
+            <Legend />
+
+            {/* Confidence interval area */}
+            <Area
+              type="monotone"
+              dataKey="upper"
+              fill="#93c5fd"
+              stroke="none"
+              fillOpacity={0.3}
+              name="Upper Bound"
+            />
+            <Area
+              type="monotone"
+              dataKey="lower"
+              fill="#93c5fd"
+              stroke="none"
+              fillOpacity={0.3}
+              name="Lower Bound"
+            />
+
+            {/* Historical actual values */}
+            <Line
+              type="monotone"
+              dataKey="actual"
+              stroke="#1f2937"
+              strokeWidth={2}
+              dot={{ r: 3 }}
+              name="Historical"
+            />
+
+            {/* Forecast */}
+            <Line
+              type="monotone"
+              dataKey="predicted"
+              stroke="#3b82f6"
+              strokeWidth={2}
+              strokeDasharray="5 5"
+              dot={{ r: 4, fill: '#3b82f6' }}
+              name="Forecast"
+            />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }

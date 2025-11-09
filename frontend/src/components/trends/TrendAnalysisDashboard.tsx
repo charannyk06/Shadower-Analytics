@@ -1,169 +1,212 @@
 /**
  * Trend Analysis Dashboard Component
- *
- * Main dashboard for comprehensive trend analysis with decomposition, patterns, and forecasting
  */
 
 'use client';
 
-import React, { useState } from 'react';
-import { useTrendAnalysis } from '@/hooks/api/useTrendAnalysis';
-import { MetricSelector } from './MetricSelector';
-import { TimeframeSelector } from './TimeframeSelector';
-import { TrendOverview } from './TrendOverview';
+import { useState } from 'react';
+import {
+  useTrendAnalysis,
+  MetricType,
+  TimeFrame,
+} from '@/hooks/api/useTrendAnalysis';
+import { TrendOverviewCard } from './TrendOverviewCard';
 import { TrendChart } from './TrendChart';
 import { SeasonalityChart } from './SeasonalityChart';
-import { ComparisonChart } from './ComparisonChart';
 import { ForecastChart } from './ForecastChart';
 import { TrendInsights } from './TrendInsights';
-import type { TimeFrame, AvailableMetric } from '@/types/trend-analysis';
+import { MetricSelector } from './MetricSelector';
+import { TimeframeSelector } from './TimeframeSelector';
+import { LoadingState } from './LoadingState';
+import { ErrorState } from './ErrorState';
 
 interface TrendAnalysisDashboardProps {
   workspaceId: string;
-  initialMetric?: AvailableMetric;
+  initialMetric?: MetricType;
   initialTimeframe?: TimeFrame;
-  className?: string;
 }
 
 export function TrendAnalysisDashboard({
   workspaceId,
   initialMetric = 'executions',
   initialTimeframe = '30d',
-  className = ''
 }: TrendAnalysisDashboardProps) {
-  const [metric, setMetric] = useState<AvailableMetric>(initialMetric);
+  const [metric, setMetric] = useState<MetricType>(initialMetric);
   const [timeframe, setTimeframe] = useState<TimeFrame>(initialTimeframe);
   const [showDecomposition, setShowDecomposition] = useState(false);
 
-  const { data, isLoading, error, isError } = useTrendAnalysis(
+  const { data, isLoading, error, refetch } = useTrendAnalysis({
     workspaceId,
     metric,
-    timeframe
-  );
+    timeframe,
+  });
 
-  // Loading State
   if (isLoading) {
-    return (
-      <div className={`space-y-6 ${className}`}>
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="animate-pulse space-y-4">
-            <div className="h-4 bg-gray-200 rounded w-1/4"></div>
-            <div className="h-8 bg-gray-200 rounded"></div>
-            <div className="h-32 bg-gray-200 rounded"></div>
-          </div>
-        </div>
-      </div>
-    );
+    return <LoadingState />;
   }
 
-  // Error State
-  if (isError || error) {
-    return (
-      <div className={`space-y-6 ${className}`}>
-        <div className="bg-red-50 border border-red-200 rounded-lg p-6">
-          <div className="flex items-center gap-3">
-            <div className="text-2xl">⚠️</div>
-            <div>
-              <div className="font-semibold text-red-800">Error Loading Trend Analysis</div>
-              <div className="text-sm text-red-600 mt-1">
-                {error?.message || 'Failed to load trend analysis data'}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
+  if (error) {
+    return <ErrorState error={error} onRetry={refetch} />;
   }
 
-  // Insufficient Data State
-  if (data?.error === 'insufficient_data') {
+  if (!data || data.error) {
     return (
-      <div className={`space-y-6 ${className}`}>
-        {/* Controls */}
-        <div className="bg-white rounded-lg shadow p-4">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-            <MetricSelector value={metric} onChange={setMetric} />
-            <TimeframeSelector value={timeframe} onChange={setTimeframe} />
-          </div>
-        </div>
-
-        {/* Insufficient Data Message */}
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6">
-          <div className="flex items-center gap-3">
-            <div className="text-2xl">📊</div>
-            <div>
-              <div className="font-semibold text-yellow-800">Insufficient Data</div>
-              <div className="text-sm text-yellow-600 mt-1">
-                {data?.message || 'Not enough data points for comprehensive trend analysis. At least 14 data points are required.'}
-              </div>
-            </div>
-          </div>
-        </div>
+      <div className="p-8 bg-yellow-50 border border-yellow-200 rounded-lg">
+        <h3 className="text-lg font-semibold text-yellow-900 mb-2">
+          Insufficient Data
+        </h3>
+        <p className="text-yellow-700">
+          {data?.message || 'Not enough data points for comprehensive analysis. Please check back later.'}
+        </p>
       </div>
     );
-  }
-
-  // Success State with Data
-  if (!data) {
-    return null;
   }
 
   return (
-    <div className={`space-y-6 ${className}`}>
+    <div className="space-y-6">
       {/* Controls */}
-      <div className="bg-white rounded-lg shadow p-4">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-          <div className="flex flex-col md:flex-row gap-4 flex-1">
-            <MetricSelector
-              value={metric}
-              onChange={setMetric}
-              availableMetrics={[
-                'executions',
-                'users',
-                'credits',
-                'errors',
-                'success_rate'
-              ]}
-            />
+      <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div className="flex-1">
+            <h2 className="text-2xl font-bold text-gray-900 mb-1">
+              Trend Analysis
+            </h2>
+            <p className="text-sm text-gray-600">
+              Comprehensive time-series analysis and forecasting
+            </p>
           </div>
 
-          <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
+          <div className="flex flex-wrap gap-3">
+            <MetricSelector value={metric} onChange={setMetric} />
             <TimeframeSelector value={timeframe} onChange={setTimeframe} />
+
             <button
               onClick={() => setShowDecomposition(!showDecomposition)}
               className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                 showDecomposition
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  ? 'bg-blue-600 text-white hover:bg-blue-700'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
-              Decomposition
+              {showDecomposition ? 'Hide' : 'Show'} Decomposition
             </button>
           </div>
         </div>
       </div>
 
-      {/* Trend Overview */}
-      <TrendOverview overview={data.overview} />
+      {/* Overview Card */}
+      <TrendOverviewCard overview={data.overview} metric={metric} />
 
       {/* Main Trend Chart */}
-      <TrendChart
-        timeSeries={data.timeSeries}
-        showDecomposition={showDecomposition}
-        decomposition={data.decomposition}
-      />
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">
+          Time Series Analysis
+        </h3>
+        <TrendChart
+          timeSeries={data.timeSeries}
+          decomposition={showDecomposition ? data.decomposition : undefined}
+          metric={metric}
+        />
+      </div>
 
       {/* Pattern Analysis */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <SeasonalityChart patterns={data.patterns} />
-        <ComparisonChart comparisons={data.comparisons} />
+        {/* Seasonality */}
+        {data.patterns.seasonality.detected && (
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              Seasonality Analysis
+            </h3>
+            <SeasonalityChart patterns={data.patterns} />
+          </div>
+        )}
+
+        {/* Growth Pattern */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">
+            Growth Pattern
+          </h3>
+          <div className="space-y-3">
+            <div className="flex justify-between items-center">
+              <span className="text-sm font-medium text-gray-600">Type:</span>
+              <span className="text-sm font-semibold text-gray-900 capitalize">
+                {data.patterns.growth.type}
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm font-medium text-gray-600">Rate:</span>
+              <span className="text-sm font-semibold text-gray-900">
+                {data.patterns.growth.rate.toFixed(2)} / day
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm font-medium text-gray-600">
+                30-day Projection:
+              </span>
+              <span className="text-sm font-semibold text-gray-900">
+                {data.patterns.growth.projectedGrowth > 0 ? '+' : ''}
+                {data.patterns.growth.projectedGrowth.toFixed(0)}
+              </span>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Forecast */}
-      <ForecastChart forecast={data.forecast} />
+      {data.forecast.shortTerm.length > 0 && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">
+            7-Day Forecast
+          </h3>
+          <ForecastChart
+            forecast={data.forecast}
+            historical={data.timeSeries.data.slice(-14)}
+          />
+        </div>
+      )}
 
       {/* Insights */}
-      <TrendInsights insights={data.insights} />
+      {data.insights.length > 0 && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">
+            Key Insights & Recommendations
+          </h3>
+          <TrendInsights insights={data.insights} />
+        </div>
+      )}
+
+      {/* Statistics */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">
+          Statistical Summary
+        </h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="text-center p-3 bg-gray-50 rounded-lg">
+            <div className="text-xs font-medium text-gray-600 mb-1">Mean</div>
+            <div className="text-lg font-semibold text-gray-900">
+              {data.timeSeries.statistics.mean.toFixed(2)}
+            </div>
+          </div>
+          <div className="text-center p-3 bg-gray-50 rounded-lg">
+            <div className="text-xs font-medium text-gray-600 mb-1">Median</div>
+            <div className="text-lg font-semibold text-gray-900">
+              {data.timeSeries.statistics.median.toFixed(2)}
+            </div>
+          </div>
+          <div className="text-center p-3 bg-gray-50 rounded-lg">
+            <div className="text-xs font-medium text-gray-600 mb-1">Std Dev</div>
+            <div className="text-lg font-semibold text-gray-900">
+              {data.timeSeries.statistics.stdDev.toFixed(2)}
+            </div>
+          </div>
+          <div className="text-center p-3 bg-gray-50 rounded-lg">
+            <div className="text-xs font-medium text-gray-600 mb-1">Autocorr</div>
+            <div className="text-lg font-semibold text-gray-900">
+              {data.timeSeries.statistics.autocorrelation.toFixed(2)}
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

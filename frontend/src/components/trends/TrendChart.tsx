@@ -1,116 +1,161 @@
 /**
  * Trend Chart Component
- *
- * Displays time series data with moving average and anomalies
- * Note: This is a simplified version. In production, integrate with a charting library like Recharts or Chart.js
+ * Displays time series data with optional decomposition
  */
 
-import React from 'react';
-import type { TimeSeries, Decomposition } from '@/types/trend-analysis';
+'use client';
+
+import { useMemo } from 'react';
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  Scatter,
+} from 'recharts';
+import { TimeSeriesPoint, Decomposition, MetricType } from '@/hooks/api/useTrendAnalysis';
 
 interface TrendChartProps {
-  timeSeries: TimeSeries;
-  showDecomposition?: boolean;
+  timeSeries: {
+    data: TimeSeriesPoint[];
+    statistics: any;
+  };
   decomposition?: Decomposition;
-  className?: string;
+  metric: MetricType;
 }
 
-export function TrendChart({
-  timeSeries,
-  showDecomposition = false,
-  decomposition,
-  className = ''
-}: TrendChartProps) {
-  const { data, statistics } = timeSeries;
+export function TrendChart({ timeSeries, decomposition, metric }: TrendChartProps) {
+  const chartData = useMemo(() => {
+    return timeSeries.data.map((point, index) => {
+      const date = new Date(point.timestamp);
+      const formattedDate = date.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+      });
 
-  if (!data || data.length === 0) {
-    return (
-      <div className={`bg-white rounded-lg shadow p-6 ${className}`}>
-        <h3 className="text-lg font-semibold mb-4">Time Series Trend</h3>
-        <p className="text-gray-500 text-center py-8">No data available</p>
-      </div>
-    );
-  }
+      const result: any = {
+        timestamp: formattedDate,
+        value: point.value,
+        movingAverage: point.movingAverage,
+        upperBound: point.upperBound,
+        lowerBound: point.lowerBound,
+      };
+
+      // Add anomaly marker
+      if (point.isAnomaly) {
+        result.anomaly = point.value;
+      }
+
+      // Add decomposition data if available
+      if (decomposition) {
+        if (decomposition.trend[index]?.value !== null) {
+          result.trendComponent = decomposition.trend[index]?.value;
+        }
+        if (decomposition.seasonal[index]?.value !== null) {
+          result.seasonalComponent = decomposition.seasonal[index]?.value;
+        }
+      }
+
+      return result;
+    });
+  }, [timeSeries.data, decomposition]);
 
   return (
-    <div className={`bg-white rounded-lg shadow p-6 ${className}`}>
-      <h3 className="text-lg font-semibold mb-4">Time Series Trend</h3>
+    <div className="w-full h-96">
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={chartData}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+          <XAxis
+            dataKey="timestamp"
+            tick={{ fontSize: 12 }}
+            stroke="#6b7280"
+          />
+          <YAxis tick={{ fontSize: 12 }} stroke="#6b7280" />
+          <Tooltip
+            contentStyle={{
+              backgroundColor: 'white',
+              border: '1px solid #e5e7eb',
+              borderRadius: '8px',
+            }}
+          />
+          <Legend />
 
-      {/* Statistics Summary */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 p-4 bg-gray-50 rounded-lg">
-        <div>
-          <div className="text-xs text-gray-500">Mean</div>
-          <div className="text-sm font-semibold">{statistics.mean.toFixed(2)}</div>
-        </div>
-        <div>
-          <div className="text-xs text-gray-500">Median</div>
-          <div className="text-sm font-semibold">{statistics.median.toFixed(2)}</div>
-        </div>
-        <div>
-          <div className="text-xs text-gray-500">Std Dev</div>
-          <div className="text-sm font-semibold">{statistics.stdDev.toFixed(2)}</div>
-        </div>
-        <div>
-          <div className="text-xs text-gray-500">Autocorrelation</div>
-          <div className="text-sm font-semibold">{statistics.autocorrelation.toFixed(3)}</div>
-        </div>
-      </div>
+          {/* Confidence interval */}
+          <Line
+            type="monotone"
+            dataKey="upperBound"
+            stroke="#e5e7eb"
+            strokeDasharray="3 3"
+            dot={false}
+            name="Upper Bound"
+            strokeWidth={1}
+          />
+          <Line
+            type="monotone"
+            dataKey="lowerBound"
+            stroke="#e5e7eb"
+            strokeDasharray="3 3"
+            dot={false}
+            name="Lower Bound"
+            strokeWidth={1}
+          />
 
-      {/* Chart Placeholder */}
-      <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-        <div className="text-center text-gray-500 py-8">
-          <div className="text-lg font-semibold mb-2">📊 Chart Visualization</div>
-          <p className="text-sm">
-            Time series chart showing {data.length} data points
-            {showDecomposition && ' with decomposition'}
-          </p>
-          <p className="text-xs mt-2">
-            Integrate with Recharts, Chart.js, or similar library for full visualization
-          </p>
-        </div>
+          {/* Moving average */}
+          <Line
+            type="monotone"
+            dataKey="movingAverage"
+            stroke="#3b82f6"
+            strokeWidth={2}
+            dot={false}
+            name="Moving Average"
+          />
 
-        {/* Data Summary */}
-        <div className="mt-4 text-sm">
-          <div className="flex justify-between mb-2">
-            <span className="text-gray-600">Data Points:</span>
-            <span className="font-semibold">{data.length}</span>
-          </div>
-          <div className="flex justify-between mb-2">
-            <span className="text-gray-600">Anomalies Detected:</span>
-            <span className="font-semibold text-red-600">
-              {data.filter(d => d.isAnomaly).length}
-            </span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-gray-600">Date Range:</span>
-            <span className="font-semibold">
-              {new Date(data[0].timestamp).toLocaleDateString()} -{' '}
-              {new Date(data[data.length - 1].timestamp).toLocaleDateString()}
-            </span>
-          </div>
-        </div>
-      </div>
+          {/* Actual values */}
+          <Line
+            type="monotone"
+            dataKey="value"
+            stroke="#1f2937"
+            strokeWidth={2}
+            dot={{ r: 3 }}
+            name="Actual Value"
+          />
 
-      {/* Decomposition Section */}
-      {showDecomposition && decomposition && (
-        <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-          <h4 className="font-semibold mb-2">Decomposition Components</h4>
-          <div className="grid grid-cols-3 gap-4 text-sm">
-            <div>
-              <div className="text-gray-600">Trend</div>
-              <div className="font-semibold">{decomposition.trend.length} points</div>
-            </div>
-            <div>
-              <div className="text-gray-600">Seasonal</div>
-              <div className="font-semibold">{decomposition.seasonal.length} points</div>
-            </div>
-            <div>
-              <div className="text-gray-600">Noise Level</div>
-              <div className="font-semibold">{decomposition.noise.toFixed(1)}%</div>
-            </div>
-          </div>
-        </div>
-      )}
+          {/* Anomalies */}
+          <Scatter
+            dataKey="anomaly"
+            fill="#ef4444"
+            shape="circle"
+            name="Anomaly"
+          />
+
+          {/* Decomposition components (if enabled) */}
+          {decomposition && (
+            <>
+              <Line
+                type="monotone"
+                dataKey="trendComponent"
+                stroke="#10b981"
+                strokeWidth={2}
+                dot={false}
+                name="Trend Component"
+              />
+              <Line
+                type="monotone"
+                dataKey="seasonalComponent"
+                stroke="#f59e0b"
+                strokeWidth={1}
+                strokeDasharray="5 5"
+                dot={false}
+                name="Seasonal Component"
+              />
+            </>
+          )}
+        </LineChart>
+      </ResponsiveContainer>
     </div>
   );
 }

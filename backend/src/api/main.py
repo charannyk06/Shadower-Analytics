@@ -19,6 +19,7 @@ from .routes import (
     user_activity_router,
     credits_router,
     errors_router,
+    trends_router,
 )
 from .middleware.cors import setup_cors
 from .middleware.logging import RequestLoggingMiddleware
@@ -60,6 +61,7 @@ app.include_router(websocket_router)
 app.include_router(user_activity_router)
 app.include_router(credits_router)
 app.include_router(errors_router)
+app.include_router(trends_router)
 
 
 @app.on_event("startup")
