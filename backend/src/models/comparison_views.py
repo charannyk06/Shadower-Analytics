@@ -7,7 +7,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Dict, List, Optional, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 # ============================================================================
@@ -443,19 +443,20 @@ class ComparisonFilters(BaseModel):
             raise ValueError("end_date cannot be in the future")
         return v
 
-    @field_validator('start_date')
-    @classmethod
-    def validate_start_date(cls, v, info):
-        """Validate start_date is before end_date"""
-        if v and info.data.get('end_date'):
-            if v > info.data['end_date']:
+    @model_validator(mode='after')
+    def validate_date_range(self):
+        """Validate date range is valid and reasonable"""
+        if self.start_date and self.end_date:
+            # Check start is before end
+            if self.start_date > self.end_date:
                 raise ValueError("start_date must be before end_date")
 
             # Ensure date range is reasonable (not more than 1 year)
-            delta = info.data['end_date'] - v
+            delta = self.end_date - self.start_date
             if delta.days > 365:
                 raise ValueError("Date range cannot exceed 365 days")
-        return v
+
+        return self
 
     @field_validator('agent_ids')
     @classmethod

@@ -5,7 +5,6 @@ Business logic for comparison views
 
 import logging
 from datetime import datetime, timedelta
-from functools import lru_cache
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -81,6 +80,9 @@ MIN_WORKSPACES_FOR_COMPARISON = 2
 MAX_WORKSPACES_FOR_COMPARISON = 20
 MIN_ENTITIES_FOR_METRIC_COMPARISON = 2
 
+# Cost calculation
+CREDIT_COST_USD = 0.01  # Cost per credit in USD
+
 # Performance thresholds
 ERROR_RATE_HIGH_THRESHOLD = 10.0
 COST_VARIANCE_THRESHOLD = 50.0
@@ -106,6 +108,12 @@ DEFAULT_SCORING_WEIGHTS = {
 DEFAULT_PAGE_SIZE = 100
 MAX_PAGE_SIZE = 1000
 MAX_TIME_SERIES_POINTS = 1000
+
+# Sparkline configuration
+SPARKLINE_DATA_POINTS = 7
+
+# Default period for throughput calculation (days)
+DEFAULT_THROUGHPUT_PERIOD_DAYS = 30
 
 
 class ComparisonService:
@@ -249,24 +257,34 @@ class ComparisonService:
 
             logger.info(f"Fetching metrics for {len(agent_ids)} agents")
 
+            # Build batch query for all agents to avoid N+1 pattern
+            query = select(ExecutionLog).where(ExecutionLog.agent_id.in_(agent_ids))
+
+            # Apply date filters
+            if filters.start_date:
+                query = query.where(ExecutionLog.started_at >= filters.start_date)
+            if filters.end_date:
+                query = query.where(ExecutionLog.started_at <= filters.end_date)
+
+            # Apply workspace filter if provided
+            if filters.workspace_ids:
+                query = query.where(ExecutionLog.workspace_id.in_(filters.workspace_ids))
+
+            # Fetch all executions in one query
+            result = await self.db.execute(query)
+            all_executions = result.scalars().all()
+
+            # Group executions by agent_id
+            executions_by_agent = {}
+            for execution in all_executions:
+                if execution.agent_id not in executions_by_agent:
+                    executions_by_agent[execution.agent_id] = []
+                executions_by_agent[execution.agent_id].append(execution)
+
             agents = []
 
             for agent_id in agent_ids:
-                # Build base query for execution logs
-                query = select(ExecutionLog).where(ExecutionLog.agent_id == agent_id)
-
-                # Apply date filters
-                if filters.start_date:
-                    query = query.where(ExecutionLog.started_at >= filters.start_date)
-                if filters.end_date:
-                    query = query.where(ExecutionLog.started_at <= filters.end_date)
-
-                # Apply workspace filter if provided
-                if filters.workspace_ids:
-                    query = query.where(ExecutionLog.workspace_id.in_(filters.workspace_ids))
-
-                result = await self.db.execute(query)
-                executions = result.scalars().all()
+                executions = executions_by_agent.get(agent_id, [])
 
                 if not executions:
                     logger.warning(f"No execution data found for agent {agent_id}")
@@ -292,17 +310,17 @@ class ComparisonService:
                 total_credits = sum(credits_used) if credits_used else 0
                 credits_per_run = total_credits / total_runs if total_runs > 0 else 0
 
-                # Estimate cost (assuming $0.01 per credit as placeholder)
-                cost_per_run = credits_per_run * 0.01
-                total_cost = total_credits * 0.01
+                # Calculate cost using configured rate
+                cost_per_run = credits_per_run * CREDIT_COST_USD
+                total_cost = total_credits * CREDIT_COST_USD
 
                 # Calculate throughput (runs per day)
                 if filters.start_date and filters.end_date:
                     days = (filters.end_date - filters.start_date).days or 1
                     throughput = total_runs / days
                 else:
-                    # Default to last 30 days
-                    throughput = total_runs / 30
+                    # Default to configured period
+                    throughput = total_runs / DEFAULT_THROUGHPUT_PERIOD_DAYS
 
                 # Get agent name from first execution metadata or use ID
                 agent_name = f"Agent {agent_id}"
@@ -589,8 +607,8 @@ class ComparisonService:
 
             # Calculate aggregated metrics
             total_runs = len(executions)
-            successful_runs = len([e for e in executions if e.status == "success"])
-            failed_runs = len([e for e in executions if e.status in ["failed", "error"]])
+            successful_runs = sum(1 for e in executions if e.status == "success")
+            failed_runs = sum(1 for e in executions if e.status in ["failed", "error"])
 
             success_rate = (successful_runs / total_runs * 100) if total_runs > 0 else 0
 
@@ -602,7 +620,7 @@ class ComparisonService:
             # Cost and credit metrics
             credits = [e.credits_used for e in executions if e.credits_used is not None]
             total_credits = sum(credits) if credits else 0
-            total_cost = total_credits * 0.01  # $0.01 per credit
+            total_cost = total_credits * CREDIT_COST_USD
 
             # Active entities
             active_agents = len(set(e.agent_id for e in executions))
@@ -836,20 +854,30 @@ class ComparisonService:
 
             logger.info(f"Fetching metrics for {len(workspace_ids)} workspaces")
 
+            # Build batch query for all workspaces to avoid N+1 pattern
+            query = select(ExecutionLog).where(ExecutionLog.workspace_id.in_(workspace_ids))
+
+            # Apply date filters
+            if filters.start_date:
+                query = query.where(ExecutionLog.started_at >= filters.start_date)
+            if filters.end_date:
+                query = query.where(ExecutionLog.started_at <= filters.end_date)
+
+            # Fetch all executions in one query
+            result = await self.db.execute(query)
+            all_executions = result.scalars().all()
+
+            # Group executions by workspace_id
+            executions_by_workspace = {}
+            for execution in all_executions:
+                if execution.workspace_id not in executions_by_workspace:
+                    executions_by_workspace[execution.workspace_id] = []
+                executions_by_workspace[execution.workspace_id].append(execution)
+
             workspaces = []
 
             for workspace_id in workspace_ids:
-                # Build base query for execution logs
-                query = select(ExecutionLog).where(ExecutionLog.workspace_id == workspace_id)
-
-                # Apply date filters
-                if filters.start_date:
-                    query = query.where(ExecutionLog.started_at >= filters.start_date)
-                if filters.end_date:
-                    query = query.where(ExecutionLog.started_at <= filters.end_date)
-
-                result = await self.db.execute(query)
-                executions = result.scalars().all()
+                executions = executions_by_workspace.get(workspace_id, [])
 
                 if not executions:
                     logger.warning(f"No execution data found for workspace {workspace_id}")
@@ -857,8 +885,8 @@ class ComparisonService:
 
                 # Calculate metrics from execution data
                 total_runs = len(executions)
-                successful_runs = len([e for e in executions if e.status == "success"])
-                failed_runs = len([e for e in executions if e.status in ["failed", "error"]])
+                successful_runs = sum(1 for e in executions if e.status == "success")
+                failed_runs = sum(1 for e in executions if e.status in ["failed", "error"])
 
                 success_rate = (successful_runs / total_runs * 100) if total_runs > 0 else 0
                 error_rate = (failed_runs / total_runs * 100) if total_runs > 0 else 0
@@ -870,7 +898,7 @@ class ComparisonService:
                 # Calculate cost metrics
                 credits = [e.credits_used for e in executions if e.credits_used is not None]
                 total_credits = sum(credits) if credits else 0
-                total_cost = total_credits * 0.01  # $0.01 per credit
+                total_cost = total_credits * CREDIT_COST_USD
 
                 # Active entities
                 active_agents = len(set(e.agent_id for e in executions))
@@ -881,7 +909,7 @@ class ComparisonService:
                     days = (filters.end_date - filters.start_date).days or 1
                     throughput = total_runs / days
                 else:
-                    throughput = total_runs / 30  # Default to 30 days
+                    throughput = total_runs / DEFAULT_THROUGHPUT_PERIOD_DAYS
 
                 workspaces.append(
                     WorkspaceMetrics(
@@ -1134,11 +1162,11 @@ class ComparisonService:
 
             # Map metric names to database fields
             metric_mapping = {
-                "success_rate": lambda e: (len([x for x in e if x.status == "success"]) / len(e) * 100) if e else 0,
-                "error_rate": lambda e: (len([x for x in e if x.status in ["failed", "error"]]) / len(e) * 100) if e else 0,
+                "success_rate": lambda e: (sum(1 for x in e if x.status == "success") / len(e) * 100) if e else 0,
+                "error_rate": lambda e: (sum(1 for x in e if x.status in ["failed", "error"]) / len(e) * 100) if e else 0,
                 "average_runtime": lambda e: float(np.mean([x.duration for x in e if x.duration])) if any(x.duration for x in e) else 0,
                 "throughput": lambda e: len(e),
-                "cost_per_run": lambda e: (sum(x.credits_used for x in e if x.credits_used) / len(e) * 0.01) if e else 0,
+                "cost_per_run": lambda e: (sum(x.credits_used for x in e if x.credits_used) / len(e) * CREDIT_COST_USD) if e else 0,
             }
 
             if metric_name not in metric_mapping:
@@ -1236,11 +1264,11 @@ class ComparisonService:
                 else:
                     trend = "stable"
 
-                # Generate sparkline data (last 7 data points)
+                # Generate sparkline data
                 sparkline_data = []
-                if len(executions) >= 7:
-                    chunk_size = max(1, len(executions) // 7)
-                    for i in range(7):
+                if len(executions) >= SPARKLINE_DATA_POINTS:
+                    chunk_size = max(1, len(executions) // SPARKLINE_DATA_POINTS)
+                    for i in range(SPARKLINE_DATA_POINTS):
                         start_idx = i * chunk_size
                         end_idx = min((i + 1) * chunk_size, len(executions))
                         chunk = executions[start_idx:end_idx]
