@@ -2,7 +2,10 @@
 -- Migration: 015_add_rls_and_secure_views.sql
 -- Description: Add RLS policies to source tables and create secure views over materialized views
 -- Created: 2025-11-09
--- Dependencies: 009_create_agent_analytics_tables.sql, 014_create_enhanced_materialized_views.sql
+-- Dependencies: 
+--   - 007_create_rls_policies.sql (provides analytics.get_user_workspaces() function)
+--   - 009_create_agent_analytics_tables.sql (creates agent_runs and agent_errors tables)
+--   - 014_create_enhanced_materialized_views.sql (creates materialized views)
 -- =====================================================================
 
 SET search_path TO analytics, public;
@@ -58,37 +61,41 @@ CREATE POLICY agent_errors_service_policy ON analytics.agent_errors
 -- =====================================================================
 
 -- Secure view for mv_agent_performance
+-- Using JOIN instead of IN (SELECT ...) for better query performance
 CREATE OR REPLACE VIEW analytics.v_agent_performance_secure AS
-SELECT *
-FROM analytics.mv_agent_performance
-WHERE workspace_id IN (SELECT analytics.get_user_workspaces());
+SELECT mv.*
+FROM analytics.mv_agent_performance mv
+INNER JOIN analytics.get_user_workspaces() uw ON mv.workspace_id = uw.workspace_id;
 
 COMMENT ON VIEW analytics.v_agent_performance_secure IS
     'Secure view over mv_agent_performance with workspace filtering';
 
 -- Secure view for mv_workspace_metrics
+-- Using JOIN instead of IN (SELECT ...) for better query performance
 CREATE OR REPLACE VIEW analytics.v_workspace_metrics_secure AS
-SELECT *
-FROM analytics.mv_workspace_metrics
-WHERE workspace_id IN (SELECT analytics.get_user_workspaces());
+SELECT mv.*
+FROM analytics.mv_workspace_metrics mv
+INNER JOIN analytics.get_user_workspaces() uw ON mv.workspace_id = uw.workspace_id;
 
 COMMENT ON VIEW analytics.v_workspace_metrics_secure IS
     'Secure view over mv_workspace_metrics with workspace filtering';
 
 -- Secure view for mv_top_agents_enhanced
+-- Using JOIN instead of IN (SELECT ...) for better query performance
 CREATE OR REPLACE VIEW analytics.v_top_agents_enhanced_secure AS
-SELECT *
-FROM analytics.mv_top_agents_enhanced
-WHERE workspace_id IN (SELECT analytics.get_user_workspaces());
+SELECT mv.*
+FROM analytics.mv_top_agents_enhanced mv
+INNER JOIN analytics.get_user_workspaces() uw ON mv.workspace_id = uw.workspace_id;
 
 COMMENT ON VIEW analytics.v_top_agents_enhanced_secure IS
     'Secure view over mv_top_agents_enhanced with workspace filtering';
 
 -- Secure view for mv_error_summary
+-- Using JOIN instead of IN (SELECT ...) for better query performance
 CREATE OR REPLACE VIEW analytics.v_error_summary_secure AS
-SELECT *
-FROM analytics.mv_error_summary
-WHERE workspace_id IN (SELECT analytics.get_user_workspaces());
+SELECT mv.*
+FROM analytics.mv_error_summary mv
+INNER JOIN analytics.get_user_workspaces() uw ON mv.workspace_id = uw.workspace_id;
 
 COMMENT ON VIEW analytics.v_error_summary_secure IS
     'Secure view over mv_error_summary with workspace filtering';

@@ -10,6 +10,7 @@ Handles refresh operations for materialized views including:
 
 import logging
 import re
+import os
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any
 from sqlalchemy import text
@@ -37,8 +38,13 @@ class MaterializedViewRefreshService:
         'mv_error_summary',
     ]
 
-    # Refresh timeout in seconds
-    REFRESH_TIMEOUT = 30
+    # Refresh timeout in seconds (configurable via environment variable)
+    REFRESH_TIMEOUT = int(os.getenv('MV_REFRESH_TIMEOUT', '30'))
+    
+    # Per-view timeout overrides for views that may take longer
+    VIEW_TIMEOUTS = {
+        'mv_error_summary': int(os.getenv('MV_ERROR_SUMMARY_TIMEOUT', '60')),  # Larger view, needs more time
+    }
 
     # View refresh dependencies (views that depend on other views)
     DEPENDENCIES = {
@@ -133,16 +139,42 @@ class MaterializedViewRefreshService:
             # Additional SQL identifier validation
             self._validate_sql_identifier(view_name)
 
-            # Build refresh command
+            # Build refresh command using PostgreSQL's format() function for safe identifier quoting
+            # This ensures proper quoting and prevents SQL injection even if validation is bypassed
+            # format(%I) properly escapes identifiers according to PostgreSQL rules
+            # This matches the approach used in the database function (migration 014)
             concurrent_keyword = "CONCURRENTLY" if concurrent else ""
-            query = text(
-                f"REFRESH MATERIALIZED VIEW {concurrent_keyword} "
-                f"analytics.{view_name}"
-            )
+            
+            # Use PostgreSQL's format() function with %I for identifier quoting
+            # Execute format() to get the safely quoted query string, then execute it
+            if concurrent_keyword:
+                format_query = text("""
+                    SELECT format('REFRESH MATERIALIZED VIEW %s %I.%I', 
+                        :concurrent_keyword, 'analytics', :view_name)
+                """)
+                format_result = await self.db.execute(
+                    format_query,
+                    {"concurrent_keyword": concurrent_keyword, "view_name": view_name}
+                )
+                query_text = format_result.scalar()
+            else:
+                format_query = text("""
+                    SELECT format('REFRESH MATERIALIZED VIEW %I.%I', 
+                        'analytics', :view_name)
+                """)
+                format_result = await self.db.execute(
+                    format_query,
+                    {"view_name": view_name}
+                )
+                query_text = format_result.scalar()
+            
+            # Execute the safely constructed query
+            query = text(query_text)
 
-            # Set statement timeout
+            # Set statement timeout (use per-view timeout if available)
+            timeout = self.VIEW_TIMEOUTS.get(view_name, self.REFRESH_TIMEOUT)
             await self.db.execute(
-                text(f"SET LOCAL statement_timeout = '{self.REFRESH_TIMEOUT}s'")
+                text(f"SET LOCAL statement_timeout = '{timeout}s'")
             )
 
             # Execute refresh

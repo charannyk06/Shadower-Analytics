@@ -10,7 +10,7 @@ Provides endpoints for:
 import logging
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.database import get_db
@@ -42,6 +42,21 @@ class RefreshRequest(BaseModel):
         False,
         description="Use database function for refresh with enhanced error handling"
     )
+    
+    @field_validator('views')
+    @classmethod
+    def validate_view_names(cls, v):
+        """Validate view names against whitelist."""
+        if v is not None:
+            from src.services.materialized_views.refresh_service import MaterializedViewRefreshService
+            allowed = set(MaterializedViewRefreshService.VIEWS)
+            invalid = set(v) - allowed
+            if invalid:
+                raise ValueError(
+                    f"Invalid view names: {sorted(invalid)}. "
+                    f"Allowed views: {sorted(allowed)}"
+                )
+        return v
 
 
 class RefreshResult(BaseModel):

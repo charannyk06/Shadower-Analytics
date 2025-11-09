@@ -2,6 +2,16 @@
 -- Migration: 014_create_enhanced_materialized_views.sql
 -- Description: Create enhanced materialized views for complex aggregations
 -- Created: 2025-11-09
+-- 
+-- Creates:
+-- - mv_agent_performance (materialized view + 4 indexes)
+-- - mv_workspace_metrics (materialized view + 4 indexes)
+-- - mv_top_agents_enhanced (materialized view + 2 indexes)
+-- - mv_error_summary (materialized view + 4 indexes)
+-- - v_materialized_view_status (view)
+-- - analytics.refresh_all_materialized_views() (function)
+-- 
+-- Rollback: See 014_rollback_enhanced_materialized_views.sql
 -- =====================================================================
 
 SET search_path TO analytics, public;
