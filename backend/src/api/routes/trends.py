@@ -3,12 +3,16 @@
 from typing import Dict, Any
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text
+import asyncio
 import logging
 
 from ...core.database import get_db
 from ...services.analytics.trend_analysis import TrendAnalysisService
+from ...utils.validators import validate_workspace_id
 from ..dependencies.auth import get_current_user
 from ..middleware.rate_limit import RateLimiter
+from ..middleware.workspace import WorkspaceAccess
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/trends", tags=["trends"])
@@ -20,7 +24,7 @@ trends_limiter = RateLimiter(
 )
 
 
-@router.get("/{workspace_id}/{metric}")
+@router.get("/{workspace_id}/{metric}", dependencies=[Depends(trends_limiter)])
 async def get_trend_analysis(
     workspace_id: str,
     metric: str = Query(..., regex="^(executions|users|credits|errors|success_rate|revenue)$"),
@@ -48,25 +52,28 @@ async def get_trend_analysis(
         - Actionable insights
     """
     try:
+        # Validate input
+        workspace_id = validate_workspace_id(workspace_id)
+
         # Verify user has access to workspace
-        # TODO: Add proper workspace access check
-        if not current_user:
-            raise HTTPException(status_code=401, detail="Unauthorized")
+        await WorkspaceAccess.validate_workspace_access(current_user, workspace_id)
 
         service = TrendAnalysisService(db)
         analysis = await service.analyze_trend(workspace_id, metric, timeframe)
 
         return analysis
 
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Trend analysis failed: {e}", exc_info=True)
+        logger.error(f"Trend analysis failed for workspace {workspace_id}, metric {metric}: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to perform trend analysis: {str(e)}"
+            detail="Failed to perform trend analysis"
         )
 
 
-@router.get("/{workspace_id}/overview")
+@router.get("/{workspace_id}/overview", dependencies=[Depends(trends_limiter)])
 async def get_trends_overview(
     workspace_id: str,
     timeframe: str = Query("30d", regex="^(7d|30d|90d|1y)$"),
@@ -79,25 +86,27 @@ async def get_trends_overview(
     Returns a summary of trends across executions, users, credits, and success rate.
     """
     try:
-        if not current_user:
-            raise HTTPException(status_code=401, detail="Unauthorized")
+        # Validate input
+        workspace_id = validate_workspace_id(workspace_id)
+
+        # Verify workspace access
+        await WorkspaceAccess.validate_workspace_access(current_user, workspace_id)
 
         service = TrendAnalysisService(db)
 
-        # Get trend overview for all key metrics
+        # Get trend overview for all key metrics in parallel (fixes N+1 query problem)
         metrics = ['executions', 'users', 'credits', 'success_rate']
-        overviews = {}
 
-        for metric in metrics:
+        async def get_metric_overview(metric: str) -> tuple[str, Dict[str, Any]]:
             try:
                 analysis = await service.analyze_trend(workspace_id, metric, timeframe)
-                overviews[metric] = analysis.get('overview', {})
+                return metric, analysis.get('overview', {})
             except Exception as e:
-                logger.warning(f"Failed to get trend for {metric}: {e}")
-                overviews[metric] = {
-                    "error": str(e),
-                    "trend": "unknown"
-                }
+                logger.warning(f"Failed to get trend for {metric} in workspace {workspace_id}: {e}")
+                return metric, {"error": "Failed to analyze", "trend": "unknown"}
+
+        results = await asyncio.gather(*[get_metric_overview(m) for m in metrics])
+        overviews = dict(results)
 
         return {
             "workspaceId": workspace_id,
@@ -105,15 +114,17 @@ async def get_trends_overview(
             "metrics": overviews
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Trends overview failed: {e}", exc_info=True)
+        logger.error(f"Trends overview failed for workspace {workspace_id}: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to get trends overview: {str(e)}"
+            detail="Failed to get trends overview"
         )
 
 
-@router.get("/{workspace_id}/{metric}/forecast")
+@router.get("/{workspace_id}/{metric}/forecast", dependencies=[Depends(trends_limiter)])
 async def get_metric_forecast(
     workspace_id: str,
     metric: str = Query(..., regex="^(executions|users|credits|errors|success_rate|revenue)$"),
@@ -133,8 +144,11 @@ async def get_metric_forecast(
         Forecast data with predicted values and confidence intervals
     """
     try:
-        if not current_user:
-            raise HTTPException(status_code=401, detail="Unauthorized")
+        # Validate input
+        workspace_id = validate_workspace_id(workspace_id)
+
+        # Verify workspace access
+        await WorkspaceAccess.validate_workspace_access(current_user, workspace_id)
 
         service = TrendAnalysisService(db)
 
@@ -153,15 +167,17 @@ async def get_metric_forecast(
             "accuracy": forecast.get('accuracy', {})
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Forecast failed: {e}", exc_info=True)
+        logger.error(f"Forecast failed for workspace {workspace_id}, metric {metric}: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to generate forecast: {str(e)}"
+            detail="Failed to generate forecast"
         )
 
 
-@router.get("/{workspace_id}/{metric}/patterns")
+@router.get("/{workspace_id}/{metric}/patterns", dependencies=[Depends(trends_limiter)])
 async def get_metric_patterns(
     workspace_id: str,
     metric: str = Query(..., regex="^(executions|users|credits|errors|success_rate|revenue)$"),
@@ -176,8 +192,11 @@ async def get_metric_patterns(
         Detected patterns including seasonality, growth, and cycles
     """
     try:
-        if not current_user:
-            raise HTTPException(status_code=401, detail="Unauthorized")
+        # Validate input
+        workspace_id = validate_workspace_id(workspace_id)
+
+        # Verify workspace access
+        await WorkspaceAccess.validate_workspace_access(current_user, workspace_id)
 
         service = TrendAnalysisService(db)
         analysis = await service.analyze_trend(workspace_id, metric, timeframe)
@@ -193,15 +212,17 @@ async def get_metric_patterns(
             ]
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Pattern analysis failed: {e}", exc_info=True)
+        logger.error(f"Pattern analysis failed for workspace {workspace_id}, metric {metric}: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to analyze patterns: {str(e)}"
+            detail="Failed to analyze patterns"
         )
 
 
-@router.get("/{workspace_id}/{metric}/insights")
+@router.get("/{workspace_id}/{metric}/insights", dependencies=[Depends(trends_limiter)])
 async def get_metric_insights(
     workspace_id: str,
     metric: str = Query(..., regex="^(executions|users|credits|errors|success_rate|revenue)$"),
@@ -216,8 +237,11 @@ async def get_metric_insights(
         AI-generated insights with recommendations
     """
     try:
-        if not current_user:
-            raise HTTPException(status_code=401, detail="Unauthorized")
+        # Validate input
+        workspace_id = validate_workspace_id(workspace_id)
+
+        # Verify workspace access
+        await WorkspaceAccess.validate_workspace_access(current_user, workspace_id)
 
         service = TrendAnalysisService(db)
         analysis = await service.analyze_trend(workspace_id, metric, timeframe)
@@ -230,18 +254,20 @@ async def get_metric_insights(
             "overview": analysis.get('overview', {})
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Insights generation failed: {e}", exc_info=True)
+        logger.error(f"Insights generation failed for workspace {workspace_id}, metric {metric}: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to generate insights: {str(e)}"
+            detail="Failed to generate insights"
         )
 
 
-@router.delete("/{workspace_id}/cache")
+@router.delete("/{workspace_id}/cache", dependencies=[Depends(trends_limiter)])
 async def clear_trend_cache(
     workspace_id: str,
-    metric: str = Query(None),
+    metric: str = Query(None, regex="^(executions|users|credits|errors|success_rate|revenue)?$"),
     current_user: Dict[str, Any] = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -256,10 +282,11 @@ async def clear_trend_cache(
         Number of cache entries cleared
     """
     try:
-        if not current_user:
-            raise HTTPException(status_code=401, detail="Unauthorized")
+        # Validate input
+        workspace_id = validate_workspace_id(workspace_id)
 
-        from sqlalchemy import text
+        # Verify workspace access
+        await WorkspaceAccess.validate_workspace_access(current_user, workspace_id)
 
         if metric:
             query = text("""
@@ -290,9 +317,11 @@ async def clear_trend_cache(
             "cacheEntriesCleared": rows_deleted
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Cache clear failed: {e}", exc_info=True)
+        logger.error(f"Cache clear failed for workspace {workspace_id}: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to clear cache: {str(e)}"
+            detail="Failed to clear cache"
         )

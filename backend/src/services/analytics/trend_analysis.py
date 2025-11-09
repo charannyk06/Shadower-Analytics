@@ -115,10 +115,12 @@ class TrendAnalysisService:
         days = self._parse_timeframe(timeframe)
         start_date = datetime.now() - timedelta(days=days)
 
-        # Build query based on metric type
-        query = self._build_metric_query(metric, workspace_id, start_date)
+        # Build query with parameters to prevent SQL injection
+        query_text, params = self._build_metric_query(metric)
+        params['workspace_id'] = workspace_id
+        params['start_date'] = start_date
 
-        result = await self.db.execute(text(query))
+        result = await self.db.execute(text(query_text), params)
         rows = result.fetchall()
 
         return [
@@ -129,45 +131,51 @@ class TrendAnalysisService:
             for row in rows
         ]
 
-    def _build_metric_query(self, metric: str, workspace_id: str, start_date: datetime) -> str:
-        """Build SQL query for specific metric."""
-        # This is a simplified version - adjust based on actual schema
+    def _build_metric_query(self, metric: str) -> Tuple[str, Dict[str, Any]]:
+        """
+        Build SQL query for specific metric using parameterized queries.
+
+        Returns:
+            Tuple of (query_string, parameters_dict)
+        """
         queries = {
-            'executions': f"""
+            'executions': """
                 SELECT DATE(created_at) as date, COUNT(*) as value
                 FROM public.agent_executions
-                WHERE workspace_id = '{workspace_id}'
-                AND created_at >= '{start_date.isoformat()}'
+                WHERE workspace_id = :workspace_id
+                AND created_at >= :start_date
                 GROUP BY DATE(created_at)
                 ORDER BY date
             """,
-            'users': f"""
+            'users': """
                 SELECT DATE(created_at) as date, COUNT(DISTINCT user_id) as value
                 FROM public.agent_executions
-                WHERE workspace_id = '{workspace_id}'
-                AND created_at >= '{start_date.isoformat()}'
+                WHERE workspace_id = :workspace_id
+                AND created_at >= :start_date
                 GROUP BY DATE(created_at)
                 ORDER BY date
             """,
-            'credits': f"""
-                SELECT DATE(created_at) as date, SUM(credits_used) as value
+            'credits': """
+                SELECT DATE(created_at) as date, COALESCE(SUM(credits_used), 0) as value
                 FROM public.credit_transactions
-                WHERE workspace_id = '{workspace_id}'
-                AND created_at >= '{start_date.isoformat()}'
+                WHERE workspace_id = :workspace_id
+                AND created_at >= :start_date
                 GROUP BY DATE(created_at)
                 ORDER BY date
             """,
-            'success_rate': f"""
+            'success_rate': """
                 SELECT DATE(created_at) as date,
-                       (COUNT(*) FILTER (WHERE status = 'completed') * 100.0 / COUNT(*)) as value
+                       (COUNT(*) FILTER (WHERE status = 'completed') * 100.0 / NULLIF(COUNT(*), 0)) as value
                 FROM public.agent_executions
-                WHERE workspace_id = '{workspace_id}'
-                AND created_at >= '{start_date.isoformat()}'
+                WHERE workspace_id = :workspace_id
+                AND created_at >= :start_date
                 GROUP BY DATE(created_at)
                 ORDER BY date
             """
         }
-        return queries.get(metric, queries['executions'])
+
+        query = queries.get(metric, queries['executions'])
+        return query, {}
 
     async def _calculate_overview(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Calculate trend overview statistics."""
