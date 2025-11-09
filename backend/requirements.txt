@@ -6,6 +6,7 @@ sqlalchemy==2.0.23
 asyncpg==0.29.0
 redis==5.0.1
 celery==5.3.4
+flower==2.0.1
 alembic==1.12.1
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
