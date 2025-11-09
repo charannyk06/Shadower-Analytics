@@ -48,4 +48,13 @@ export const endpoints = {
   cohortAnalysis: (workspaceId: string) => `${API_VERSION}/user-activity/${workspaceId}/retention/cohorts`,
   churnAnalysis: (workspaceId: string) => `${API_VERSION}/user-activity/${workspaceId}/churn`,
   trackActivity: (workspaceId: string) => `${API_VERSION}/user-activity/${workspaceId}/track`,
+
+  // Credit Consumption
+  creditConsumption: `${API_VERSION}/credits/consumption`,
+  creditStatus: `${API_VERSION}/credits/consumption/status`,
+  creditBreakdown: `${API_VERSION}/credits/consumption/breakdown`,
+  creditTrends: `${API_VERSION}/credits/consumption/trends`,
+  creditBudget: `${API_VERSION}/credits/budget`,
+  creditOptimization: `${API_VERSION}/credits/optimization`,
+  creditForecast: `${API_VERSION}/credits/forecast`,
 } as const;
