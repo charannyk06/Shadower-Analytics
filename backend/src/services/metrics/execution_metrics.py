@@ -3,7 +3,7 @@
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 import asyncio
-import numpy as np
+import statistics
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -40,7 +40,7 @@ class ExecutionMetricsService:
         end_time = datetime.utcnow()
         start_time = self._calculate_start_time(timeframe, end_time)
 
-        # Fetch all metrics in parallel
+        # Fetch all metrics in parallel with error handling
         results = await asyncio.gather(
             self._get_realtime_metrics(workspace_id),
             self._get_throughput_metrics(workspace_id, start_time, end_time),
@@ -48,17 +48,41 @@ class ExecutionMetricsService:
             self._get_performance_metrics(workspace_id, start_time, end_time),
             self._get_execution_patterns(workspace_id, start_time, end_time),
             self._get_resource_utilization(workspace_id, start_time, end_time),
+            return_exceptions=True
         )
+
+        # Check for exceptions and provide default values
+        default_metrics = [
+            {"currentlyRunning": 0, "queueDepth": 0, "avgQueueWaitTime": 0,
+             "executionsInProgress": [], "queuedExecutions": [], "systemLoad": {}},
+            {"executionsPerMinute": 0, "executionsPerHour": 0, "executionsPerDay": 0,
+             "throughputTrend": [], "peakThroughput": {}, "capacityUtilization": 0, "maxCapacity": 0},
+            {"queueLatency": {}, "executionLatency": {}, "endToEndLatency": {}, "latencyDistribution": []},
+            {"totalExecutions": 0, "successfulExecutions": 0, "failedExecutions": 0,
+             "successRate": 0, "failureRate": 0, "byAgent": [], "byHour": []},
+            {"timeline": [], "bursts": [], "patterns": {}, "anomalies": []},
+            {"compute": {}, "modelUsage": {}, "databaseLoad": {}},
+        ]
+
+        processed_results = []
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                # Log the error and use default metric
+                import logging
+                logging.error(f"Error fetching metric {i}: {result}", exc_info=result)
+                processed_results.append(default_metrics[i])
+            else:
+                processed_results.append(result)
 
         return {
             "timeframe": timeframe,
             "workspaceId": workspace_id,
-            "realtime": results[0],
-            "throughput": results[1],
-            "latency": results[2],
-            "performance": results[3],
-            "patterns": results[4],
-            "resources": results[5],
+            "realtime": processed_results[0],
+            "throughput": processed_results[1],
+            "latency": processed_results[2],
+            "performance": processed_results[3],
+            "patterns": processed_results[4],
+            "resources": processed_results[5],
         }
 
     async def _get_realtime_metrics(self, workspace_id: str) -> Dict[str, Any]:
@@ -118,8 +142,9 @@ class ExecutionMetricsService:
                 for q in queued
                 if q['queued_at']
             ]
-            avg_wait_time = np.mean(wait_times) if wait_times else 0
+            avg_wait_time = statistics.mean(wait_times) if wait_times else 0
 
+        # TODO: Replace stub with actual system monitoring integration
         # Get system load (stub - replace with actual monitoring)
         system_load = await self._get_system_load()
 
@@ -250,7 +275,9 @@ class ExecutionMetricsService:
                 "value": int(stats['peak_executions'] or 0),
                 "timestamp": end_time.isoformat()
             },
+            # TODO: Calculate capacity utilization based on actual system capacity
             "capacityUtilization": 0,  # Stub - calculate based on max capacity
+            # TODO: Make max capacity configurable via settings
             "maxCapacity": 1000  # Stub - should be configurable
         }
 
@@ -281,6 +308,7 @@ class ExecutionMetricsService:
                 PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY duration) as exec_p99,
                 AVG(duration) as exec_avg,
 
+                -- TODO: Implement queue latency calculation using execution_queue table
                 -- Queue Latency (stub - requires queue table with queue timestamps)
                 0 as queue_avg,
                 0 as queue_p50,
@@ -517,6 +545,7 @@ class ExecutionMetricsService:
                 }
                 for h in by_hour
             ],
+            # TODO: Implement comparison with previous period metrics
             "vsLastPeriod": {
                 "executionsChange": 0,  # Stub - requires comparison
                 "successRateChange": 0,
@@ -612,6 +641,7 @@ class ExecutionMetricsService:
                 }
                 for b in bursts if b['pattern_type'] == 'burst'
             ],
+            # TODO: Calculate actual patterns from historical execution data
             "patterns": {
                 "peakHours": [9, 10, 11, 14, 15, 16],  # Stub - calculate from data
                 "quietHours": [0, 1, 2, 3, 4, 5],
@@ -646,6 +676,7 @@ class ExecutionMetricsService:
         Returns:
             Resource utilization metrics
         """
+        # TODO: Integrate with actual monitoring system (Prometheus, DataDog, etc.)
         # Stub implementation - would integrate with actual monitoring system
         return {
             "compute": {
@@ -667,6 +698,7 @@ class ExecutionMetricsService:
         Returns:
             System load metrics
         """
+        # TODO: Integrate with actual system monitoring (psutil, OS metrics, etc.)
         # Stub - would integrate with actual system monitoring
         return {
             "cpu": 45.5,
@@ -706,17 +738,28 @@ async def get_execution_stats(
     db: AsyncSession,
     start_date: datetime,
     end_date: datetime,
+    workspace_id: str = "default",
 ) -> Dict:
     """Get execution statistics (legacy function).
+
+    DEPRECATED: This function is deprecated. Use ExecutionMetricsService.get_execution_metrics() instead.
 
     Args:
         db: Database session
         start_date: Start date
         end_date: End date
+        workspace_id: Workspace identifier (required for proper access control)
 
     Returns:
         Execution statistics
     """
+    import warnings
+    warnings.warn(
+        "get_execution_stats is deprecated. Use ExecutionMetricsService.get_execution_metrics() instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+
     service = ExecutionMetricsService(db)
     # Calculate timeframe
     delta = end_date - start_date
@@ -727,8 +770,8 @@ async def get_execution_stats(
     else:
         timeframe = "30d"
 
-    # Get metrics for first workspace (stub - should accept workspace_id)
-    metrics = await service.get_execution_metrics("default", timeframe)
+    # Get metrics for specified workspace
+    metrics = await service.get_execution_metrics(workspace_id, timeframe)
 
     return {
         "total_executions": metrics['performance']['totalExecutions'],
@@ -745,18 +788,29 @@ async def get_execution_trends(
     start_date: datetime,
     end_date: datetime,
     granularity: str = "daily",
+    workspace_id: str = "default",
 ) -> List[Dict]:
     """Get execution trends over time (legacy function).
+
+    DEPRECATED: This function is deprecated. Use ExecutionMetricsService.get_execution_metrics() instead.
 
     Args:
         db: Database session
         start_date: Start date
         end_date: End date
         granularity: Granularity ('hourly', 'daily', 'weekly')
+        workspace_id: Workspace identifier (required for proper access control)
 
     Returns:
         Time-series trend data
     """
+    import warnings
+    warnings.warn(
+        "get_execution_trends is deprecated. Use ExecutionMetricsService.get_execution_metrics() instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+
     service = ExecutionMetricsService(db)
     delta = end_date - start_date
     if delta.days <= 1:
@@ -766,7 +820,7 @@ async def get_execution_trends(
     else:
         timeframe = "30d"
 
-    metrics = await service.get_execution_metrics("default", timeframe)
+    metrics = await service.get_execution_metrics(workspace_id, timeframe)
     return metrics['patterns']['timeline']
 
 
@@ -774,17 +828,28 @@ async def get_execution_distribution(
     db: AsyncSession,
     start_date: datetime,
     end_date: datetime,
+    workspace_id: str = "default",
 ) -> Dict:
     """Get distribution of execution statuses (legacy function).
+
+    DEPRECATED: This function is deprecated. Use ExecutionMetricsService.get_execution_metrics() instead.
 
     Args:
         db: Database session
         start_date: Start date
         end_date: End date
+        workspace_id: Workspace identifier (required for proper access control)
 
     Returns:
         Execution status distribution
     """
+    import warnings
+    warnings.warn(
+        "get_execution_distribution is deprecated. Use ExecutionMetricsService.get_execution_metrics() instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+
     service = ExecutionMetricsService(db)
     delta = end_date - start_date
     if delta.days <= 1:
@@ -794,7 +859,7 @@ async def get_execution_distribution(
     else:
         timeframe = "30d"
 
-    metrics = await service.get_execution_metrics("default", timeframe)
+    metrics = await service.get_execution_metrics(workspace_id, timeframe)
     perf = metrics['performance']
 
     return {

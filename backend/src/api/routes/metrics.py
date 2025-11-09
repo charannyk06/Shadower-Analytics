@@ -1,7 +1,7 @@
 """General metrics and analytics routes."""
 
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Request
 from datetime import date, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 import logging
@@ -10,9 +10,16 @@ from ...core.database import get_db
 from ...services.metrics.execution_metrics import ExecutionMetricsService
 from ..dependencies.auth import get_current_user
 from ..middleware.workspace import WorkspaceAccess
+from ..middleware.rate_limit import RateLimiter
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/metrics", tags=["metrics"])
+
+# Rate limiter specifically for realtime metrics (higher frequency endpoint)
+metrics_realtime_limiter = RateLimiter(
+    requests_per_minute=20,  # Allow 20 requests per minute (every 3 seconds)
+    requests_per_hour=300,
+)
 
 
 @router.get("/summary")
@@ -120,6 +127,7 @@ async def get_execution_metrics(
 
 @router.get("/execution/realtime")
 async def get_execution_realtime(
+    request: Request,
     workspace_id: str = Query(..., description="Workspace ID"),
     current_user: Dict[str, Any] = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -129,6 +137,8 @@ async def get_execution_realtime(
     Lightweight endpoint for frequent polling of real-time execution status.
     Returns only currently running executions and queue status.
 
+    Rate limited to 20 requests per minute to prevent database overload.
+
     Args:
         workspace_id: Workspace to query
 
@@ -136,6 +146,23 @@ async def get_execution_realtime(
         Real-time execution status including running executions and queue depth
     """
     try:
+        # Apply rate limiting
+        client_ip = request.client.host if request.client else "unknown"
+        user_id = current_user.get("sub")
+        identifier = user_id or client_ip
+
+        allowed, error_msg = await metrics_realtime_limiter.check_rate_limit(
+            identifier, f"/metrics/execution/realtime/{workspace_id}"
+        )
+
+        if not allowed:
+            logger.warning(f"Rate limit exceeded for {identifier} on realtime metrics")
+            raise HTTPException(
+                status_code=429,
+                detail=error_msg,
+                headers={"Retry-After": "60"}
+            )
+
         # Validate workspace access
         await WorkspaceAccess.validate_workspace_access(current_user, workspace_id)
 
