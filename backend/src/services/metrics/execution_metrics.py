@@ -42,7 +42,7 @@ class ExecutionMetricsService:
 
         # Fetch all metrics in parallel with error handling
         results = await asyncio.gather(
-            self._get_realtime_metrics(workspace_id),
+            self.get_realtime_metrics(workspace_id),
             self._get_throughput_metrics(workspace_id, start_time, end_time),
             self._get_latency_metrics(workspace_id, start_time, end_time),
             self._get_performance_metrics(workspace_id, start_time, end_time),
@@ -85,7 +85,7 @@ class ExecutionMetricsService:
             "resources": processed_results[5],
         }
 
-    async def _get_realtime_metrics(self, workspace_id: str) -> Dict[str, Any]:
+    async def get_realtime_metrics(self, workspace_id: str) -> Dict[str, Any]:
         """Get real-time execution status.
 
         Args:
@@ -230,13 +230,14 @@ class ExecutionMetricsService:
             }
 
         # Calculate throughput rates
-        total_minutes = max(stats['total_minutes'], 1)
-        total_hours = total_minutes / 60
-        total_days = total_hours / 24
-
-        executions_per_minute = stats['avg_per_minute'] or 0
-        executions_per_hour = executions_per_minute * 60
-        executions_per_day = executions_per_hour * 24
+        if stats['total_minutes'] == 0:
+            executions_per_minute = 0
+            executions_per_hour = 0
+            executions_per_day = 0
+        else:
+            executions_per_minute = stats['avg_per_minute'] or 0
+            executions_per_hour = executions_per_minute * 60
+            executions_per_day = executions_per_hour * 24
 
         # Get throughput trend
         trend_query = text("""
@@ -382,28 +383,9 @@ class ExecutionMetricsService:
         total = sum(d['count'] for d in distribution)
 
         return {
-            "queueLatency": {
-                "avg": round(stats['queue_avg'] or 0, 2),
-                "median": round(stats['queue_p50'] or 0, 2),
-                "p50": round(stats['queue_p50'] or 0, 2),
-                "p75": round(stats['queue_p75'] or 0, 2),
-                "p90": round(stats['queue_p90'] or 0, 2),
-                "p95": round(stats['queue_p95'] or 0, 2),
-                "p99": round(stats['queue_p99'] or 0, 2)
-            },
             "executionLatency": {
                 "avg": round(stats['exec_avg'] or 0, 2),
                 "median": round(stats['exec_p50'] or 0, 2),
-                "p50": round(stats['exec_p50'] or 0, 2),
-                "p75": round(stats['exec_p75'] or 0, 2),
-                "p90": round(stats['exec_p90'] or 0, 2),
-                "p95": round(stats['exec_p95'] or 0, 2),
-                "p99": round(stats['exec_p99'] or 0, 2)
-            },
-            "endToEndLatency": {
-                "avg": round(stats['exec_avg'] or 0, 2),
-                "median": round(stats['exec_p50'] or 0, 2),
-                "p50": round(stats['exec_p50'] or 0, 2),
                 "p75": round(stats['exec_p75'] or 0, 2),
                 "p90": round(stats['exec_p90'] or 0, 2),
                 "p95": round(stats['exec_p95'] or 0, 2),
