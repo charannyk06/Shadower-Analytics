@@ -6,11 +6,13 @@
  */
 
 import { useState } from 'react'
+import { useAuth } from '@/contexts/AuthContext'
 import { useAdvancedCohortAnalysis } from '@/hooks/api/useUserActivity'
 import { AdvancedCohortAnalysis } from '@/components/users/AdvancedCohortAnalysis'
 import type { CohortType, CohortPeriod } from '@/types/user-activity'
 
 export default function CohortAnalysisDashboard() {
+  const { user } = useAuth()
   const [cohortType, setCohortType] = useState<CohortType>('signup')
   const [cohortPeriod, setCohortPeriod] = useState<CohortPeriod>('monthly')
   const [dateRange, setDateRange] = useState<{ start: string; end: string }>({
@@ -18,16 +20,18 @@ export default function CohortAnalysisDashboard() {
     end: new Date().toISOString().split('T')[0],
   })
 
-  // TODO: CRITICAL - Replace with auth context integration before production
-  // This hard-coded workspace ID is for demo purposes only
-  // In production, retrieve from: useAuth() or similar auth context hook
-  // Example: const { workspace } = useAuth(); const workspaceId = workspace?.id;
-  const workspaceId = 'demo-workspace-id'
+  // Get workspace ID from authenticated user
+  const workspaceId = user?.workspaceId
 
-  // Runtime validation - warn if still using demo workspace
-  if (typeof window !== 'undefined' && workspaceId === 'demo-workspace-id') {
-    console.warn(
-      'Using demo workspace ID. Please integrate auth context for production deployment.'
+  // Early return if user not loaded yet or missing workspace
+  if (!workspaceId) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading workspace...</p>
+        </div>
+      </div>
     )
   }
 
