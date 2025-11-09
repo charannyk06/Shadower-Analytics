@@ -3,7 +3,7 @@
  * Top bar with timeframe selector, refresh button, and export options
  */
 
-import React, { useState } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Timeframe } from '@/types/executive'
 
@@ -23,6 +23,31 @@ export function DashboardHeader({
   loading = false,
 }: DashboardHeaderProps) {
   const [exportMenuOpen, setExportMenuOpen] = useState(false)
+  const exportMenuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(event.target as Node)) {
+        setExportMenuOpen(false)
+      }
+    }
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setExportMenuOpen(false)
+      }
+    }
+
+    if (exportMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+      document.addEventListener('keydown', handleEscape)
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('keydown', handleEscape)
+    }
+  }, [exportMenuOpen])
 
   const timeframes: { value: Timeframe; label: string }[] = [
     { value: '24h', label: 'Last 24 Hours' },
@@ -97,7 +122,7 @@ export function DashboardHeader({
 
             {/* Export Menu */}
             {onExport && (
-              <div className="relative">
+              <div className="relative" ref={exportMenuRef}>
                 <Button
                   variant="primary"
                   size="md"

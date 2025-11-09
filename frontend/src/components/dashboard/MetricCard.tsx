@@ -17,6 +17,7 @@ interface MetricCardProps {
   trend?: 'up' | 'down' | 'neutral'
   loading?: boolean
   className?: string
+  isInverseTrend?: boolean  // true if lower values are better (e.g., churn, errors)
 }
 
 export function MetricCard({
@@ -29,6 +30,7 @@ export function MetricCard({
   trend,
   loading = false,
   className,
+  isInverseTrend,
 }: MetricCardProps) {
   const formatValue = (val: number | string): string => {
     if (typeof val === 'string') return val
@@ -56,12 +58,13 @@ export function MetricCard({
   const getTrendColor = (): string => {
     if (!change || trend === 'neutral') return 'text-gray-500'
 
-    // For most metrics, positive change is good
-    // For error rate, churn rate, negative change is good
-    const isNegativeGood =
+    // Determine if lower values are better
+    // Use explicit prop if provided, otherwise fall back to keyword detection
+    const isNegativeGood = isInverseTrend ?? (
       title.toLowerCase().includes('error') ||
       title.toLowerCase().includes('churn') ||
       title.toLowerCase().includes('cost')
+    )
 
     if (change > 0) {
       return isNegativeGood ? 'text-red-600' : 'text-green-600'
