@@ -340,33 +340,40 @@ class FunnelAnalysisService:
 
         # Query to get users who completed this step
         # NOTE: This is a simplified example - you'll need to adjust based on your events table structure
-        query = text("""
-            SELECT
-                COUNT(DISTINCT user_id) as unique_users,
-                COUNT(*) as total_events,
-                AVG(EXTRACT(EPOCH FROM (created_at - LAG(created_at) OVER (PARTITION BY user_id ORDER BY created_at)))) as avg_time_from_previous
-            FROM analytics.user_activity
-            WHERE workspace_id = :workspace_id
-                AND event_name = :event_name
-                AND created_at >= :start_date
-                AND created_at <= :end_date
-        """)
+        try:
+            query = text("""
+                SELECT
+                    COUNT(DISTINCT user_id) as unique_users,
+                    COUNT(*) as total_events,
+                    AVG(EXTRACT(EPOCH FROM (created_at - LAG(created_at) OVER (PARTITION BY user_id ORDER BY created_at)))) as avg_time_from_previous
+                FROM analytics.user_activity
+                WHERE workspace_id = :workspace_id
+                    AND event_name = :event_name
+                    AND created_at >= :start_date
+                    AND created_at <= :end_date
+            """)
 
-        result = await self.db.execute(
-            query,
-            {
-                "workspace_id": workspace_id,
-                "event_name": step["event"],
-                "start_date": start_date,
-                "end_date": end_date,
-            },
-        )
+            result = await self.db.execute(
+                query,
+                {
+                    "workspace_id": workspace_id,
+                    "event_name": step["event"],
+                    "start_date": start_date,
+                    "end_date": end_date,
+                },
+            )
 
-        row = result.fetchone()
+            row = result.fetchone()
 
-        unique_users = row.unique_users if row else 0
-        total_events = row.total_events if row else 0
-        avg_time_from_previous = row.avg_time_from_previous if row and row.avg_time_from_previous else None
+            unique_users = row.unique_users if row else 0
+            total_events = row.total_events if row else 0
+            avg_time_from_previous = row.avg_time_from_previous if row and row.avg_time_from_previous else None
+        except Exception as e:
+            logger.error(f"Error analyzing funnel step '{step['stepName']}': {str(e)}", exc_info=True)
+            # Return zero metrics on error to allow analysis to continue
+            unique_users = 0
+            total_events = 0
+            avg_time_from_previous = None
 
         # Calculate conversion and drop-off rates
         if step_order == 0:

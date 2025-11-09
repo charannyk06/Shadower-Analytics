@@ -25,11 +25,9 @@ CREATE TABLE IF NOT EXISTS analytics.funnel_definitions (
     segment_by VARCHAR(50), -- Optional: user_type, subscription_tier, etc.
 
     -- Metadata
-    created_by UUID REFERENCES public.users(id) ON DELETE SET NULL,
+    created_by UUID, -- User ID who created the funnel (no FK to allow flexibility)
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
-
-    CONSTRAINT unique_funnel_name UNIQUE(workspace_id, name)
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- ===================================================================
@@ -111,7 +109,7 @@ CREATE TABLE IF NOT EXISTS analytics.user_funnel_journeys (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     funnel_id UUID NOT NULL REFERENCES analytics.funnel_definitions(id) ON DELETE CASCADE,
     workspace_id UUID NOT NULL REFERENCES public.workspaces(id) ON DELETE CASCADE,
-    user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL, -- User ID (no FK to allow flexibility and preserve data)
 
     -- Journey tracking
     started_at TIMESTAMPTZ NOT NULL,

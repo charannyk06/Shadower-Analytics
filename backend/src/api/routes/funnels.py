@@ -1,6 +1,6 @@
 """Funnel analysis routes for conversion tracking."""
 
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Literal
 from fastapi import APIRouter, Depends, Query, Path, HTTPException, Body
 from datetime import datetime
 import logging
@@ -9,15 +9,13 @@ from ...core.database import get_db
 from ...services.analytics.funnel_analysis import FunnelAnalysisService
 from ...middleware.auth import get_current_user
 from ...middleware.workspace import validate_workspace_access
-from ...middleware.rate_limit import RateLimiter
 from ...utils.validators import validate_workspace_id
 from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/api/v1/funnels", tags=["funnels"])
 logger = logging.getLogger(__name__)
 
-# Rate limiters for funnel endpoints
-rate_limiter = RateLimiter(requests_per_minute=20, requests_per_hour=200)
+# Note: Rate limiting is handled globally by RateLimitMiddleware in main.py
 
 
 # ===================================================================
@@ -37,7 +35,7 @@ class FunnelDefinitionCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255, description="Funnel name")
     description: Optional[str] = Field(None, description="Funnel description")
     steps: List[FunnelStepCreate] = Field(..., min_items=2, description="Funnel steps (minimum 2)")
-    timeframe: str = Field("30d", description="Default analysis timeframe")
+    timeframe: Literal["24h", "7d", "30d", "90d"] = Field("30d", description="Default analysis timeframe")
     segmentBy: Optional[str] = Field(None, description="Optional segmentation field")
 
 
@@ -46,9 +44,9 @@ class FunnelDefinitionUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     description: Optional[str] = None
     steps: Optional[List[FunnelStepCreate]] = Field(None, min_items=2)
-    timeframe: Optional[str] = None
+    timeframe: Optional[Literal["24h", "7d", "30d", "90d"]] = None
     segmentBy: Optional[str] = None
-    status: Optional[str] = Field(None, pattern="^(active|paused|archived)$")
+    status: Optional[Literal["active", "paused", "archived"]] = None
 
 
 # ===================================================================
