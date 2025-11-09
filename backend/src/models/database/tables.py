@@ -43,6 +43,13 @@ class ExecutionLog(Base):
     """Execution logs table."""
 
     __tablename__ = "execution_logs"
+    __table_args__ = (
+        # Compound indices for comparison queries performance
+        Index('idx_execution_logs_agent_date', 'agent_id', 'started_at'),
+        Index('idx_execution_logs_workspace_date', 'workspace_id', 'started_at'),
+        Index('idx_execution_logs_status_date', 'status', 'started_at'),
+        Index('idx_execution_logs_agent_workspace', 'agent_id', 'workspace_id', 'started_at'),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     execution_id = Column(String, unique=True, index=True, nullable=False)
@@ -263,6 +270,40 @@ class WorkspaceLeaderboard(Base):
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
 
+class ExecutionMetricsHourly(Base):
+    """Hourly execution metrics aggregation table."""
+
+    __tablename__ = "execution_metrics_hourly"
+    __table_args__ = (
+        Index('idx_exec_metrics_hourly_workspace_hour', 'workspace_id', 'hour'),
+        Index('idx_exec_metrics_hourly_hour', 'hour'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    workspace_id = Column(String, index=True, nullable=False)
+    hour = Column(DateTime, index=True, nullable=False)
+
+    # Execution counts
+    total_executions = Column(Integer, default=0)
+    successful_executions = Column(Integer, default=0)
+    failed_executions = Column(Integer, default=0)
+
+    # Performance metrics
+    avg_runtime = Column(Float, default=0.0)
+    p50_runtime = Column(Float, default=0.0)
+    p95_runtime = Column(Float, default=0.0)
+    p99_runtime = Column(Float, default=0.0)
+
+    # Resource consumption
+    total_credits = Column(Integer, default=0)
+    avg_credits_per_run = Column(Float, default=0.0)
+
+    # Timestamps
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
 class FunnelDefinition(Base):
     """Funnel definitions table."""
 
@@ -290,6 +331,47 @@ class FunnelDefinition(Base):
 
     # Metadata
     created_by = Column(String)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+class ExecutionMetricsDaily(Base):
+    """Daily execution metrics aggregation table."""
+
+    __tablename__ = "execution_metrics_daily"
+    __table_args__ = (
+        Index('idx_exec_metrics_daily_workspace_date', 'workspace_id', 'date'),
+        Index('idx_exec_metrics_daily_date', 'date'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    workspace_id = Column(String, index=True, nullable=False)
+    date = Column(DateTime, index=True, nullable=False)
+
+    # Execution counts
+    total_executions = Column(Integer, default=0)
+    successful_executions = Column(Integer, default=0)
+    failed_executions = Column(Integer, default=0)
+
+    # Performance metrics
+    avg_runtime = Column(Float, default=0.0)
+    p50_runtime = Column(Float, default=0.0)
+    p95_runtime = Column(Float, default=0.0)
+    p99_runtime = Column(Float, default=0.0)
+
+    # Resource consumption
+    total_credits = Column(Integer, default=0)
+    avg_credits_per_run = Column(Float, default=0.0)
+
+    # Activity metrics
+    unique_users = Column(Integer, default=0)
+    unique_agents = Column(Integer, default=0)
+
+    # Health score
+    health_score = Column(Float, default=0.0)
+
+    # Timestamps
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
@@ -372,6 +454,69 @@ class FunnelStepPerformance(Base):
     drop_off_reasons = Column(JSON)
 
     # Metadata
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+class UserActivityHourly(Base):
+    """Hourly user activity aggregation table."""
+
+    __tablename__ = "user_activity_hourly"
+    __table_args__ = (
+        Index('idx_user_activity_hourly_workspace_hour', 'workspace_id', 'hour'),
+        Index('idx_user_activity_hourly_user_hour', 'user_id', 'hour'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    workspace_id = Column(String, index=True, nullable=False)
+    user_id = Column(String, index=True, nullable=False)
+    hour = Column(DateTime, index=True, nullable=False)
+
+    # Activity counts
+    total_events = Column(Integer, default=0)
+    page_views = Column(Integer, default=0)
+    unique_sessions = Column(Integer, default=0)
+
+    # Engagement metrics
+    active_duration_seconds = Column(Float, default=0.0)
+    avg_session_duration = Column(Float, default=0.0)
+
+    # Event type breakdown (JSON for flexibility)
+    event_type_counts = Column(JSON, default={})
+
+    # Timestamps
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+class CreditConsumptionHourly(Base):
+    """Hourly credit consumption aggregation table."""
+
+    __tablename__ = "credit_consumption_hourly"
+    __table_args__ = (
+        Index('idx_credit_hourly_workspace_hour', 'workspace_id', 'hour'),
+        Index('idx_credit_hourly_user_hour', 'user_id', 'hour'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    workspace_id = Column(String, index=True, nullable=False)
+    user_id = Column(String, index=True, nullable=True)
+    agent_id = Column(String, index=True, nullable=True)
+    hour = Column(DateTime, index=True, nullable=False)
+
+    # Credit metrics
+    total_credits = Column(Integer, default=0)
+    avg_credits_per_execution = Column(Float, default=0.0)
+    peak_credits_per_execution = Column(Integer, default=0)
+
+    # Efficiency metrics
+    executions_count = Column(Integer, default=0)
+    successful_executions = Column(Integer, default=0)
+    credits_per_success = Column(Float, default=0.0)
+
+    # Timestamps
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 

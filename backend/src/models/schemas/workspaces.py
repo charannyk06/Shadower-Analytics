@@ -77,7 +77,6 @@ class HealthScore(BaseModel):
 class WorkspaceOverview(BaseModel):
     """Workspace overview metrics."""
 
-<<<<<<< HEAD
     workspace_name: str = Field(..., description="Name of the workspace")
     created_at: Optional[str] = Field(None, description="Workspace creation timestamp")
     total_members: int = Field(..., ge=0, description="Total number of members")

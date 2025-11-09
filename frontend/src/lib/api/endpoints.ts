@@ -46,6 +46,7 @@ export const endpoints = {
   userActivityAnalytics: (workspaceId: string) => `${API_VERSION}/user-activity/${workspaceId}`,
   retentionCurve: (workspaceId: string) => `${API_VERSION}/user-activity/${workspaceId}/retention/curve`,
   cohortAnalysis: (workspaceId: string) => `${API_VERSION}/user-activity/${workspaceId}/retention/cohorts`,
+  advancedCohortAnalysis: (workspaceId: string) => `${API_VERSION}/user-activity/${workspaceId}/cohorts/advanced`,
   churnAnalysis: (workspaceId: string) => `${API_VERSION}/user-activity/${workspaceId}/churn`,
   trackActivity: (workspaceId: string) => `${API_VERSION}/user-activity/${workspaceId}/track`,
 
