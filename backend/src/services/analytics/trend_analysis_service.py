@@ -133,10 +133,14 @@ class TrendAnalysisService:
         days = self._parse_timeframe(timeframe)
         start_date = datetime.utcnow() - timedelta(days=days)
 
-        # Query based on metric type
+        # Query based on metric type (with parameterized query to prevent SQL injection)
         query = self._build_time_series_query(metric, workspace_id, start_date)
 
-        result = await self.db.execute(text(query))
+        # Execute with parameterized values
+        result = await self.db.execute(
+            text(query),
+            {"workspace_id": workspace_id, "start_date": start_date}
+        )
         rows = result.fetchall()
 
         return [
@@ -153,57 +157,62 @@ class TrendAnalysisService:
         workspace_id: str,
         start_date: datetime
     ) -> str:
-        """Build SQL query for time series data based on metric type."""
+        """
+        Build SQL query for time series data based on metric type.
+
+        SECURITY NOTE: Uses parameterized queries to prevent SQL injection.
+        Parameters workspace_id and start_date are passed separately via text() binding.
+        """
         metric_queries = {
-            "executions": f"""
+            "executions": """
                 SELECT
                     DATE_TRUNC('day', created_at) as timestamp,
                     COUNT(*) as value
                 FROM analytics.agent_executions
-                WHERE workspace_id = '{workspace_id}'
-                    AND created_at >= '{start_date.isoformat()}'
+                WHERE workspace_id = :workspace_id
+                    AND created_at >= :start_date
                 GROUP BY DATE_TRUNC('day', created_at)
                 ORDER BY timestamp
             """,
-            "users": f"""
+            "users": """
                 SELECT
                     DATE_TRUNC('day', created_at) as timestamp,
                     COUNT(DISTINCT user_id) as value
                 FROM analytics.user_activity
-                WHERE workspace_id = '{workspace_id}'
-                    AND created_at >= '{start_date.isoformat()}'
+                WHERE workspace_id = :workspace_id
+                    AND created_at >= :start_date
                 GROUP BY DATE_TRUNC('day', created_at)
                 ORDER BY timestamp
             """,
-            "credits": f"""
+            "credits": """
                 SELECT
                     DATE_TRUNC('day', created_at) as timestamp,
                     SUM(credits_consumed) as value
                 FROM analytics.agent_executions
-                WHERE workspace_id = '{workspace_id}'
-                    AND created_at >= '{start_date.isoformat()}'
+                WHERE workspace_id = :workspace_id
+                    AND created_at >= :start_date
                 GROUP BY DATE_TRUNC('day', created_at)
                 ORDER BY timestamp
             """,
-            "errors": f"""
+            "errors": """
                 SELECT
                     DATE_TRUNC('day', created_at) as timestamp,
                     COUNT(*) as value
                 FROM analytics.agent_executions
-                WHERE workspace_id = '{workspace_id}'
+                WHERE workspace_id = :workspace_id
                     AND status = 'failed'
-                    AND created_at >= '{start_date.isoformat()}'
+                    AND created_at >= :start_date
                 GROUP BY DATE_TRUNC('day', created_at)
                 ORDER BY timestamp
             """,
-            "success_rate": f"""
+            "success_rate": """
                 SELECT
                     DATE_TRUNC('day', created_at) as timestamp,
                     (COUNT(*) FILTER (WHERE status = 'completed') * 100.0 /
                      NULLIF(COUNT(*), 0)) as value
                 FROM analytics.agent_executions
-                WHERE workspace_id = '{workspace_id}'
-                    AND created_at >= '{start_date.isoformat()}'
+                WHERE workspace_id = :workspace_id
+                    AND created_at >= :start_date
                 GROUP BY DATE_TRUNC('day', created_at)
                 ORDER BY timestamp
             """

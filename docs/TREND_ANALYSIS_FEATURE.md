@@ -364,6 +364,7 @@ See [API Documentation](./API.md) for detailed endpoint specifications.
 ## Support
 
 For issues or questions:
-- GitHub Issues: [Link to repo issues]
-- Documentation: This file and inline code comments
-- Contact: [Support contact]
+- **GitHub Issues**: https://github.com/charannyk06/Shadower-Analytics/issues
+- **Documentation**: This file and inline code comments
+- **Security Issues**: Please report security vulnerabilities privately via GitHub Security Advisories
+- **Pull Requests**: Contributions welcome! See CONTRIBUTING.md for guidelines

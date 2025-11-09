@@ -1,11 +1,22 @@
 -- Update trend analysis cache table to add user_id for proper scoping
 -- Migration: 010_b_update_trend_analysis_cache_add_user_id.sql
+--
+-- IMPORTANT: This migration clears existing cache to prevent information leakage.
+-- Cache entries will be regenerated on next request with proper user_id scoping.
 
--- Add user_id column to trend_analysis_cache table
+-- Step 1: Add user_id column (nullable initially)
 ALTER TABLE analytics.trend_analysis_cache
 ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES public.users(id) ON DELETE CASCADE;
 
--- Update the unique constraint to include user_id
+-- Step 2: Clear existing cache entries (safest approach since this is a cache table)
+-- This prevents NULL user_id entries and ensures all future cache is properly scoped
+DELETE FROM analytics.trend_analysis_cache;
+
+-- Step 3: Make user_id NOT NULL to enforce data integrity
+ALTER TABLE analytics.trend_analysis_cache
+ALTER COLUMN user_id SET NOT NULL;
+
+-- Step 4: Update the unique constraint to include user_id
 ALTER TABLE analytics.trend_analysis_cache
 DROP CONSTRAINT IF EXISTS unique_trend_analysis;
 
