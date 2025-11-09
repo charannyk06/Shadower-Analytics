@@ -320,8 +320,9 @@ BEGIN
         AND metric_date = p_metric_date;
 
     -- Calculate engagement score (based on avg activity per user)
+    -- COALESCE handles NULL avg_activity_per_user values
     SELECT LEAST(100, ROUND(
-        (avg_activity_per_user / NULLIF(10, 0) * 100)::numeric
+        COALESCE((avg_activity_per_user / NULLIF(10, 0) * 100), 0)::numeric
     ))
     INTO v_engagement_score
     FROM analytics.workspace_metrics_daily

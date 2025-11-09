@@ -133,17 +133,16 @@ async def get_workspace_users(
     return {"users": [], "total": 0}
 
 
-<<<<<<< HEAD
 @router.get("/{workspace_id}/analytics")
 async def get_workspace_analytics(
     workspace_id: str = Path(
         ...,
-        regex="^[a-zA-Z0-9-_]{1,64}$",
+        pattern="^[a-zA-Z0-9-_]{1,64}$",
         description="Workspace ID (alphanumeric, hyphens, underscores, max 64 chars)"
     ),
     timeframe: str = Query(
         "30d",
-        regex="^(24h|7d|30d|90d|all)$",
+        pattern="^(24h|7d|30d|90d|all)$",
         description="Time period for analytics (24h, 7d, 30d, 90d, all)"
     ),
     current_user: Dict[str, Any] = Depends(get_current_user),
