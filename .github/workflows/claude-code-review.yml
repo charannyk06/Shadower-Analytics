@@ -94,7 +94,6 @@ jobs:
             - `gh pr view ${{ steps.pr-info.outputs.pr_number }}` - Get PR title, description, and metadata
             - `gh pr diff ${{ steps.pr-info.outputs.pr_number }}` - Get the full diff of all changes
             - `gh pr view ${{ steps.pr-info.outputs.pr_number }} --json files` - Get list of changed files
->>>>>>> 587402e (Enhance Claude code review workflow: add show_full_output, strengthen prompt with explicit gh pr comment instructions)
 
             ## Step 2: Understand the Codebase Context
 
