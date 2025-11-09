@@ -37,11 +37,51 @@ class TrendAnalysisService:
         self.db = db
         self.cache = cache_service
 
+    def _validate_metric(self, metric: str) -> None:
+        """
+        Validate metric parameter (defense-in-depth).
+
+        Raises:
+            ValueError: If metric is not in allowed list
+        """
+        if metric not in const.ALLOWED_METRICS:
+            raise ValueError(
+                const.MSG_INVALID_METRIC.format(', '.join(sorted(const.ALLOWED_METRICS)))
+            )
+
+    def _validate_timeframe(self, timeframe: str) -> None:
+        """
+        Validate timeframe parameter (defense-in-depth).
+
+        Raises:
+            ValueError: If timeframe is not in allowed list
+        """
+        if timeframe not in const.ALLOWED_TIMEFRAMES:
+            raise ValueError(
+                const.MSG_INVALID_TIMEFRAME.format(', '.join(sorted(const.ALLOWED_TIMEFRAMES)))
+            )
+
+    async def _validate_workspace_exists(self, workspace_id: str) -> None:
+        """
+        Validate that workspace exists in database (defense-in-depth).
+
+        Note: This does NOT check user authorization - that must be done
+        in the API layer using WorkspaceAccess.validate_workspace_access()
+
+        Raises:
+            ValueError: If workspace does not exist
+        """
+        query = text("SELECT id FROM public.workspaces WHERE id = :workspace_id")
+        result = await self.db.execute(query, {"workspace_id": workspace_id})
+        if not result.fetchone():
+            raise ValueError("Workspace does not exist")
+
     async def analyze_trend(
         self,
         workspace_id: str,
         metric: str,
         timeframe: str,
+        user_id: Optional[str] = None,
         skip_cache: bool = False
     ) -> Dict[str, Any]:
         """
@@ -51,21 +91,30 @@ class TrendAnalysisService:
             workspace_id: The workspace ID
             metric: Metric to analyze (executions, users, credits, etc.)
             timeframe: Time period (7d, 30d, 90d, 1y)
+            user_id: The user ID for cache scoping (prevents information leakage)
             skip_cache: If True, bypass cache (used after auth check in routes)
 
         Returns:
             Complete trend analysis with insights
+
+        Raises:
+            ValueError: If metric, timeframe, or workspace_id are invalid
         """
-        # Check cache only if explicitly allowed (after auth in routes)
-        if not skip_cache and self.cache:
-            cached = await self._get_cached_analysis(workspace_id, metric, timeframe)
+        # Defense-in-depth: Validate inputs in service layer
+        self._validate_metric(metric)
+        self._validate_timeframe(timeframe)
+        await self._validate_workspace_exists(workspace_id)
+
+        # Check cache only if explicitly allowed (after auth in routes) and user_id provided
+        if not skip_cache and self.cache and user_id:
+            cached = await self._get_cached_analysis(workspace_id, user_id, metric, timeframe)
             if cached:
                 return cached
 
         # Get time series data
         time_series = await self._get_time_series(workspace_id, metric, timeframe)
 
-        if len(time_series) < 14:  # Need minimum data points
+        if len(time_series) < const.MIN_DATA_POINTS_FOR_ANALYSIS:
             return self._insufficient_data_response(workspace_id, metric, timeframe)
 
         # Convert to pandas DataFrame
@@ -108,9 +157,9 @@ class TrendAnalysisService:
             "insights": insights
         }
 
-        # Cache the results
-        if self.cache:
-            await self._cache_analysis(workspace_id, metric, timeframe, analysis)
+        # Cache the results (only if user_id provided for proper scoping)
+        if self.cache and user_id:
+            await self._cache_analysis(workspace_id, user_id, metric, timeframe, analysis)
 
         return analysis
 
@@ -230,9 +279,9 @@ class TrendAnalysisService:
         # Determine trend direction
         volatility = df['value'].std() / df['value'].mean() if df['value'].mean() != 0 else 0
 
-        if volatility > 0.5:
+        if volatility > const.MODERATE_TREND_THRESHOLD:
             trend_type = 'volatile'
-        elif abs(slope) < df['value'].mean() * 0.01:
+        elif abs(slope) < df['value'].mean() * const.STABLE_TREND_THRESHOLD:
             trend_type = 'stable'
         elif slope > 0:
             trend_type = 'increasing'
@@ -258,7 +307,7 @@ class TrendAnalysisService:
 
     async def _perform_decomposition(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Decompose time series into trend, seasonal, and residual components."""
-        if len(df) < 14:
+        if len(df) < const.MIN_DATA_POINTS_FOR_DECOMPOSITION:
             return {}
 
         try:
@@ -323,7 +372,7 @@ class TrendAnalysisService:
 
     def _detect_seasonality(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Detect seasonality in data."""
-        if len(df) < 14:
+        if len(df) < const.MIN_DATA_POINTS_FOR_ANALYSIS:
             return {
                 "detected": False,
                 "type": None,
@@ -335,10 +384,10 @@ class TrendAnalysisService:
         try:
             # Use autocorrelation to detect seasonality (FFT is blocking operation)
             # Note: acf with fft=True is CPU-intensive but typically fast, no async needed
-            acf_values = acf(df['value'].values, nlags=min(40, len(df) // 2), fft=True)
+            acf_values = acf(df['value'].values, nlags=min(const.MAX_ACF_LAGS, len(df) // 2), fft=True)
 
             # Find peaks in ACF
-            peaks, properties = signal.find_peaks(acf_values[1:], height=0.3)
+            peaks, properties = signal.find_peaks(acf_values[1:], height=const.SEASONALITY_ACF_THRESHOLD)
 
             if len(peaks) > 0:
                 # Strongest seasonal period
@@ -347,13 +396,13 @@ class TrendAnalysisService:
                 period = strongest_peak + 1
 
                 # Determine seasonality type
-                if period <= 1:
+                if period <= const.DAILY_PERIOD_MAX:
                     season_type = 'daily'
-                elif period <= 7:
+                elif period <= const.WEEKLY_PERIOD_MAX:
                     season_type = 'weekly'
-                elif period <= 31:
+                elif period <= const.MONTHLY_PERIOD_MAX:
                     season_type = 'monthly'
-                elif period <= 92:
+                elif period <= const.QUARTERLY_PERIOD_MAX:
                     season_type = 'quarterly'
                 else:
                     season_type = 'yearly'
@@ -447,7 +496,7 @@ class TrendAnalysisService:
             acceleration = 0
 
         # Project growth
-        projected_growth = rate * 30  # 30 days ahead
+        projected_growth = rate * const.GROWTH_PROJECTION_DAYS
 
         return {
             "type": best_type,
@@ -458,7 +507,7 @@ class TrendAnalysisService:
 
     async def _detect_cycles(self, df: pd.DataFrame) -> List[Dict[str, Any]]:
         """Detect cyclical patterns using FFT."""
-        if len(df) < 20:
+        if len(df) < const.MIN_DATA_POINTS_FOR_CYCLES:
             return []
 
         try:
@@ -476,7 +525,7 @@ class TrendAnalysisService:
                 peaks, properties = signal.find_peaks(power[:len(power)//2], height=np.max(power) * 0.1)
 
                 cycles = []
-                for peak in peaks[:3]:  # Top 3 cycles
+                for peak in peaks[:const.MAX_CYCLES_TO_RETURN]:
                     if frequencies[peak] > 0:
                         period = 1 / frequencies[peak]
                         amplitude = np.sqrt(power[peak])
@@ -565,7 +614,7 @@ class TrendAnalysisService:
             logger.warning("Prophet not available. Using simple linear forecasting instead.")
             return self._simple_forecast(df)
 
-        if len(df) < 14:
+        if len(df) < const.MIN_DATA_POINTS_FOR_FORECAST:
             return self._simple_forecast(df)
 
         try:
@@ -600,8 +649,8 @@ class TrendAnalysisService:
                 timeout=PROPHET_TIMEOUT
             )
 
-            # Extract short-term forecast (next 7 days)
-            short_term = forecast[forecast['ds'] > prophet_df['ds'].max()].head(7)
+            # Extract short-term forecast
+            short_term = forecast[forecast['ds'] > prophet_df['ds'].max()].head(const.SHORT_TERM_FORECAST_DAYS)
 
             # Calculate accuracy metrics on historical data
             historical_forecast = forecast[forecast['ds'] <= prophet_df['ds'].max()]
@@ -619,7 +668,7 @@ class TrendAnalysisService:
                         "predicted": float(row['yhat']),
                         "upper": float(row['yhat_upper']),
                         "lower": float(row['yhat_lower']),
-                        "confidence": 0.95
+                        "confidence": const.FORECAST_CONFIDENCE_LEVEL
                     }
                     for _, row in short_term.iterrows()
                 ],
@@ -647,8 +696,8 @@ class TrendAnalysisService:
         model = LinearRegression()
         model.fit(X, y)
 
-        # Forecast next 7 days
-        future_X = np.arange(len(df), len(df) + 7).reshape(-1, 1)
+        # Forecast next N days
+        future_X = np.arange(len(df), len(df) + const.SHORT_TERM_FORECAST_DAYS).reshape(-1, 1)
         predictions = model.predict(future_X)
 
         # Calculate simple confidence interval
@@ -661,9 +710,9 @@ class TrendAnalysisService:
             short_term.append({
                 "timestamp": timestamp.isoformat(),
                 "predicted": float(pred),
-                "upper": float(pred + 1.96 * std_error),
-                "lower": float(max(0, pred - 1.96 * std_error)),
-                "confidence": 0.95
+                "upper": float(pred + const.ANOMALY_THRESHOLD_STD_DEVS * std_error),
+                "lower": float(max(0, pred - const.ANOMALY_THRESHOLD_STD_DEVS * std_error)),
+                "confidence": const.FORECAST_CONFIDENCE_LEVEL
             })
 
         return {
@@ -685,7 +734,7 @@ class TrendAnalysisService:
             trend = overview['trend']
             change_pct = overview.get('changePercentage', 0)
 
-            if trend == 'increasing' and change_pct > 20:
+            if trend == 'increasing' and change_pct > const.HIGH_IMPACT_THRESHOLD:
                 insights.append({
                     "type": "trend",
                     "title": "Strong Growth Detected",
@@ -694,7 +743,7 @@ class TrendAnalysisService:
                     "confidence": overview.get('confidence', 50),
                     "recommendation": "Continue current strategies and monitor for sustainability"
                 })
-            elif trend == 'decreasing' and change_pct < -20:
+            elif trend == 'decreasing' and change_pct < -const.HIGH_IMPACT_THRESHOLD:
                 insights.append({
                     "type": "trend",
                     "title": "Significant Decline Detected",
@@ -739,7 +788,7 @@ class TrendAnalysisService:
     def _prepare_time_series(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Prepare time series data with statistics."""
         # Calculate moving average
-        ma_window = min(7, len(df) // 3)
+        ma_window = min(const.MOVING_AVERAGE_WINDOW_SIZE, len(df) // 3)
         if ma_window > 0:
             df['ma'] = df['value'].rolling(window=ma_window, min_periods=1).mean()
         else:
@@ -747,8 +796,8 @@ class TrendAnalysisService:
 
         # Calculate confidence intervals
         std = df['value'].std()
-        df['upper'] = df['ma'] + 1.96 * std
-        df['lower'] = df['ma'] - 1.96 * std
+        df['upper'] = df['ma'] + const.ANOMALY_THRESHOLD_STD_DEVS * std
+        df['lower'] = df['ma'] - const.ANOMALY_THRESHOLD_STD_DEVS * std
 
         # Detect anomalies
         df['is_anomaly'] = (df['value'] > df['upper']) | (df['value'] < df['lower'])
@@ -783,11 +832,11 @@ class TrendAnalysisService:
 
     def _detect_period(self, df: pd.DataFrame) -> int:
         """Detect the dominant period in the data."""
-        if len(df) < 14:
-            return 7
+        if len(df) < const.MIN_DATA_POINTS_FOR_ANALYSIS:
+            return const.WEEKLY_PERIOD_MAX
 
         try:
-            acf_values = acf(df['value'].values, nlags=min(40, len(df) // 2), fft=True)
+            acf_values = acf(df['value'].values, nlags=min(const.MAX_ACF_LAGS, len(df) // 2), fft=True)
             peaks, _ = signal.find_peaks(acf_values[1:])
 
             if len(peaks) > 0:
@@ -795,28 +844,22 @@ class TrendAnalysisService:
         except:
             pass
 
-        return 7  # Default to weekly
+        return const.WEEKLY_PERIOD_MAX  # Default to weekly
 
     def _get_period_name(self, period: int) -> str:
         """Get human-readable period name."""
-        if period <= 1:
+        if period <= const.DAILY_PERIOD_MAX:
             return 'daily'
-        elif period <= 7:
+        elif period <= const.WEEKLY_PERIOD_MAX:
             return 'weekly'
-        elif period <= 31:
+        elif period <= const.MONTHLY_PERIOD_MAX:
             return 'monthly'
         else:
             return 'quarterly'
 
     def _parse_timeframe(self, timeframe: str) -> int:
         """Parse timeframe string to days."""
-        mapping = {
-            '7d': 7,
-            '30d': 30,
-            '90d': 90,
-            '1y': 365
-        }
-        return mapping.get(timeframe, 30)
+        return const.TIMEFRAME_DAYS.get(timeframe, const.DEFAULT_TIMEFRAME_DAYS)
 
     def _insufficient_data_response(
         self,
@@ -829,8 +872,8 @@ class TrendAnalysisService:
             "workspaceId": workspace_id,
             "metric": metric,
             "timeframe": timeframe,
-            "error": "insufficient_data",
-            "message": "Not enough data points for comprehensive analysis. Minimum 14 days required.",
+            "error": const.ERROR_INSUFFICIENT_DATA,
+            "message": const.MSG_INSUFFICIENT_DATA.format(const.MIN_DATA_POINTS_FOR_ANALYSIS),
             "overview": {},
             "timeSeries": {"data": [], "statistics": {}},
             "decomposition": {},
@@ -844,15 +887,17 @@ class TrendAnalysisService:
     async def _get_cached_analysis(
         self,
         workspace_id: str,
+        user_id: str,
         metric: str,
         timeframe: str
     ) -> Optional[Dict[str, Any]]:
-        """Get cached analysis if available and not expired."""
+        """Get cached analysis if available and not expired (scoped by user_id)."""
         try:
             query = text("""
                 SELECT analysis_data
                 FROM analytics.trend_analysis_cache
                 WHERE workspace_id = :workspace_id
+                AND user_id = :user_id
                 AND metric = :metric
                 AND timeframe = :timeframe
                 AND (expires_at IS NULL OR expires_at > NOW())
@@ -862,6 +907,7 @@ class TrendAnalysisService:
                 query,
                 {
                     "workspace_id": workspace_id,
+                    "user_id": user_id,
                     "metric": metric,
                     "timeframe": timeframe
                 }
@@ -878,20 +924,22 @@ class TrendAnalysisService:
     async def _cache_analysis(
         self,
         workspace_id: str,
+        user_id: str,
         metric: str,
         timeframe: str,
         analysis: Dict[str, Any]
     ):
-        """Cache analysis results."""
+        """Cache analysis results (scoped by user_id for security)."""
         try:
-            # Cache expires after 1 hour
-            expires_at = datetime.now() + timedelta(hours=1)
+            # Determine cache duration based on timeframe
+            cache_hours = const.CACHE_DURATIONS.get(timeframe, 1)
+            expires_at = datetime.now() + timedelta(hours=cache_hours)
 
             query = text("""
                 INSERT INTO analytics.trend_analysis_cache
-                (workspace_id, metric, timeframe, analysis_data, expires_at)
-                VALUES (:workspace_id, :metric, :timeframe, :analysis_data, :expires_at)
-                ON CONFLICT (workspace_id, metric, timeframe)
+                (workspace_id, user_id, metric, timeframe, analysis_data, expires_at)
+                VALUES (:workspace_id, :user_id, :metric, :timeframe, :analysis_data, :expires_at)
+                ON CONFLICT (workspace_id, user_id, metric, timeframe)
                 DO UPDATE SET
                     analysis_data = :analysis_data,
                     expires_at = :expires_at,
@@ -902,6 +950,7 @@ class TrendAnalysisService:
                 query,
                 {
                     "workspace_id": workspace_id,
+                    "user_id": user_id,
                     "metric": metric,
                     "timeframe": timeframe,
                     "analysis_data": analysis,

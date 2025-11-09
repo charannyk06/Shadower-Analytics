@@ -7,6 +7,9 @@ from sqlalchemy import text
 import asyncio
 import logging
 
+# Request timeout for expensive trend analysis operations (30 seconds)
+ANALYSIS_TIMEOUT_SECONDS = 30
+
 from ...core.database import get_db
 from ...services.analytics.trend_analysis import TrendAnalysisService
 from ...utils.validators import validate_workspace_id
@@ -58,11 +61,29 @@ async def get_trend_analysis(
         # Verify user has access to workspace FIRST (prevent cache timing attacks)
         await WorkspaceAccess.validate_workspace_access(current_user, workspace_id)
 
-        # Now safe to check cache after auth
+        # Now safe to check cache after auth (pass user_id for cache scoping)
         service = TrendAnalysisService(db)
-        analysis = await service.analyze_trend(workspace_id, metric, timeframe, skip_cache=False)
+        user_id = current_user.get("id") or current_user.get("user_id")
 
-        return analysis
+        # Wrap in timeout to prevent long-running requests from blocking
+        try:
+            analysis = await asyncio.wait_for(
+                service.analyze_trend(
+                    workspace_id,
+                    metric,
+                    timeframe,
+                    user_id=user_id,
+                    skip_cache=False
+                ),
+                timeout=ANALYSIS_TIMEOUT_SECONDS
+            )
+            return analysis
+        except asyncio.TimeoutError:
+            logger.warning(f"Trend analysis timed out after {ANALYSIS_TIMEOUT_SECONDS}s for workspace {workspace_id}, metric {metric}")
+            raise HTTPException(
+                status_code=504,
+                detail=f"Analysis request timed out after {ANALYSIS_TIMEOUT_SECONDS} seconds. Try a shorter timeframe or try again later."
+            )
 
     except HTTPException:
         raise
@@ -94,12 +115,13 @@ async def get_trends_overview(
         await WorkspaceAccess.validate_workspace_access(current_user, workspace_id)
 
         service = TrendAnalysisService(db)
+        user_id = current_user.get("id") or current_user.get("user_id")
 
         # Get trend overview for all key metrics in parallel (fixes N+1 query problem)
         metrics = ['executions', 'users', 'credits', 'success_rate']
 
         async def get_metric_overview(metric: str) -> tuple[str, Dict[str, Any]]:
-            analysis = await service.analyze_trend(workspace_id, metric, timeframe)
+            analysis = await service.analyze_trend(workspace_id, metric, timeframe, user_id=user_id)
             return metric, analysis.get('overview', {})
 
         # Use return_exceptions=True to handle individual metric failures
@@ -169,9 +191,10 @@ async def get_metric_forecast(
         await WorkspaceAccess.validate_workspace_access(current_user, workspace_id)
 
         service = TrendAnalysisService(db)
+        user_id = current_user.get("id") or current_user.get("user_id")
 
         # Use 90 days of historical data for forecasting
-        analysis = await service.analyze_trend(workspace_id, metric, '90d')
+        analysis = await service.analyze_trend(workspace_id, metric, '90d', user_id=user_id)
         forecast = analysis.get('forecast', {})
 
         # Filter to requested number of periods
@@ -217,7 +240,8 @@ async def get_metric_patterns(
         await WorkspaceAccess.validate_workspace_access(current_user, workspace_id)
 
         service = TrendAnalysisService(db)
-        analysis = await service.analyze_trend(workspace_id, metric, timeframe)
+        user_id = current_user.get("id") or current_user.get("user_id")
+        analysis = await service.analyze_trend(workspace_id, metric, timeframe, user_id=user_id)
 
         return {
             "workspaceId": workspace_id,
@@ -262,7 +286,8 @@ async def get_metric_insights(
         await WorkspaceAccess.validate_workspace_access(current_user, workspace_id)
 
         service = TrendAnalysisService(db)
-        analysis = await service.analyze_trend(workspace_id, metric, timeframe)
+        user_id = current_user.get("id") or current_user.get("user_id")
+        analysis = await service.analyze_trend(workspace_id, metric, timeframe, user_id=user_id)
 
         return {
             "workspaceId": workspace_id,
@@ -306,24 +331,29 @@ async def clear_trend_cache(
         # Verify workspace access
         await WorkspaceAccess.validate_workspace_access(current_user, workspace_id)
 
+        # Only clear cache entries for the current user (prevent cache poisoning)
+        user_id = current_user.get("id") or current_user.get("user_id")
+
         if metric:
             query = text("""
                 DELETE FROM analytics.trend_analysis_cache
                 WHERE workspace_id = :workspace_id
+                AND user_id = :user_id
                 AND metric = :metric
             """)
             result = await db.execute(
                 query,
-                {"workspace_id": workspace_id, "metric": metric}
+                {"workspace_id": workspace_id, "user_id": user_id, "metric": metric}
             )
         else:
             query = text("""
                 DELETE FROM analytics.trend_analysis_cache
                 WHERE workspace_id = :workspace_id
+                AND user_id = :user_id
             """)
             result = await db.execute(
                 query,
-                {"workspace_id": workspace_id}
+                {"workspace_id": workspace_id, "user_id": user_id}
             )
 
         await db.commit()

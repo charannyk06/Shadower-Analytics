@@ -12,7 +12,7 @@ DROP FUNCTION IF EXISTS analytics.update_trend_analysis_updated_at();
 DROP INDEX IF EXISTS analytics.idx_trend_analysis_data;
 DROP INDEX IF EXISTS analytics.idx_trend_analysis_calculated;
 DROP INDEX IF EXISTS analytics.idx_trend_analysis_expiry;
-DROP INDEX IF EXISTS analytics.idx_trend_analysis_workspace;
+DROP INDEX IF EXISTS analytics.idx_trend_analysis_workspace_user;
 
 -- Drop composite indexes on source tables
 DROP INDEX IF EXISTS public.idx_agent_executions_workspace_time;
