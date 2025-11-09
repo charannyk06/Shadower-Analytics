@@ -21,6 +21,7 @@ from .routes import (
     errors_router,
     trends_router,
     leaderboards_router,
+    materialized_views_router,
 )
 from .middleware.cors import setup_cors
 from .middleware.logging import RequestLoggingMiddleware
@@ -64,6 +65,7 @@ app.include_router(credits_router)
 app.include_router(errors_router)
 app.include_router(trends_router)
 app.include_router(leaderboards_router)
+app.include_router(materialized_views_router)
 
 
 @app.on_event("startup")
