@@ -547,7 +547,7 @@ class UserFunnelJourney(Base):
     status = Column(String(20), nullable=False)  # 'in_progress', 'completed', 'abandoned'
 
     # Journey path
-    journey_path = Column(JSON, nullable=False, default=[])
+    journey_path = Column(JSON, nullable=False, default=list)
 
     # Time metrics
     total_time_spent = Column(Float)
