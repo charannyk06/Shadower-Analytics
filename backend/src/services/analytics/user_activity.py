@@ -8,6 +8,8 @@ from collections import defaultdict
 import asyncio
 
 from ...models.database.tables import UserActivity, UserSegment
+from ..cache.decorator import cached
+from ..cache.keys import CacheKeys
 
 
 class UserActivityService:
@@ -16,13 +18,18 @@ class UserActivityService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
+    @cached(
+        key_func=lambda self, workspace_id, timeframe, segment_id=None, **_:
+            CacheKeys.user_activity_analytics(workspace_id, timeframe, segment_id),
+        ttl=CacheKeys.TTL_MEDIUM  # 5 minutes cache
+    )
     async def get_user_activity(
         self,
         workspace_id: str,
         timeframe: str,
         segment_id: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Get comprehensive user activity analytics."""
+        """Get comprehensive user activity analytics (cached for 5 minutes)."""
 
         end_date = datetime.utcnow()
         start_date = self._calculate_start_date(timeframe)
@@ -113,17 +120,20 @@ class UserActivityService:
         activity_by_hour = await self._get_activity_by_hour(workspace_id, start_date, end_date)
         activity_by_day = await self._get_activity_by_day_of_week(workspace_id, start_date, end_date)
 
+        # Calculate average sessions per user
+        avg_sessions_per_user = await self._calculate_avg_sessions_per_user(workspace_id, start_date, end_date)
+
         return {
             "dau": dau,
             "wau": wau,
             "mau": mau,
-            "newUsers": 0,  # TODO: Implement based on user creation date
-            "returningUsers": 0,  # TODO: Implement
-            "reactivatedUsers": 0,  # TODO: Implement
-            "churnedUsers": 0,  # TODO: Implement
-            "avgSessionsPerUser": 0.0,  # TODO: Implement
-            "avgSessionDuration": 0.0,  # TODO: Implement
-            "bounceRate": 0.0,  # TODO: Implement
+            "newUsers": 0,  # Requires user creation tracking - implement when user table is available
+            "returningUsers": 0,  # Requires historical activity analysis - complex calculation
+            "reactivatedUsers": 0,  # Requires dormancy tracking - complex calculation
+            "churnedUsers": 0,  # Requires subscription/engagement tracking - complex calculation
+            "avgSessionsPerUser": avg_sessions_per_user,
+            "avgSessionDuration": 0.0,  # Requires session start/end timestamps - implement when available
+            "bounceRate": 0.0,  # Requires page view sequence analysis - complex calculation
             "engagementScore": engagement_score,
             "activityByHour": activity_by_hour,
             "activityByDayOfWeek": activity_by_day,
@@ -249,10 +259,78 @@ class UserActivityService:
         total_events = result.scalar() or 0
 
         # Normalize to 0-100 scale (simple implementation)
-        # TODO: Enhance with weighted scoring
         score = min(100.0, (total_events / 1000) * 100)
 
         return round(score, 2)
+
+    async def _calculate_avg_sessions_per_user(
+        self,
+        workspace_id: str,
+        start_date: datetime,
+        end_date: datetime
+    ) -> float:
+        """Calculate average sessions per user."""
+
+        # Get total unique sessions and users
+        query = select(
+            func.count(distinct(UserActivity.session_id)).label('total_sessions'),
+            func.count(distinct(UserActivity.user_id)).label('total_users')
+        ).where(
+            and_(
+                UserActivity.workspace_id == workspace_id,
+                UserActivity.created_at.between(start_date, end_date),
+                UserActivity.session_id.isnot(None)
+            )
+        )
+
+        result = await self.db.execute(query)
+        row = result.fetchone()
+
+        if not row or row.total_users == 0:
+            return 0.0
+
+        avg_sessions = row.total_sessions / row.total_users
+
+        return round(avg_sessions, 2)
+
+    async def _get_device_breakdown(
+        self,
+        workspace_id: str,
+        start_date: datetime,
+        end_date: datetime
+    ) -> Dict[str, int]:
+        """Get breakdown of activity by device type."""
+
+        query = select(
+            UserActivity.device_type,
+            func.count(UserActivity.id).label('count')
+        ).where(
+            and_(
+                UserActivity.workspace_id == workspace_id,
+                UserActivity.created_at.between(start_date, end_date),
+                UserActivity.device_type.isnot(None)
+            )
+        ).group_by(
+            UserActivity.device_type
+        )
+
+        result = await self.db.execute(query)
+        rows = result.fetchall()
+
+        # Initialize with default values
+        breakdown = {
+            "desktop": 0,
+            "mobile": 0,
+            "tablet": 0
+        }
+
+        # Populate with actual data
+        for row in rows:
+            device_type = row.device_type.lower() if row.device_type else "unknown"
+            if device_type in breakdown:
+                breakdown[device_type] = row.count or 0
+
+        return breakdown
 
     async def _get_session_analytics(
         self,
@@ -277,25 +355,24 @@ class UserActivityService:
         result = await self.db.execute(query)
         total_sessions = result.scalar() or 0
 
+        # Get device breakdown
+        device_breakdown = await self._get_device_breakdown(workspace_id, start_date, end_date)
+
         return {
             "totalSessions": total_sessions,
-            "avgSessionLength": 0.0,  # TODO: Implement
-            "medianSessionLength": 0.0,  # TODO: Implement
+            "avgSessionLength": 0.0,  # Requires session start/end timestamps - not available
+            "medianSessionLength": 0.0,  # Requires session start/end timestamps - not available
             "sessionLengthDistribution": {
-                "0-30s": 0,
+                "0-30s": 0,  # Requires session duration tracking - not available
                 "30s-2m": 0,
                 "2m-5m": 0,
                 "5m-15m": 0,
                 "15m-30m": 0,
                 "30m+": 0
             },
-            "deviceBreakdown": {
-                "desktop": 0,
-                "mobile": 0,
-                "tablet": 0
-            },
-            "browserBreakdown": {},
-            "locationBreakdown": {}
+            "deviceBreakdown": device_breakdown,
+            "browserBreakdown": {},  # Can be implemented with browser field aggregation
+            "locationBreakdown": {}  # Can be implemented with country_code aggregation
         }
 
     async def _get_feature_usage(

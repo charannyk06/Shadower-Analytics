@@ -7,6 +7,7 @@ const API_VERSION = '/api/v1';
 export const endpoints = {
   // Executive dashboard
   executiveOverview: `${API_VERSION}/executive/overview`,
+  executiveDashboard: `${API_VERSION}/executive/dashboard`,
   revenue: `${API_VERSION}/executive/revenue`,
   kpis: `${API_VERSION}/executive/kpis`,
 
@@ -34,6 +35,7 @@ export const endpoints = {
   // Workspaces
   workspaces: `${API_VERSION}/workspaces`,
   workspaceDetail: (id: string) => `${API_VERSION}/workspaces/${id}`,
+  workspaceAnalytics: (id: string) => `${API_VERSION}/workspaces/${id}/analytics`,
 
   // Cache management (admin only)
   cacheStats: `${API_VERSION}/cache/stats`,

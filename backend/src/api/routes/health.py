@@ -1,8 +1,8 @@
 """Health check and monitoring routes."""
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from ...core.database import get_db
-from ...core.redis import get_redis
 
 router = APIRouter(prefix="/api/v1", tags=["health"])
 
@@ -33,12 +33,13 @@ async def detailed_health_check(
 
 @router.get("/metrics")
 async def prometheus_metrics():
-    """Prometheus metrics endpoint."""
-    # Implementation will expose Prometheus metrics
-    return {
-        "http_requests_total": 0,
-        "http_request_duration_seconds": 0,
-    }
+    """Prometheus metrics endpoint.
+
+    Exposes metrics in Prometheus format for scraping.
+    Includes cache operations, hits/misses, errors, and latencies.
+    """
+    metrics = generate_latest()
+    return Response(content=metrics, media_type=CONTENT_TYPE_LATEST)
 
 
 @router.get("/ready")

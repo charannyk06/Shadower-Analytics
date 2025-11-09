@@ -1,11 +1,11 @@
 """Executive dashboard aggregation service with caching support."""
 
 import asyncio
-from datetime import datetime, timedelta, date
-from typing import Dict, List, Any
+from datetime import datetime, timedelta, date, timezone
+from typing import Dict, List, Any, Optional
 import logging
+from sqlalchemy import select, func, and_, distinct
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, desc
 from ...models.schemas.metrics import (
     ExecutiveDashboardResponse,
     Period,
@@ -20,31 +20,26 @@ from ...models.schemas.metrics import (
     TimeSeriesData,
 )
 from ..cache import cached, CacheKeys
+from .constants import (
+    TIMEFRAME_24H,
+    TIMEFRAME_7D,
+    TIMEFRAME_30D,
+    TIMEFRAME_90D,
+    TIMEFRAME_1Y,
+    DEFAULT_TIMEFRAME_DAYS,
+    PERCENTAGE_MULTIPLIER,
+    ZERO_TO_POSITIVE_GROWTH,
+)
+from ...models.database.tables import (
+    ExecutionLog,
+    WorkspaceMetric,
+    UserMetric,
+    AgentMetric,
+)
+from ...utils.calculations import calculate_percentage_change
+from ...utils.datetime import calculate_start_date
 
 logger = logging.getLogger(__name__)
-
-
-def calculate_start_date(timeframe: str) -> datetime:
-    """Calculate start date based on timeframe."""
-    now = datetime.utcnow()
-
-    if timeframe == "24h":
-        return now - timedelta(hours=24)
-    elif timeframe == "7d":
-        return now - timedelta(days=7)
-    elif timeframe == "30d":
-        return now - timedelta(days=30)
-    elif timeframe == "90d":
-        return now - timedelta(days=90)
-    else:  # 'all'
-        return now - timedelta(days=365 * 10)  # 10 years back
-
-
-def calculate_percentage_change(current: float, previous: float) -> float:
-    """Calculate percentage change between two values."""
-    if previous == 0:
-        return 100.0 if current > 0 else 0.0
-    return ((current - previous) / previous) * 100
 
 
 async def get_user_metrics(
@@ -57,11 +52,6 @@ async def get_user_metrics(
 
     # For now, return mock data with realistic values
     # In production, these would be actual database queries
-
-    # Calculate comparison period (previous period of same length)
-    period_length = end_date - start_date
-    prev_start = start_date - period_length
-    prev_end = start_date
 
     # Current period metrics (mock data)
     dau = 1247
@@ -232,9 +222,6 @@ async def get_trend_data(
     # Generate mock time series data
     # In production, this would query actual data
 
-    data_points = []
-    period_length = end_date - start_date
-
     # Determine granularity based on timeframe
     if timeframe == "24h":
         intervals = 24
@@ -320,7 +307,7 @@ async def get_active_alerts(
     """Get active system alerts."""
 
     # Mock alerts - replace with actual query
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     return [
         Alert(
@@ -357,7 +344,7 @@ async def get_top_users(
     """Get top users by activity."""
 
     # Mock data - replace with actual query
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     return [
         TopUser(
@@ -413,7 +400,7 @@ async def get_executive_dashboard_data(
     Aggregates all metrics, trends, and alerts in parallel for performance.
     """
 
-    end_date = datetime.utcnow()
+    end_date = datetime.now(timezone.utc)
     start_date = calculate_start_date(timeframe)
 
     # Fetch all data in parallel for better performance
@@ -439,6 +426,7 @@ async def get_executive_dashboard_data(
     # Handle any errors in parallel execution
     def handle_error(result, default):
         if isinstance(result, Exception):
+            logger.error(f"Error fetching metric data: {result}", exc_info=True)
             return default
         return result
 
@@ -475,6 +463,15 @@ async def get_executive_dashboard_data(
 class ExecutiveMetricsService:
     """Service for executive dashboard metrics with automatic caching."""
 
+    def __init__(self, db: Optional[AsyncSession] = None):
+        """
+        Initialize the service.
+
+        Args:
+            db: Database session (optional, can be passed per method call)
+        """
+        self.db = db
+
     @cached(
         key_func=lambda self, workspace_id, timeframe, **_: CacheKeys.executive_dashboard(
             workspace_id, timeframe
@@ -482,7 +479,11 @@ class ExecutiveMetricsService:
         ttl=CacheKeys.TTL_LONG,
     )
     async def get_executive_overview(
-        self, workspace_id: str, timeframe: str = "30d", skip_cache: bool = False
+        self,
+        workspace_id: str,
+        timeframe: str = "30d",
+        skip_cache: bool = False,
+        db: Optional[AsyncSession] = None,
     ) -> Dict[str, Any]:
         """
         Get executive dashboard overview with caching.
@@ -491,21 +492,454 @@ class ExecutiveMetricsService:
             workspace_id: Workspace identifier
             timeframe: Time period (7d, 30d, 90d)
             skip_cache: Bypass cache if True
+            db: Database session
 
         Returns:
             Dictionary with executive metrics
         """
+        session = db or self.db
+        if not session:
+            raise ValueError("Database session required")
+
         logger.info(
             f"Fetching executive overview for workspace {workspace_id}, timeframe {timeframe}"
         )
 
-        # Parse timeframe
+        try:
+            # Parse timeframe
+            days = self._parse_timeframe(timeframe)
+            end_date = datetime.now(timezone.utc)
+            start_date = end_date - timedelta(days=days)
+
+            # Calculate metrics in parallel for better performance
+            dau = await self._calculate_daily_active_users(
+                session, workspace_id, end_date
+            )
+            wau = await self._calculate_weekly_active_users(
+                session, workspace_id, end_date
+            )
+            mau = await self._calculate_monthly_active_users(
+                session, workspace_id, end_date
+            )
+
+            total_executions = await self._calculate_total_executions(
+                session, workspace_id, start_date, end_date
+            )
+            success_rate = await self._calculate_success_rate(
+                session, workspace_id, start_date, end_date
+            )
+
+            # Business metrics (currently returning 0 as revenue tracking not implemented)
+            mrr = 0.0
+            churn_rate = 0.0
+            ltv = 0.0
+
+            return {
+                "workspace_id": workspace_id,
+                "timeframe": timeframe,
+                "period": {
+                    "start": start_date.isoformat(),
+                    "end": end_date.isoformat(),
+                },
+                "mrr": mrr,
+                "churn_rate": churn_rate,
+                "ltv": ltv,
+                "dau": dau,
+                "wau": wau,
+                "mau": mau,
+                "total_executions": total_executions,
+                "success_rate": success_rate,
+                "cached_at": None,  # Will be populated by caching layer
+            }
+
+        except Exception as e:
+            logger.error(
+                f"Error fetching executive overview for workspace {workspace_id}: {e}",
+                exc_info=True,
+            )
+            # Return safe defaults on error
+            return self._get_default_overview(workspace_id, timeframe)
+
+    @cached(
+        key_func=lambda self, workspace_id, timeframe, **_: CacheKeys.workspace_metrics(
+            workspace_id, "revenue", timeframe
+        ),
+        ttl=CacheKeys.TTL_LONG,
+    )
+    async def get_revenue_metrics(
+        self,
+        workspace_id: str,
+        timeframe: str = "30d",
+        skip_cache: bool = False,
+        db: Optional[AsyncSession] = None,
+    ) -> Dict[str, Any]:
+        """
+        Get revenue metrics with caching.
+
+        Args:
+            workspace_id: Workspace identifier
+            timeframe: Time period
+            skip_cache: Bypass cache if True
+            db: Database session
+
+        Returns:
+            Revenue metrics and trends
+        """
+        logger.info(
+            f"Fetching revenue metrics for workspace {workspace_id}, timeframe {timeframe}"
+        )
+
+        try:
+            # Revenue tracking not yet implemented - return placeholders
+            # TODO: Implement when billing/subscription tables are added
+            return {
+                "workspace_id": workspace_id,
+                "timeframe": timeframe,
+                "total_revenue": 0,
+                "mrr": 0,
+                "arr": 0,
+                "trend": [],
+                "growth_rate": 0.0,
+            }
+        except Exception as e:
+            logger.error(
+                f"Error fetching revenue metrics for workspace {workspace_id}: {e}",
+                exc_info=True,
+            )
+            return {
+                "workspace_id": workspace_id,
+                "timeframe": timeframe,
+                "total_revenue": 0,
+                "mrr": 0,
+                "arr": 0,
+                "trend": [],
+                "growth_rate": 0.0,
+            }
+
+    @cached(
+        key_func=lambda self, workspace_id, **_: CacheKeys.workspace_metrics(
+            workspace_id, "kpis", "current"
+        ),
+        ttl=CacheKeys.TTL_MEDIUM,
+    )
+    async def get_key_performance_indicators(
+        self, workspace_id: str, skip_cache: bool = False, db: Optional[AsyncSession] = None
+    ) -> Dict[str, Any]:
+        """
+        Get key performance indicators with caching.
+
+        Args:
+            workspace_id: Workspace identifier
+            skip_cache: Bypass cache if True
+            db: Database session
+
+        Returns:
+            Key performance indicators
+        """
+        session = db or self.db
+        if not session:
+            raise ValueError("Database session required")
+
+        logger.info(f"Fetching KPIs for workspace {workspace_id}")
+
+        try:
+            # Calculate KPIs from database
+            total_users = await self._calculate_total_users(session, workspace_id)
+            active_agents = await self._calculate_active_agents(session, workspace_id)
+
+            # Use last 30 days for execution metrics
+            end_date = datetime.now(timezone.utc)
+            start_date = end_date - timedelta(days=30)
+
+            total_executions = await self._calculate_total_executions(
+                session, workspace_id, start_date, end_date
+            )
+            success_rate = await self._calculate_success_rate(
+                session, workspace_id, start_date, end_date
+            )
+            avg_execution_time = await self._calculate_avg_execution_time(
+                session, workspace_id, start_date, end_date
+            )
+            total_credits_used = await self._calculate_total_credits(
+                session, workspace_id, start_date, end_date
+            )
+
+            return {
+                "workspace_id": workspace_id,
+                "total_users": total_users,
+                "active_agents": active_agents,
+                "total_executions": total_executions,
+                "success_rate": success_rate,
+                "avg_execution_time": avg_execution_time,
+                "total_credits_used": total_credits_used,
+            }
+        except Exception as e:
+            logger.error(
+                f"Error fetching KPIs for workspace {workspace_id}: {e}",
+                exc_info=True,
+            )
+            return {
+                "workspace_id": workspace_id,
+                "total_users": 0,
+                "active_agents": 0,
+                "total_executions": 0,
+                "success_rate": 0.0,
+                "avg_execution_time": 0.0,
+                "total_credits_used": 0,
+            }
+
+    def _parse_timeframe(self, timeframe: str) -> int:
+        """
+        Parse timeframe string to number of days.
+
+        Args:
+            timeframe: Timeframe string (e.g., '7d', '30d', '90d')
+
+        Returns:
+            Number of days
+        """
+        timeframe_map = {
+            "24h": TIMEFRAME_24H,
+            "7d": TIMEFRAME_7D,
+            "30d": TIMEFRAME_30D,
+            "90d": TIMEFRAME_90D,
+            "1y": TIMEFRAME_1Y,
+        }
+
+        return timeframe_map.get(timeframe, DEFAULT_TIMEFRAME_DAYS)
+
+    async def _calculate_daily_active_users(
+        self, db: AsyncSession, workspace_id: str, target_date: datetime
+    ) -> int:
+        """Calculate Daily Active Users (last 24 hours)."""
+        try:
+            start_time = target_date - timedelta(days=1)
+            stmt = (
+                select(func.count(distinct(ExecutionLog.user_id)))
+                .where(
+                    and_(
+                        ExecutionLog.workspace_id == workspace_id,
+                        ExecutionLog.started_at >= start_time,
+                        ExecutionLog.started_at <= target_date,
+                    )
+                )
+            )
+            result = await db.execute(stmt)
+            return result.scalar() or 0
+        except Exception as e:
+            logger.error(f"Error calculating DAU: {e}", exc_info=True)
+            return 0
+
+    async def _calculate_weekly_active_users(
+        self, db: AsyncSession, workspace_id: str, target_date: datetime
+    ) -> int:
+        """Calculate Weekly Active Users (last 7 days)."""
+        try:
+            start_time = target_date - timedelta(days=7)
+            stmt = (
+                select(func.count(distinct(ExecutionLog.user_id)))
+                .where(
+                    and_(
+                        ExecutionLog.workspace_id == workspace_id,
+                        ExecutionLog.started_at >= start_time,
+                        ExecutionLog.started_at <= target_date,
+                    )
+                )
+            )
+            result = await db.execute(stmt)
+            return result.scalar() or 0
+        except Exception as e:
+            logger.error(f"Error calculating WAU: {e}", exc_info=True)
+            return 0
+
+    async def _calculate_monthly_active_users(
+        self, db: AsyncSession, workspace_id: str, target_date: datetime
+    ) -> int:
+        """Calculate Monthly Active Users (last 30 days)."""
+        try:
+            start_time = target_date - timedelta(days=30)
+            stmt = (
+                select(func.count(distinct(ExecutionLog.user_id)))
+                .where(
+                    and_(
+                        ExecutionLog.workspace_id == workspace_id,
+                        ExecutionLog.started_at >= start_time,
+                        ExecutionLog.started_at <= target_date,
+                    )
+                )
+            )
+            result = await db.execute(stmt)
+            return result.scalar() or 0
+        except Exception as e:
+            logger.error(f"Error calculating MAU: {e}", exc_info=True)
+            return 0
+
+    async def _calculate_total_executions(
+        self,
+        db: AsyncSession,
+        workspace_id: str,
+        start_date: datetime,
+        end_date: datetime,
+    ) -> int:
+        """Calculate total executions in time range."""
+        try:
+            stmt = (
+                select(func.count(ExecutionLog.id))
+                .where(
+                    and_(
+                        ExecutionLog.workspace_id == workspace_id,
+                        ExecutionLog.started_at >= start_date,
+                        ExecutionLog.started_at <= end_date,
+                    )
+                )
+            )
+            result = await db.execute(stmt)
+            return result.scalar() or 0
+        except Exception as e:
+            logger.error(f"Error calculating total executions: {e}", exc_info=True)
+            return 0
+
+    async def _calculate_success_rate(
+        self,
+        db: AsyncSession,
+        workspace_id: str,
+        start_date: datetime,
+        end_date: datetime,
+    ) -> float:
+        """Calculate success rate percentage."""
+        try:
+            # Count total executions
+            total_stmt = (
+                select(func.count(ExecutionLog.id))
+                .where(
+                    and_(
+                        ExecutionLog.workspace_id == workspace_id,
+                        ExecutionLog.started_at >= start_date,
+                        ExecutionLog.started_at <= end_date,
+                    )
+                )
+            )
+            total_result = await db.execute(total_stmt)
+            total = total_result.scalar() or 0
+
+            if total == 0:
+                return 0.0
+
+            # Count successful executions
+            success_stmt = (
+                select(func.count(ExecutionLog.id))
+                .where(
+                    and_(
+                        ExecutionLog.workspace_id == workspace_id,
+                        ExecutionLog.started_at >= start_date,
+                        ExecutionLog.started_at <= end_date,
+                        ExecutionLog.status == "success",
+                    )
+                )
+            )
+            success_result = await db.execute(success_stmt)
+            successful = success_result.scalar() or 0
+
+            return round((successful / total) * PERCENTAGE_MULTIPLIER, 2)
+        except Exception as e:
+            logger.error(f"Error calculating success rate: {e}", exc_info=True)
+            return 0.0
+
+    async def _calculate_avg_execution_time(
+        self,
+        db: AsyncSession,
+        workspace_id: str,
+        start_date: datetime,
+        end_date: datetime,
+    ) -> float:
+        """Calculate average execution time in seconds."""
+        try:
+            stmt = (
+                select(func.avg(ExecutionLog.duration))
+                .where(
+                    and_(
+                        ExecutionLog.workspace_id == workspace_id,
+                        ExecutionLog.started_at >= start_date,
+                        ExecutionLog.started_at <= end_date,
+                        ExecutionLog.duration.isnot(None),
+                    )
+                )
+            )
+            result = await db.execute(stmt)
+            avg_time = result.scalar()
+            return round(avg_time, 2) if avg_time else 0.0
+        except Exception as e:
+            logger.error(f"Error calculating avg execution time: {e}", exc_info=True)
+            return 0.0
+
+    async def _calculate_total_credits(
+        self,
+        db: AsyncSession,
+        workspace_id: str,
+        start_date: datetime,
+        end_date: datetime,
+    ) -> int:
+        """Calculate total credits used."""
+        try:
+            stmt = (
+                select(func.sum(ExecutionLog.credits_used))
+                .where(
+                    and_(
+                        ExecutionLog.workspace_id == workspace_id,
+                        ExecutionLog.started_at >= start_date,
+                        ExecutionLog.started_at <= end_date,
+                    )
+                )
+            )
+            result = await db.execute(stmt)
+            total = result.scalar()
+            return total if total else 0
+        except Exception as e:
+            logger.error(f"Error calculating total credits: {e}", exc_info=True)
+            return 0
+
+    async def _calculate_total_users(
+        self, db: AsyncSession, workspace_id: str
+    ) -> int:
+        """Calculate total unique users in workspace."""
+        try:
+            stmt = (
+                select(func.count(distinct(ExecutionLog.user_id)))
+                .where(ExecutionLog.workspace_id == workspace_id)
+            )
+            result = await db.execute(stmt)
+            return result.scalar() or 0
+        except Exception as e:
+            logger.error(f"Error calculating total users: {e}", exc_info=True)
+            return 0
+
+    async def _calculate_active_agents(
+        self, db: AsyncSession, workspace_id: str
+    ) -> int:
+        """Calculate active agents (agents with executions in last 30 days)."""
+        try:
+            cutoff_date = datetime.now(timezone.utc) - timedelta(days=30)
+            stmt = (
+                select(func.count(distinct(ExecutionLog.agent_id)))
+                .where(
+                    and_(
+                        ExecutionLog.workspace_id == workspace_id,
+                        ExecutionLog.started_at >= cutoff_date,
+                    )
+                )
+            )
+            result = await db.execute(stmt)
+            return result.scalar() or 0
+        except Exception as e:
+            logger.error(f"Error calculating active agents: {e}", exc_info=True)
+            return 0
+
+    def _get_default_overview(self, workspace_id: str, timeframe: str) -> Dict[str, Any]:
+        """Return default overview when errors occur."""
         days = self._parse_timeframe(timeframe)
-        end_date = date.today()
+        end_date = datetime.now(timezone.utc)
         start_date = end_date - timedelta(days=days)
 
-        # This would call actual metrics services
-        # For now, returning placeholder data
         return {
             "workspace_id": workspace_id,
             "timeframe": timeframe,
@@ -518,89 +952,8 @@ class ExecutiveMetricsService:
             "mau": 0,
             "total_executions": 0,
             "success_rate": 0.0,
-            "cached_at": None,  # Will be populated by caching layer
+            "cached_at": None,
         }
-
-    @cached(
-        key_func=lambda self, workspace_id, timeframe, **_: CacheKeys.workspace_metrics(
-            workspace_id, "revenue", timeframe
-        ),
-        ttl=CacheKeys.TTL_LONG,
-    )
-    async def get_revenue_metrics(
-        self, workspace_id: str, timeframe: str = "30d", skip_cache: bool = False
-    ) -> Dict[str, Any]:
-        """
-        Get revenue metrics with caching.
-
-        Args:
-            workspace_id: Workspace identifier
-            timeframe: Time period
-            skip_cache: Bypass cache if True
-
-        Returns:
-            Revenue metrics and trends
-        """
-        logger.info(
-            f"Fetching revenue metrics for workspace {workspace_id}, timeframe {timeframe}"
-        )
-
-        # Placeholder implementation
-        return {
-            "workspace_id": workspace_id,
-            "timeframe": timeframe,
-            "total_revenue": 0,
-            "mrr": 0,
-            "arr": 0,
-            "trend": [],
-            "growth_rate": 0.0,
-        }
-
-    @cached(
-        key_func=lambda self, workspace_id, **_: CacheKeys.workspace_metrics(
-            workspace_id, "kpis", "current"
-        ),
-        ttl=CacheKeys.TTL_MEDIUM,
-    )
-    async def get_key_performance_indicators(
-        self, workspace_id: str, skip_cache: bool = False
-    ) -> Dict[str, Any]:
-        """
-        Get key performance indicators with caching.
-
-        Args:
-            workspace_id: Workspace identifier
-            skip_cache: Bypass cache if True
-
-        Returns:
-            Key performance indicators
-        """
-        logger.info(f"Fetching KPIs for workspace {workspace_id}")
-
-        # Placeholder implementation
-        return {
-            "workspace_id": workspace_id,
-            "total_users": 0,
-            "active_agents": 0,
-            "total_executions": 0,
-            "success_rate": 0.0,
-            "avg_execution_time": 0.0,
-            "total_credits_used": 0,
-        }
-
-    def _parse_timeframe(self, timeframe: str) -> int:
-        """
-        Parse timeframe string to number of days.
-
-        Args:
-            timeframe: Timeframe string (e.g., '7d', '30d', '90d')
-
-        Returns:
-            Number of days
-        """
-        timeframe_map = {"7d": 7, "30d": 30, "90d": 90, "1y": 365, "24h": 1}
-
-        return timeframe_map.get(timeframe, 30)
 
 
 # Singleton instance

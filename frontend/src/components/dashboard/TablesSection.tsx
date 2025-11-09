@@ -163,7 +163,10 @@ export function TablesSection({ data }: TablesSectionProps) {
                       {format(new Date(alert.triggeredAt), 'MMM d, yyyy HH:mm')}
                     </p>
                   </div>
-                  <button className="ml-4 text-gray-400 hover:text-gray-600">
+                  <button 
+                    className="ml-4 text-gray-400 hover:text-gray-600"
+                    aria-label="Dismiss alert"
+                  >
                     <svg
                       className="h-5 w-5"
                       fill="none"
