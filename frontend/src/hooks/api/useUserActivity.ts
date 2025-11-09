@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import apiClient from '@/lib/api/client'
 import { endpoints } from '@/lib/api/endpoints'
-import type { UserActivityData, TimeFrame } from '@/types/user-activity'
+import type { UserActivityData, TimeFrame, CohortAnalysisData, CohortType, CohortPeriod } from '@/types/user-activity'
 
 interface UseUserActivityOptions {
   workspaceId: string
@@ -92,6 +92,43 @@ export function useCohortAnalysis({
       return response.data
     },
     enabled: enabled && !!workspaceId,
+  })
+}
+
+interface UseAdvancedCohortAnalysisOptions {
+  workspaceId: string
+  cohortType?: CohortType
+  cohortPeriod?: CohortPeriod
+  startDate?: string
+  endDate?: string
+  enabled?: boolean
+}
+
+export function useAdvancedCohortAnalysis({
+  workspaceId,
+  cohortType = 'signup',
+  cohortPeriod = 'monthly',
+  startDate,
+  endDate,
+  enabled = true,
+}: UseAdvancedCohortAnalysisOptions) {
+  return useQuery<CohortAnalysisData>({
+    queryKey: ['advanced-cohort-analysis', workspaceId, cohortType, cohortPeriod, startDate, endDate],
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        cohort_type: cohortType,
+        cohort_period: cohortPeriod
+      })
+      if (startDate) params.append('start_date', startDate)
+      if (endDate) params.append('end_date', endDate)
+
+      const response = await apiClient.get(
+        `${endpoints.advancedCohortAnalysis(workspaceId)}?${params.toString()}`
+      )
+      return response.data
+    },
+    enabled: enabled && !!workspaceId,
+    refetchInterval: 600000, // Refresh every 10 minutes (cohort data changes less frequently)
   })
 }
 

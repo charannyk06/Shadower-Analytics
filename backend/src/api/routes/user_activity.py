@@ -103,7 +103,7 @@ async def get_cohort_analysis(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Get cohort analysis for user retention.
+    Get cohort analysis for user retention (basic version).
 
     Requires: owner or admin role
 
@@ -152,6 +152,71 @@ async def get_cohort_analysis(
     except Exception as e:
         logger.error(f"Error generating cohort analysis: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to generate cohort analysis")
+
+
+@router.get("/{workspace_id}/cohorts/advanced")
+async def get_advanced_cohort_analysis(
+    workspace_id: str,
+    cohort_type: str = Query("signup", pattern="^(signup|activation|feature_adoption|custom)$"),
+    cohort_period: str = Query("monthly", pattern="^(daily|weekly|monthly)$"),
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(require_owner_or_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get advanced cohort analysis with LTV, segments, and comparison metrics.
+
+    Requires: owner or admin role
+
+    Args:
+        workspace_id: The workspace ID
+        cohort_type: Type of cohort (signup, activation, feature_adoption, custom)
+        cohort_period: Period grouping (daily, weekly, monthly)
+        start_date: Start date in YYYY-MM-DD format
+        end_date: End date in YYYY-MM-DD format
+
+    Returns:
+        Advanced cohort analysis data with metrics and comparisons
+    """
+    try:
+        # Validate workspace access
+        await WorkspaceAccess.validate_workspace_access(current_user, workspace_id)
+
+        from datetime import timedelta
+        from ...services.analytics.cohort_analysis import CohortAnalysisService
+
+        # Parse dates
+        start_date_obj = None
+        end_date_obj = None
+
+        if start_date:
+            start_date_obj = datetime.strptime(start_date, "%Y-%m-%d").date()
+        else:
+            start_date_obj = (datetime.utcnow() - timedelta(days=180)).date()
+
+        if end_date:
+            end_date_obj = datetime.strptime(end_date, "%Y-%m-%d").date()
+        else:
+            end_date_obj = datetime.utcnow().date()
+
+        service = CohortAnalysisService(db)
+        analysis = await service.generate_cohort_analysis(
+            workspace_id,
+            cohort_type,
+            cohort_period,
+            start_date_obj,
+            end_date_obj
+        )
+
+        return analysis
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating advanced cohort analysis: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to generate advanced cohort analysis")
 
 
 @router.get("/{workspace_id}/churn")
