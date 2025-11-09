@@ -1,8 +1,14 @@
 """Metric schemas."""
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, List
 from datetime import date, datetime
+
+
+def to_camel(string: str) -> str:
+    """Convert snake_case to camelCase."""
+    components = string.split('_')
+    return components[0] + ''.join(x.title() for x in components[1:])
 
 
 class TimeRange(BaseModel):
@@ -41,6 +47,11 @@ class TimeSeriesData(BaseModel):
 class UserMetrics(BaseModel):
     """User engagement metrics."""
 
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
     dau: int
     dau_change: float
     wau: int
@@ -54,6 +65,11 @@ class UserMetrics(BaseModel):
 
 class ExecutionMetrics(BaseModel):
     """Execution performance metrics."""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
 
     total_runs: int
     total_runs_change: float
@@ -70,6 +86,11 @@ class ExecutionMetrics(BaseModel):
 class BusinessMetrics(BaseModel):
     """Business and financial metrics."""
 
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
     mrr: float
     mrr_change: float
     arr: float
@@ -85,6 +106,11 @@ class BusinessMetrics(BaseModel):
 class TopAgent(BaseModel):
     """Top performing agent."""
 
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
     id: str
     name: str
     runs: int
@@ -95,6 +121,11 @@ class TopAgent(BaseModel):
 class AgentMetrics(BaseModel):
     """Agent performance metrics."""
 
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
     total_agents: int
     active_agents: int
     top_agents: List[TopAgent]
@@ -102,6 +133,11 @@ class AgentMetrics(BaseModel):
 
 class TopUser(BaseModel):
     """Top user by activity."""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
 
     id: str
     name: str
@@ -113,6 +149,11 @@ class TopUser(BaseModel):
 
 class Alert(BaseModel):
     """System alert."""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
 
     id: str
     type: str
@@ -145,6 +186,11 @@ class ExecutiveMetrics(BaseModel):
 
 class ExecutiveDashboardResponse(BaseModel):
     """Comprehensive executive dashboard response."""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
 
     timeframe: str
     period: Period
