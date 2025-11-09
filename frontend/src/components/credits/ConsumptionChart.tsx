@@ -1,6 +1,5 @@
 import { ConsumptionTrends } from '@/hooks/api/useCreditConsumption'
 import {
-  LineChart,
   Line,
   XAxis,
   YAxis,
