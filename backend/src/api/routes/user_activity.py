@@ -3,13 +3,14 @@
 from typing import Optional, Dict, Any
 from fastapi import APIRouter, Depends, Query, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 
 from ...core.database import get_db
 from ...core.privacy import anonymize_ip
 from ...services.analytics.user_activity import UserActivityService
 from ...services.analytics.retention_analysis import RetentionAnalysisService
+from ...services.analytics.cohort_analysis import CohortAnalysisService
 from ...models.schemas.user_activity import UserActivityData, TrackActivityRequest, TrackActivityResponse
 from ..dependencies.auth import require_owner_or_admin, get_current_user
 from ..middleware.workspace import WorkspaceAccess
@@ -182,9 +183,6 @@ async def get_advanced_cohort_analysis(
     try:
         # Validate workspace access
         await WorkspaceAccess.validate_workspace_access(current_user, workspace_id)
-
-        from datetime import timedelta
-        from ...services.analytics.cohort_analysis import CohortAnalysisService
 
         # Parse dates
         start_date_obj = None

@@ -1,9 +1,9 @@
 """Cohort analysis for user retention and behavioral tracking."""
 
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from typing import Dict, List, Any, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, distinct, case
+from sqlalchemy import select, func, and_, distinct
 import asyncio
 
 from ...models.database.tables import UserActivity, ExecutionLog
@@ -242,7 +242,6 @@ class CohortAnalysisService:
         revenue_data = revenue_result.fetchone()
 
         avg_revenue = revenue_data.avg_revenue or 0.0
-        total_revenue = revenue_data.total_revenue or 0.0
 
         # Calculate engagement score
         engagement_query = select(
@@ -338,15 +337,17 @@ class CohortAnalysisService:
             for c in cohorts
         ]
 
-        cohorts_with_retention.sort(key=lambda x: x[1], reverse=True)
+        # Sort by retention rate to find best/worst performers
+        sorted_by_retention = sorted(cohorts_with_retention, key=lambda x: x[1], reverse=True)
 
-        best_performing = cohorts_with_retention[0][0] if cohorts_with_retention else None
-        worst_performing = cohorts_with_retention[-1][0] if cohorts_with_retention else None
+        best_performing = sorted_by_retention[0][0] if sorted_by_retention else None
+        worst_performing = sorted_by_retention[-1][0] if sorted_by_retention else None
 
         # Calculate average retention
         avg_retention = sum(c[1] for c in cohorts_with_retention) / len(cohorts_with_retention) if cohorts_with_retention else 0
 
-        # Determine trend (compare first half vs second half)
+        # Determine trend (compare first half vs second half chronologically)
+        # Note: cohorts_with_retention maintains the original chronological order from input
         mid_point = len(cohorts_with_retention) // 2
         if mid_point > 0:
             first_half_avg = sum(c[1] for c in cohorts_with_retention[:mid_point]) / mid_point

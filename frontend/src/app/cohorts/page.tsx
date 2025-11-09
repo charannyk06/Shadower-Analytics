@@ -161,20 +161,24 @@ export default function CohortAnalysisDashboard() {
             <div className="bg-white rounded-lg shadow p-6">
               <p className="text-sm text-gray-600 mb-1">Avg LTV</p>
               <p className="text-2xl font-bold text-gray-900">
-                {(
-                  data.cohorts.reduce((sum, c) => sum + c.metrics.ltv, 0) /
-                  data.cohorts.length
-                ).toFixed(0)}{' '}
+                {data.cohorts.length > 0
+                  ? (
+                      data.cohorts.reduce((sum, c) => sum + c.metrics.ltv, 0) /
+                      data.cohorts.length
+                    ).toFixed(0)
+                  : '0'}{' '}
                 credits
               </p>
             </div>
             <div className="bg-white rounded-lg shadow p-6">
               <p className="text-sm text-gray-600 mb-1">Avg Churn Rate</p>
               <p className="text-2xl font-bold text-gray-900">
-                {(
-                  data.cohorts.reduce((sum, c) => sum + c.metrics.churnRate, 0) /
-                  data.cohorts.length
-                ).toFixed(1)}
+                {data.cohorts.length > 0
+                  ? (
+                      data.cohorts.reduce((sum, c) => sum + c.metrics.churnRate, 0) /
+                      data.cohorts.length
+                    ).toFixed(1)
+                  : '0.0'}
                 %
               </p>
             </div>

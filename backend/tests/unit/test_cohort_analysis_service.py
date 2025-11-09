@@ -1,8 +1,8 @@
 """Unit tests for cohort analysis service."""
 
 import pytest
-from datetime import datetime, timedelta, date
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import date
+from unittest.mock import AsyncMock, MagicMock
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.services.analytics.cohort_analysis import CohortAnalysisService
