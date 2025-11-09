@@ -133,3 +133,131 @@ class UserSegment(Base):
 
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+class AgentLeaderboard(Base):
+    """Agent leaderboard rankings table."""
+
+    __tablename__ = "agent_leaderboard"
+    __table_args__ = (
+        Index('idx_agent_leaderboard_workspace_timeframe', 'workspace_id', 'timeframe', 'criteria', 'rank'),
+        Index('idx_agent_leaderboard_rank', 'timeframe', 'criteria', 'rank'),
+        Index('idx_agent_leaderboard_calculated', 'calculated_at'),
+        Index('idx_agent_leaderboard_agent', 'agent_id', 'timeframe'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True)
+    workspace_id = Column(String, index=True, nullable=False)
+    agent_id = Column(String, index=True, nullable=False)
+
+    # Ranking information
+    rank = Column(Integer, nullable=False)
+    previous_rank = Column(Integer)
+    rank_change = Column(String(10))  # 'up', 'down', 'same', 'new'
+
+    # Timeframe and criteria
+    timeframe = Column(String(20), nullable=False)  # '24h', '7d', '30d', '90d', 'all'
+    criteria = Column(String(50), nullable=False)  # 'runs', 'success_rate', 'speed', 'efficiency', 'popularity'
+
+    # Agent metrics (snapshot)
+    total_runs = Column(Integer, default=0)
+    success_rate = Column(Float, default=0.0)
+    avg_runtime = Column(Float, default=0.0)
+    credits_per_run = Column(Float, default=0.0)
+    unique_users = Column(Integer, default=0)
+
+    # Score and percentile
+    score = Column(Float, nullable=False)
+    percentile = Column(Float)
+    badge = Column(String(20))  # 'gold', 'silver', 'bronze'
+
+    # Metadata
+    calculated_at = Column(DateTime, default=func.now())
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+class UserLeaderboard(Base):
+    """User leaderboard rankings table."""
+
+    __tablename__ = "user_leaderboard"
+    __table_args__ = (
+        Index('idx_user_leaderboard_workspace_timeframe', 'workspace_id', 'timeframe', 'criteria', 'rank'),
+        Index('idx_user_leaderboard_rank', 'timeframe', 'criteria', 'rank'),
+        Index('idx_user_leaderboard_calculated', 'calculated_at'),
+        Index('idx_user_leaderboard_user', 'user_id', 'timeframe'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True)
+    workspace_id = Column(String, index=True, nullable=False)
+    user_id = Column(String, index=True, nullable=False)
+
+    # Ranking information
+    rank = Column(Integer, nullable=False)
+    previous_rank = Column(Integer)
+    rank_change = Column(String(10))  # 'up', 'down', 'same', 'new'
+
+    # Timeframe and criteria
+    timeframe = Column(String(20), nullable=False)  # '24h', '7d', '30d', '90d', 'all'
+    criteria = Column(String(50), nullable=False)  # 'activity', 'efficiency', 'contribution', 'savings'
+
+    # User metrics (snapshot)
+    total_actions = Column(Integer, default=0)
+    success_rate = Column(Float, default=0.0)
+    credits_used = Column(Float, default=0.0)
+    credits_saved = Column(Float, default=0.0)
+    agents_used = Column(Integer, default=0)
+
+    # Score and percentile
+    score = Column(Float, nullable=False)
+    percentile = Column(Float)
+
+    # Achievements stored as JSON array
+    achievements = Column(JSON, default=[])
+
+    # Metadata
+    calculated_at = Column(DateTime, default=func.now())
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+class WorkspaceLeaderboard(Base):
+    """Workspace leaderboard rankings table."""
+
+    __tablename__ = "workspace_leaderboard"
+    __table_args__ = (
+        Index('idx_workspace_leaderboard_timeframe', 'timeframe', 'criteria', 'rank'),
+        Index('idx_workspace_leaderboard_rank', 'timeframe', 'criteria', 'rank'),
+        Index('idx_workspace_leaderboard_calculated', 'calculated_at'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True)
+    workspace_id = Column(String, index=True, nullable=False)
+
+    # Ranking information
+    rank = Column(Integer, nullable=False)
+    previous_rank = Column(Integer)
+    rank_change = Column(String(10))  # 'up', 'down', 'same', 'new'
+
+    # Timeframe and criteria
+    timeframe = Column(String(20), nullable=False)  # '24h', '7d', '30d', '90d', 'all'
+    criteria = Column(String(50), nullable=False)  # 'activity', 'efficiency', 'growth', 'innovation'
+
+    # Workspace metrics (snapshot)
+    total_activity = Column(Integer, default=0)
+    active_users = Column(Integer, default=0)
+    agent_count = Column(Integer, default=0)
+    success_rate = Column(Float, default=0.0)
+    health_score = Column(Float, default=0.0)
+
+    # Score and tier
+    score = Column(Float, nullable=False)
+    tier = Column(String(20))  # 'platinum', 'gold', 'silver', 'bronze'
+
+    # Metadata
+    calculated_at = Column(DateTime, default=func.now())
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())

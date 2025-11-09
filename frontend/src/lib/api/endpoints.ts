@@ -57,4 +57,11 @@ export const endpoints = {
   creditBudget: `${API_VERSION}/credits/budget`,
   creditOptimization: `${API_VERSION}/credits/optimization`,
   creditForecast: `${API_VERSION}/credits/forecast`,
+
+  // Leaderboards
+  agentLeaderboard: `${API_VERSION}/leaderboards/agents`,
+  userLeaderboard: `${API_VERSION}/leaderboards/users`,
+  workspaceLeaderboard: `${API_VERSION}/leaderboards/workspaces`,
+  refreshLeaderboards: (workspaceId: string) => `${API_VERSION}/leaderboards/refresh/${workspaceId}`,
+  myAgentRank: (agentId: string) => `${API_VERSION}/leaderboards/my-rank/agent/${agentId}`,
 } as const;
