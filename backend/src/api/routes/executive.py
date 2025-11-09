@@ -9,7 +9,6 @@ from ...core.database import get_db
 from ...models.schemas.metrics import (
     ExecutiveMetrics,
     ExecutiveDashboardResponse,
-    TimeRange,
 )
 from ...services.metrics.executive_service import (
     executive_metrics_service,
