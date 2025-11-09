@@ -1,114 +1,105 @@
 /**
  * Seasonality Chart Component
- *
- * Displays seasonal patterns and cycles detected in the data
  */
 
-import React from 'react';
-import type { Patterns } from '@/types/trend-analysis';
+'use client';
+
+import { Patterns } from '@/hooks/api/useTrendAnalysis';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 interface SeasonalityChartProps {
   patterns: Patterns;
-  className?: string;
 }
 
-export function SeasonalityChart({ patterns, className = '' }: SeasonalityChartProps) {
-  const { seasonality, growth, cycles } = patterns;
+export function SeasonalityChart({ patterns }: SeasonalityChartProps) {
+  const { seasonality } = patterns;
+
+  if (!seasonality.detected) {
+    return (
+      <div className="flex items-center justify-center h-48 text-gray-500">
+        No significant seasonality detected
+      </div>
+    );
+  }
+
+  // Create chart data for peak and low periods
+  const chartData = [
+    ...seasonality.peakPeriods.map((period) => ({
+      period,
+      type: 'Peak',
+      value: seasonality.strength * 0.8, // Approximate relative value
+    })),
+    ...seasonality.lowPeriods.map((period) => ({
+      period,
+      type: 'Low',
+      value: seasonality.strength * 0.3, // Approximate relative value
+    })),
+  ];
 
   return (
-    <div className={`bg-white rounded-lg shadow p-6 ${className}`}>
-      <h3 className="text-lg font-semibold mb-4">Patterns & Seasonality</h3>
-
-      {/* Seasonality Section */}
-      <div className="mb-6">
-        <h4 className="font-medium text-gray-700 mb-3">Seasonality</h4>
-        {seasonality.detected ? (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg border border-green-200">
-              <div>
-                <div className="font-semibold text-green-800">
-                  {seasonality.type?.toUpperCase()} Pattern Detected
-                </div>
-                <div className="text-sm text-green-600">
-                  Strength: {seasonality.strength.toFixed(1)}%
-                </div>
-              </div>
-              <div className="text-2xl">📅</div>
-            </div>
-
-            {seasonality.peakPeriods.length > 0 && (
-              <div className="p-3 bg-blue-50 rounded-lg">
-                <div className="text-sm font-medium text-gray-700 mb-1">Peak Periods:</div>
-                <div className="text-sm text-blue-800">
-                  {seasonality.peakPeriods.join(', ')}
-                </div>
-              </div>
-            )}
-
-            {seasonality.lowPeriods.length > 0 && (
-              <div className="p-3 bg-gray-100 rounded-lg">
-                <div className="text-sm font-medium text-gray-700 mb-1">Low Periods:</div>
-                <div className="text-sm text-gray-600">
-                  {seasonality.lowPeriods.join(', ')}
-                </div>
-              </div>
-            )}
+    <div className="space-y-4">
+      {/* Seasonality Info */}
+      <div className="grid grid-cols-2 gap-4">
+        <div className="bg-blue-50 p-3 rounded-lg">
+          <div className="text-xs font-medium text-blue-600 mb-1">Type</div>
+          <div className="text-sm font-semibold text-blue-900 capitalize">
+            {seasonality.type}
           </div>
-        ) : (
-          <div className="p-4 bg-gray-50 rounded-lg text-center text-gray-500">
-            No significant seasonality detected
-          </div>
-        )}
-      </div>
-
-      {/* Growth Pattern Section */}
-      <div className="mb-6">
-        <h4 className="font-medium text-gray-700 mb-3">Growth Pattern</h4>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="p-3 bg-gray-50 rounded-lg">
-            <div className="text-xs text-gray-500">Type</div>
-            <div className="font-semibold capitalize">{growth.type}</div>
-          </div>
-          <div className="p-3 bg-gray-50 rounded-lg">
-            <div className="text-xs text-gray-500">Rate</div>
-            <div className="font-semibold">{growth.rate.toFixed(2)}%</div>
-          </div>
-          <div className="p-3 bg-gray-50 rounded-lg">
-            <div className="text-xs text-gray-500">Acceleration</div>
-            <div className="font-semibold">{growth.acceleration.toFixed(4)}</div>
-          </div>
-          <div className="p-3 bg-gray-50 rounded-lg">
-            <div className="text-xs text-gray-500">30d Projection</div>
-            <div className="font-semibold">{growth.projectedGrowth.toFixed(2)}%</div>
+        </div>
+        <div className="bg-blue-50 p-3 rounded-lg">
+          <div className="text-xs font-medium text-blue-600 mb-1">Strength</div>
+          <div className="text-sm font-semibold text-blue-900">
+            {seasonality.strength.toFixed(1)}%
           </div>
         </div>
       </div>
 
-      {/* Cycles Section */}
-      {cycles.length > 0 && (
+      {/* Peak and Low Periods */}
+      <div className="space-y-2">
         <div>
-          <h4 className="font-medium text-gray-700 mb-3">Cyclical Patterns</h4>
-          <div className="space-y-2">
-            {cycles.map((cycle, index) => (
-              <div key={index} className="p-3 bg-purple-50 rounded-lg border border-purple-200">
-                <div className="flex justify-between items-center">
-                  <div>
-                    <div className="text-sm font-medium">
-                      {cycle.period.toFixed(1)}-day cycle
-                    </div>
-                    <div className="text-xs text-gray-600">
-                      Amplitude: {cycle.amplitude.toFixed(2)}
-                    </div>
-                  </div>
-                  <div className="text-sm font-semibold text-purple-700">
-                    {(cycle.significance * 100).toFixed(0)}% sig.
-                  </div>
-                </div>
-              </div>
+          <div className="text-xs font-medium text-gray-600 mb-1">Peak Periods:</div>
+          <div className="flex flex-wrap gap-2">
+            {seasonality.peakPeriods.map((period) => (
+              <span
+                key={period}
+                className="px-2 py-1 bg-green-100 text-green-700 text-xs font-medium rounded"
+              >
+                {period}
+              </span>
             ))}
           </div>
         </div>
-      )}
+        <div>
+          <div className="text-xs font-medium text-gray-600 mb-1">Low Periods:</div>
+          <div className="flex flex-wrap gap-2">
+            {seasonality.lowPeriods.map((period) => (
+              <span
+                key={period}
+                className="px-2 py-1 bg-red-100 text-red-700 text-xs font-medium rounded"
+              >
+                {period}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Simple visualization */}
+      <div className="h-32">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={chartData}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+            <XAxis dataKey="period" tick={{ fontSize: 10 }} />
+            <YAxis tick={{ fontSize: 10 }} />
+            <Tooltip />
+            <Bar
+              dataKey="value"
+              fill="#3b82f6"
+              radius={[4, 4, 0, 0]}
+            />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }

@@ -79,6 +79,20 @@ async def verify_jwt_token(credentials: HTTPAuthorizationCredentials):
         )
 
 
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Security(security),
+) -> Dict[str, Any]:
+    """
+    FastAPI dependency to get current authenticated user.
+
+    Usage:
+        @router.get("/protected")
+        async def protected_route(current_user = Depends(get_current_user)):
+            return {"user_id": current_user["user_id"]}
+    """
+    return await jwt_auth.get_current_user(credentials)
+
+
 class AuthMiddleware:
     """Authentication middleware for protected routes."""
 
