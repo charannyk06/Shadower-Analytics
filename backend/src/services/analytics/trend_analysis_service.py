@@ -123,11 +123,13 @@ class TrendAnalysisService:
         days = self._parse_timeframe(timeframe)
         start_date = datetime.utcnow() - timedelta(days=days)
 
-        # Query based on metric type
+        # Query based on metric type (with parameterized query to prevent SQL injection)
         query = self._build_time_series_query(metric, workspace_id, start_date)
 
+        # Execute with parameterized values
         result = await self.db.execute(
-            text(query), {"workspace_id": workspace_id, "start_date": start_date}
+            text(query),
+            {"workspace_id": workspace_id, "start_date": start_date}
         )
         rows = result.fetchall()
 
@@ -139,8 +141,18 @@ class TrendAnalysisService:
             for row in rows
         ]
 
-    def _build_time_series_query(self, metric: str, workspace_id: str, start_date: datetime) -> str:
-        """Build SQL query for time series data based on metric type."""
+    def _build_time_series_query(
+        self,
+        metric: str,
+        workspace_id: str,
+        start_date: datetime
+    ) -> str:
+        """
+        Build SQL query for time series data based on metric type.
+
+        SECURITY NOTE: Uses parameterized queries to prevent SQL injection.
+        Parameters workspace_id and start_date are passed separately via text() binding.
+        """
         metric_queries = {
             "executions": """
                 SELECT
