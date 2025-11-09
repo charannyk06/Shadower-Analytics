@@ -7,7 +7,7 @@ import logging
 
 from ...core.database import get_db
 from ...models.schemas.agents import AgentMetrics, AgentPerformance, AgentStats
-from ...models.schemas.agent_analytics import AgentAnalyticsResponse, AgentListResponse
+from ...models.schemas.agent_analytics import AgentAnalyticsResponse
 from ...services.analytics.agent_analytics_service import AgentAnalyticsService
 from ...middleware.auth import get_current_user
 from ...middleware.workspace import validate_workspace_access
@@ -36,7 +36,7 @@ async def get_agent_analytics(
     timeframe: str = Query(
         "7d",
         description="Time range: 24h, 7d, 30d, 90d, all",
-        regex="^(24h|7d|30d|90d|all)$",
+        pattern="^(24h|7d|30d|90d|all)$",
     ),
     skip_cache: bool = Query(False, description="Skip cache and fetch fresh data"),
     db=Depends(get_db),

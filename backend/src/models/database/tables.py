@@ -1,6 +1,6 @@
 """SQLAlchemy database models."""
 
-from sqlalchemy import Column, String, Integer, Float, DateTime, Boolean, JSON, Enum
+from sqlalchemy import Column, String, Integer, Float, DateTime, Boolean, JSON, Enum, Index
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
 from datetime import datetime
@@ -79,7 +79,14 @@ class UserActivity(Base):
     """User activity event tracking table."""
 
     __tablename__ = "user_activity"
-    __table_args__ = {'schema': 'analytics'}
+    __table_args__ = (
+        # Compound indices for performance optimization
+        Index('idx_user_activity_workspace_created', 'workspace_id', 'created_at'),
+        Index('idx_user_activity_user_workspace', 'user_id', 'workspace_id'),
+        Index('idx_user_activity_session_created', 'session_id', 'created_at'),
+        Index('idx_user_activity_workspace_event_type', 'workspace_id', 'event_type'),
+        {'schema': 'analytics'}
+    )
 
     id = Column(String, primary_key=True, index=True)
     user_id = Column(String, index=True, nullable=False)

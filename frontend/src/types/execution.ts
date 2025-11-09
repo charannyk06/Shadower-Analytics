@@ -58,8 +58,6 @@ export interface ThroughputMetrics {
   executionsPerDay: number
   throughputTrend: ThroughputTrend[]
   peakThroughput: PeakThroughput
-  capacityUtilization: number
-  maxCapacity: number
 }
 
 export interface LatencyPercentiles {
@@ -78,9 +76,7 @@ export interface LatencyDistributionBucket {
 }
 
 export interface LatencyMetrics {
-  queueLatency: LatencyPercentiles
   executionLatency: LatencyPercentiles
-  endToEndLatency: LatencyPercentiles
   latencyDistribution: LatencyDistributionBucket[]
 }
 

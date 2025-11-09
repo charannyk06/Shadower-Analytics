@@ -1,26 +1,35 @@
 """User activity tracking API routes."""
 
-from typing import Optional
-from fastapi import APIRouter, Depends, Query, HTTPException
+from typing import Optional, Dict, Any
+from fastapi import APIRouter, Depends, Query, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
+from datetime import datetime
+import logging
 
 from ...core.database import get_db
+from ...core.privacy import anonymize_ip
 from ...services.analytics.user_activity import UserActivityService
 from ...services.analytics.retention_analysis import RetentionAnalysisService
-from ...models.schemas.user_activity import UserActivityData
+from ...models.schemas.user_activity import UserActivityData, TrackActivityRequest, TrackActivityResponse
+from ..dependencies.auth import require_owner_or_admin, get_current_user
+from ..middleware.workspace import WorkspaceAccess
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/user-activity", tags=["user-activity"])
 
 
 @router.get("/{workspace_id}", response_model=UserActivityData)
 async def get_user_activity(
     workspace_id: str,
-    timeframe: str = Query("30d", regex="^(7d|30d|90d|1y)$"),
+    timeframe: str = Query("30d", pattern="^(7d|30d|90d|1y)$"),
     segment_id: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(require_owner_or_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """
     Get comprehensive user activity analytics for a workspace.
+
+    Requires: owner or admin role
 
     Args:
         workspace_id: The workspace ID to analyze
@@ -31,11 +40,17 @@ async def get_user_activity(
         Complete user activity analytics data
     """
     try:
+        # Validate workspace access
+        await WorkspaceAccess.validate_workspace_access(current_user, workspace_id)
+
         service = UserActivityService(db)
         data = await service.get_user_activity(workspace_id, timeframe, segment_id)
         return data
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error fetching user activity: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch user activity data")
 
 
 @router.get("/{workspace_id}/retention/curve")
@@ -43,10 +58,13 @@ async def get_retention_curve(
     workspace_id: str,
     cohort_date: str = Query(..., description="Cohort date in YYYY-MM-DD format"),
     days: int = Query(90, ge=1, le=365),
+    current_user: Dict[str, Any] = Depends(require_owner_or_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """
     Get retention curve for a specific cohort.
+
+    Requires: owner or admin role
 
     Args:
         workspace_id: The workspace ID
@@ -57,7 +75,9 @@ async def get_retention_curve(
         Retention curve data
     """
     try:
-        from datetime import datetime
+        # Validate workspace access
+        await WorkspaceAccess.validate_workspace_access(current_user, workspace_id)
+
         cohort_date_obj = datetime.strptime(cohort_date, "%Y-%m-%d").date()
 
         service = RetentionAnalysisService(db)
@@ -66,20 +86,26 @@ async def get_retention_curve(
         return {"retentionCurve": curve}
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error calculating retention curve: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to calculate retention curve")
 
 
 @router.get("/{workspace_id}/retention/cohorts")
 async def get_cohort_analysis(
     workspace_id: str,
-    cohort_type: str = Query("monthly", regex="^(daily|weekly|monthly)$"),
+    cohort_type: str = Query("monthly", pattern="^(daily|weekly|monthly)$"),
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(require_owner_or_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """
     Get cohort analysis for user retention.
+
+    Requires: owner or admin role
 
     Args:
         workspace_id: The workspace ID
@@ -91,7 +117,10 @@ async def get_cohort_analysis(
         Cohort analysis data
     """
     try:
-        from datetime import datetime, timedelta
+        # Validate workspace access
+        await WorkspaceAccess.validate_workspace_access(current_user, workspace_id)
+
+        from datetime import timedelta
 
         # Parse dates
         start_date_obj = None
@@ -100,12 +129,12 @@ async def get_cohort_analysis(
         if start_date:
             start_date_obj = datetime.strptime(start_date, "%Y-%m-%d").date()
         else:
-            start_date_obj = (datetime.now() - timedelta(days=180)).date()
+            start_date_obj = (datetime.utcnow() - timedelta(days=180)).date()
 
         if end_date:
             end_date_obj = datetime.strptime(end_date, "%Y-%m-%d").date()
         else:
-            end_date_obj = datetime.now().date()
+            end_date_obj = datetime.utcnow().date()
 
         service = RetentionAnalysisService(db)
         cohorts = await service.generate_cohort_analysis(
@@ -118,18 +147,24 @@ async def get_cohort_analysis(
         return {"cohorts": cohorts}
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error generating cohort analysis: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to generate cohort analysis")
 
 
 @router.get("/{workspace_id}/churn")
 async def get_churn_analysis(
     workspace_id: str,
     timeframe: str = Query("30d", regex="^(7d|30d|90d|1y)$"),
+    current_user: Dict[str, Any] = Depends(require_owner_or_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """
     Get churn analysis for the workspace.
+
+    Requires: owner or admin role
 
     Args:
         workspace_id: The workspace ID
@@ -139,7 +174,10 @@ async def get_churn_analysis(
         Churn analysis data
     """
     try:
-        from datetime import datetime, timedelta
+        # Validate workspace access
+        await WorkspaceAccess.validate_workspace_access(current_user, workspace_id)
+
+        from datetime import timedelta
 
         # Calculate date range
         end_date = datetime.utcnow()
@@ -151,55 +189,69 @@ async def get_churn_analysis(
         churn_data = await service.analyze_churn(workspace_id, start_date, end_date)
 
         return churn_data
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error analyzing churn: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to analyze churn")
 
 
-@router.post("/{workspace_id}/track")
+@router.post("/{workspace_id}/track", response_model=TrackActivityResponse)
 async def track_activity(
     workspace_id: str,
-    event_data: dict,
+    event_data: TrackActivityRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """
     Track a user activity event.
 
+    Requires: authenticated user
+
     Args:
         workspace_id: The workspace ID
-        event_data: Event data to track
+        event_data: Event data to track (validated)
 
     Returns:
-        Success confirmation
+        Success confirmation with activity ID
     """
     try:
+        # Validate workspace access
+        await WorkspaceAccess.validate_workspace_access(current_user, workspace_id)
+
         from ...models.database.tables import UserActivity
         import uuid
-        from datetime import datetime
+
+        # Anonymize IP address for privacy compliance (GDPR)
+        anonymized_ip = anonymize_ip(event_data.ip_address)
 
         # Create activity record
         activity = UserActivity(
             id=str(uuid.uuid4()),
-            user_id=event_data.get("userId"),
+            user_id=event_data.user_id,
             workspace_id=workspace_id,
-            session_id=event_data.get("sessionId"),
-            event_type=event_data.get("eventType", "custom"),
-            event_name=event_data.get("eventName"),
-            page_path=event_data.get("pagePath"),
-            ip_address=event_data.get("ipAddress"),
-            user_agent=event_data.get("userAgent"),
-            referrer=event_data.get("referrer"),
-            device_type=event_data.get("deviceType"),
-            browser=event_data.get("browser"),
-            os=event_data.get("os"),
-            country_code=event_data.get("countryCode"),
-            metadata=event_data.get("metadata", {}),
+            session_id=event_data.session_id,
+            event_type=event_data.event_type,
+            event_name=event_data.event_name,
+            page_path=event_data.page_path,
+            ip_address=anonymized_ip,  # Store anonymized IP
+            user_agent=event_data.user_agent,
+            referrer=event_data.referrer,
+            device_type=event_data.device_type,
+            browser=event_data.browser,
+            os=event_data.os,
+            country_code=event_data.country_code,
+            metadata=event_data.metadata or {},
             created_at=datetime.utcnow()
         )
 
         db.add(activity)
         await db.commit()
 
-        return {"success": True, "activityId": activity.id}
+        return TrackActivityResponse(success=True, activity_id=activity.id)
+    except HTTPException:
+        raise
     except Exception as e:
         await db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error tracking activity: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to track activity")

@@ -71,7 +71,11 @@ export function RealtimeExecutions({ executions }: RealtimeExecutionsProps) {
                   className="bg-blue-600 h-1.5 rounded-full transition-all duration-1000"
                   style={{
                     width: `${Math.min(
-                      (exec.elapsedTime / parseInt(exec.estimatedCompletion)) * 100,
+                      (() => {
+                        const est = parseFloat(exec.estimatedCompletion)
+                        if (isNaN(est) || est <= 0) return 0
+                        return (exec.elapsedTime / est) * 100
+                      })(),
                       100
                     )}%`,
                   }}

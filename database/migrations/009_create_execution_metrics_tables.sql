@@ -111,6 +111,9 @@ CREATE INDEX idx_execution_queue_agent_id
     ON analytics.execution_queue(agent_id);
 CREATE INDEX idx_execution_queue_priority
     ON analytics.execution_queue(priority DESC, queued_at ASC) WHERE status = 'queued';
+-- Composite index for common query pattern (workspace + status)
+CREATE INDEX idx_execution_queue_workspace_status_composite
+    ON analytics.execution_queue(workspace_id, status, queued_at DESC);
 
 -- Comments
 COMMENT ON TABLE analytics.execution_queue IS 'Tracks queued executions for queue depth and wait time metrics';
@@ -179,7 +182,7 @@ SELECT
     COALESCE(el.duration, 0) as estimated_runtime,
     el.status,
     el.metadata
-FROM execution_logs el
+FROM public.execution_logs el
 WHERE el.status IN ('running', 'processing', 'pending')
     AND el.completed_at IS NULL
 ORDER BY el.started_at DESC;
@@ -204,7 +207,7 @@ SELECT
         ELSE '60s+'
     END as bucket,
     COUNT(*) as count
-FROM execution_logs
+FROM public.execution_logs
 WHERE completed_at IS NOT NULL
 GROUP BY workspace_id, DATE_TRUNC('hour', started_at), bucket
 ORDER BY hour DESC, bucket;
@@ -233,7 +236,7 @@ BEGIN
         COUNT(*) FILTER (WHERE status IN ('failure', 'error', 'failed')),
         COUNT(*) FILTER (WHERE status = 'cancelled')
     INTO v_total_executions, v_successful_executions, v_failed_executions, v_cancelled_executions
-    FROM execution_logs
+    FROM public.execution_logs
     WHERE workspace_id = p_workspace_id
         AND started_at >= p_minute
         AND started_at < p_minute + INTERVAL '1 minute';
@@ -272,13 +275,23 @@ COMMENT ON FUNCTION analytics.aggregate_execution_metrics_minute IS 'Aggregates 
 -- Grants
 -- =====================================================================
 
--- Grant appropriate permissions (adjust as needed)
-GRANT SELECT, INSERT, UPDATE ON analytics.execution_metrics_minute TO PUBLIC;
-GRANT SELECT, INSERT, UPDATE ON analytics.execution_queue TO PUBLIC;
-GRANT SELECT, INSERT ON analytics.execution_patterns TO PUBLIC;
-GRANT SELECT ON analytics.v_current_executions TO PUBLIC;
-GRANT SELECT ON analytics.v_execution_latency_distribution TO PUBLIC;
-GRANT EXECUTE ON FUNCTION analytics.aggregate_execution_metrics_minute TO PUBLIC;
+-- Ensure the analytics_writer role exists
+DO
+$$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'analytics_writer') THEN
+        CREATE ROLE analytics_writer;
+    END IF;
+END
+$$;
+
+-- Grant appropriate permissions to analytics_writer role
+GRANT SELECT, INSERT, UPDATE ON analytics.execution_metrics_minute TO analytics_writer;
+GRANT SELECT, INSERT, UPDATE ON analytics.execution_queue TO analytics_writer;
+GRANT SELECT, INSERT ON analytics.execution_patterns TO analytics_writer;
+GRANT SELECT ON analytics.v_current_executions TO analytics_writer;
+GRANT SELECT ON analytics.v_execution_latency_distribution TO analytics_writer;
+GRANT EXECUTE ON FUNCTION analytics.aggregate_execution_metrics_minute TO analytics_writer;
 
 -- =====================================================================
 -- Sample Data (optional, for testing)
@@ -292,3 +305,24 @@ VALUES
     ('q2', 'ws1', 'agent2', 'user1', 5, 'queued'),
     ('q3', 'ws1', 'agent3', 'user2', 8, 'queued');
 */
+
+-- =====================================================================
+-- ROLLBACK SCRIPT
+-- =====================================================================
+-- To rollback this migration, run the following SQL:
+--
+-- SET search_path TO analytics, public;
+--
+-- -- Drop function
+-- DROP FUNCTION IF EXISTS analytics.aggregate_execution_metrics_minute(VARCHAR, TIMESTAMPTZ);
+--
+-- -- Drop views
+-- DROP VIEW IF EXISTS analytics.v_execution_latency_distribution;
+-- DROP VIEW IF EXISTS analytics.v_current_executions;
+--
+-- -- Drop tables (in reverse order of creation)
+-- DROP TABLE IF EXISTS analytics.execution_patterns;
+-- DROP TABLE IF EXISTS analytics.execution_queue;
+-- DROP TABLE IF EXISTS analytics.execution_metrics_minute;
+--
+-- =====================================================================

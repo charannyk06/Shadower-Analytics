@@ -4,9 +4,12 @@
  */
 
 import React from 'react';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { ResourceUsage } from '@/types/agent-analytics';
 import { Card } from '@/components/ui/Card';
+
+// Credit to dollar conversion rate
+const CREDIT_TO_DOLLAR_RATE = 0.01;
 
 interface CostAnalysisProps {
   resources: ResourceUsage;
@@ -177,7 +180,7 @@ export function CostAnalysis({ resources }: CostAnalysisProps) {
                       {model.credits.toFixed(2)}
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap text-sm text-right font-semibold text-gray-900">
-                      ${(model.credits * 0.01).toFixed(4)}
+                      ${(model.credits * CREDIT_TO_DOLLAR_RATE).toFixed(4)}
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap text-sm text-right text-gray-600">
                       {costPercentage.toFixed(1)}%
