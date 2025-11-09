@@ -12,6 +12,7 @@ from .websocket import router as websocket_router
 from .user_activity import router as user_activity_router
 from .credits import router as credits_router
 from .errors import router as errors_router
+from .trends import router as trends_router
 
 __all__ = [
     "executive_router",
@@ -26,4 +27,5 @@ __all__ = [
     "user_activity_router",
     "credits_router",
     "errors_router",
+    "trends_router",
 ]
