@@ -3,7 +3,7 @@
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, or_, case, distinct, text
+from sqlalchemy import select, func, and_, distinct
 from collections import defaultdict
 import asyncio
 
@@ -78,32 +78,35 @@ class UserActivityService:
             base_conditions.append(UserActivity.user_id.in_(user_filter))
 
         # Get daily active users
-        dau_query = select(func.count(distinct(UserActivity.user_id))).where(
-            and_(
-                UserActivity.workspace_id == workspace_id,
-                func.date(UserActivity.created_at) == func.current_date()
-            )
-        )
+        dau_conditions = [
+            UserActivity.workspace_id == workspace_id,
+            func.date(UserActivity.created_at) == func.current_date()
+        ]
+        if user_filter:
+            dau_conditions.append(UserActivity.user_id.in_(user_filter))
+        dau_query = select(func.count(distinct(UserActivity.user_id))).where(and_(*dau_conditions))
         dau_result = await self.db.execute(dau_query)
         dau = dau_result.scalar() or 0
 
         # Get weekly active users
-        wau_query = select(func.count(distinct(UserActivity.user_id))).where(
-            and_(
-                UserActivity.workspace_id == workspace_id,
-                UserActivity.created_at >= func.current_date() - timedelta(days=7)
-            )
-        )
+        wau_conditions = [
+            UserActivity.workspace_id == workspace_id,
+            UserActivity.created_at >= func.current_date() - timedelta(days=7)
+        ]
+        if user_filter:
+            wau_conditions.append(UserActivity.user_id.in_(user_filter))
+        wau_query = select(func.count(distinct(UserActivity.user_id))).where(and_(*wau_conditions))
         wau_result = await self.db.execute(wau_query)
         wau = wau_result.scalar() or 0
 
         # Get monthly active users
-        mau_query = select(func.count(distinct(UserActivity.user_id))).where(
-            and_(
-                UserActivity.workspace_id == workspace_id,
-                UserActivity.created_at >= func.current_date() - timedelta(days=30)
-            )
-        )
+        mau_conditions = [
+            UserActivity.workspace_id == workspace_id,
+            UserActivity.created_at >= func.current_date() - timedelta(days=30)
+        ]
+        if user_filter:
+            mau_conditions.append(UserActivity.user_id.in_(user_filter))
+        mau_query = select(func.count(distinct(UserActivity.user_id))).where(and_(*mau_conditions))
         mau_result = await self.db.execute(mau_query)
         mau = mau_result.scalar() or 0
 

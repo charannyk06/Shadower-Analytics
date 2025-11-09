@@ -21,7 +21,7 @@ router = APIRouter(prefix="/api/v1/user-activity", tags=["user-activity"])
 @router.get("/{workspace_id}", response_model=UserActivityData)
 async def get_user_activity(
     workspace_id: str,
-    timeframe: str = Query("30d", regex="^(7d|30d|90d|1y)$"),
+    timeframe: str = Query("30d", pattern="^(7d|30d|90d|1y)$"),
     segment_id: Optional[str] = None,
     current_user: Dict[str, Any] = Depends(require_owner_or_admin),
     db: AsyncSession = Depends(get_db),
@@ -96,7 +96,7 @@ async def get_retention_curve(
 @router.get("/{workspace_id}/retention/cohorts")
 async def get_cohort_analysis(
     workspace_id: str,
-    cohort_type: str = Query("monthly", regex="^(daily|weekly|monthly)$"),
+    cohort_type: str = Query("monthly", pattern="^(daily|weekly|monthly)$"),
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     current_user: Dict[str, Any] = Depends(require_owner_or_admin),

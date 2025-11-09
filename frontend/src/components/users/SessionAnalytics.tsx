@@ -15,7 +15,6 @@ import {
   PieChart,
   Pie,
   Cell,
-  Legend,
 } from 'recharts'
 import type { SessionAnalytics as SessionAnalyticsType } from '@/types/user-activity'
 
@@ -115,7 +114,7 @@ export function SessionAnalytics({ data }: SessionAnalyticsProps) {
               {deviceData.map((entry, index) => (
                 <Cell
                   key={`cell-${index}`}
-                  fill={Object.values(DEVICE_COLORS)[index]}
+                  fill={DEVICE_COLORS[entry.name.toLowerCase() as keyof typeof DEVICE_COLORS]}
                 />
               ))}
             </Pie>

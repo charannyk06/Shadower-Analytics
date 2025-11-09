@@ -337,7 +337,6 @@ SELECT
     ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ar.runtime_seconds), 2) as median_runtime,
     ROUND(MIN(ar.runtime_seconds), 2) as min_runtime,
     ROUND(MAX(ar.runtime_seconds), 2) as max_runtime,
-    ROUND(PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY ar.runtime_seconds), 2) as p50_runtime,
     ROUND(PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY ar.runtime_seconds), 2) as p75_runtime,
     ROUND(PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY ar.runtime_seconds), 2) as p90_runtime,
     ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY ar.runtime_seconds), 2) as p95_runtime,

@@ -24,8 +24,20 @@ export default function AgentAnalyticsPage() {
   const searchParams = useSearchParams();
   const agentId = params?.id as string;
 
-  // Get workspace ID from query params or use default
-  const workspaceId = searchParams?.get('workspace_id') || '550e8400-e29b-41d4-a716-446655440000';
+  // Get workspace ID from query params; fail if missing
+  const workspaceId = searchParams?.get('workspace_id');
+
+  // Show error if workspace ID is missing
+  if (!workspaceId) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-2xl font-semibold text-gray-800 mb-2">Workspace ID Required</h2>
+          <p className="text-gray-600">A valid <code>workspace_id</code> query parameter must be provided to view analytics.</p>
+        </div>
+      </div>
+    );
+  }
 
   const [timeframe, setTimeframe] = useState<TimeFrame>('7d');
   const [compareWith, setCompareWith] = useState<string | null>(null);

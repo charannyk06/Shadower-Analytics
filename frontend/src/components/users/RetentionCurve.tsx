@@ -5,8 +5,6 @@
 
 import React from 'react'
 import {
-  LineChart,
-  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -74,19 +72,25 @@ export function RetentionCurve({ data }: RetentionCurveProps) {
           <div className="grid grid-cols-3 gap-4 mt-4">
             <div className="text-center">
               <p className="text-lg font-bold text-gray-900">
-                {data[0]?.retentionRate.toFixed(1)}%
+                {typeof data[0]?.retentionRate === 'number'
+                  ? `${data[0].retentionRate.toFixed(1)}%`
+                  : 'N/A'}
               </p>
               <p className="text-xs text-gray-500">Day 0</p>
             </div>
             <div className="text-center">
               <p className="text-lg font-bold text-gray-900">
-                {data[7]?.retentionRate.toFixed(1) || 'N/A'}%
+                {typeof data[7]?.retentionRate === 'number'
+                  ? `${data[7].retentionRate.toFixed(1)}%`
+                  : 'N/A'}
               </p>
               <p className="text-xs text-gray-500">Day 7</p>
             </div>
             <div className="text-center">
               <p className="text-lg font-bold text-gray-900">
-                {data[30]?.retentionRate.toFixed(1) || 'N/A'}%
+                {typeof data[30]?.retentionRate === 'number'
+                  ? `${data[30].retentionRate.toFixed(1)}%`
+                  : 'N/A'}
               </p>
               <p className="text-xs text-gray-500">Day 30</p>
             </div>
