@@ -2,6 +2,172 @@
 
 from datetime import date, datetime
 from typing import Any
+import re
+import html
+from fastapi import HTTPException, status
+
+
+def validate_agent_id(agent_id: str) -> str:
+    """
+    Validate agent ID format to prevent path traversal and injection attacks.
+
+    Args:
+        agent_id: The agent ID to validate
+
+    Returns:
+        The validated agent ID
+
+    Raises:
+        HTTPException: If agent ID format is invalid
+    """
+    # Agent IDs should be UUIDs or alphanumeric with underscores/hyphens
+    # Pattern: UUID format or agent_[alphanumeric]
+    pattern = r'^[a-zA-Z0-9_-]{1,255}$'
+
+    if not agent_id or not isinstance(agent_id, str):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Agent ID is required and must be a string"
+        )
+
+    # Check for path traversal attempts
+    if '..' in agent_id or '/' in agent_id or '\\' in agent_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid agent ID: path traversal characters not allowed"
+        )
+
+    # Check format
+    if not re.match(pattern, agent_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid agent ID format. Must be alphanumeric with optional underscores or hyphens"
+        )
+
+    # Check length
+    if len(agent_id) > 255:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Agent ID too long (max 255 characters)"
+        )
+
+    return agent_id
+
+
+def validate_workspace_id(workspace_id: str) -> str:
+    """
+    Validate workspace ID format (UUID).
+
+    Args:
+        workspace_id: The workspace ID to validate
+
+    Returns:
+        The validated workspace ID
+
+    Raises:
+        HTTPException: If workspace ID format is invalid
+    """
+    # UUID pattern
+    uuid_pattern = r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+
+    if not workspace_id or not isinstance(workspace_id, str):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Workspace ID is required and must be a string"
+        )
+
+    # Check for path traversal
+    if '..' in workspace_id or '/' in workspace_id or '\\' in workspace_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid workspace ID format"
+        )
+
+    # Validate UUID format
+    if not re.match(uuid_pattern, workspace_id.lower()):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid workspace ID format. Must be a valid UUID"
+        )
+
+    return workspace_id
+
+
+def sanitize_html_content(content: str, max_length: int = 10000) -> str:
+    """
+    Sanitize HTML content to prevent XSS attacks.
+
+    Args:
+        content: The content to sanitize
+        max_length: Maximum allowed length
+
+    Returns:
+        Sanitized content
+
+    Raises:
+        HTTPException: If content is invalid
+    """
+    if not isinstance(content, str):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Content must be a string"
+        )
+
+    # Check length
+    if len(content) > max_length:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Content too long (max {max_length} characters)"
+        )
+
+    # Escape HTML to prevent XSS
+    # This converts < > & " ' to HTML entities
+    sanitized = html.escape(content)
+
+    return sanitized
+
+
+def validate_sql_identifier(identifier: str) -> str:
+    """
+    Validate SQL identifiers (table names, column names) to prevent SQL injection.
+
+    Args:
+        identifier: The identifier to validate
+
+    Returns:
+        The validated identifier
+
+    Raises:
+        HTTPException: If identifier is invalid
+    """
+    # Only allow alphanumeric and underscores
+    pattern = r'^[a-zA-Z_][a-zA-Z0-9_]*$'
+
+    if not identifier or not isinstance(identifier, str):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Identifier is required and must be a string"
+        )
+
+    if not re.match(pattern, identifier):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid identifier format"
+        )
+
+    # Prevent SQL keywords
+    sql_keywords = {
+        'select', 'insert', 'update', 'delete', 'drop', 'create',
+        'alter', 'truncate', 'exec', 'execute', 'union', 'where'
+    }
+
+    if identifier.lower() in sql_keywords:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Identifier cannot be a SQL keyword"
+        )
+
+    return identifier
 
 
 def validate_date_range(start_date: date, end_date: date) -> bool:
