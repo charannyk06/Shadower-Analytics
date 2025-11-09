@@ -8,11 +8,16 @@ DROP TRIGGER IF EXISTS trend_analysis_updated_at ON analytics.trend_analysis_cac
 DROP FUNCTION IF EXISTS analytics.cleanup_expired_trend_analysis();
 DROP FUNCTION IF EXISTS analytics.update_trend_analysis_updated_at();
 
--- Drop indexes
+-- Drop indexes on analytics schema
 DROP INDEX IF EXISTS analytics.idx_trend_analysis_data;
 DROP INDEX IF EXISTS analytics.idx_trend_analysis_calculated;
 DROP INDEX IF EXISTS analytics.idx_trend_analysis_expiry;
 DROP INDEX IF EXISTS analytics.idx_trend_analysis_workspace;
+
+-- Drop composite indexes on source tables
+DROP INDEX IF EXISTS public.idx_agent_executions_workspace_time;
+DROP INDEX IF EXISTS public.idx_credit_transactions_workspace_time;
+DROP INDEX IF EXISTS public.idx_transactions_workspace_time;
 
 -- Drop table
 DROP TABLE IF EXISTS analytics.trend_analysis_cache;

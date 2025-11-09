@@ -7,7 +7,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- Create trend analysis cache table
 CREATE TABLE IF NOT EXISTS analytics.trend_analysis_cache (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    workspace_id UUID NOT NULL,
+    workspace_id UUID NOT NULL REFERENCES public.workspaces(id) ON DELETE CASCADE,
     metric VARCHAR(50) NOT NULL,
     timeframe VARCHAR(20) NOT NULL,
 
@@ -70,6 +70,20 @@ BEGIN
     RETURN deleted_count;
 END;
 $$ LANGUAGE plpgsql;
+
+-- Add composite indexes on source tables for efficient trend queries
+-- These indexes support queries that filter by workspace_id and created_at
+CREATE INDEX IF NOT EXISTS idx_agent_executions_workspace_time
+    ON public.agent_executions(workspace_id, created_at DESC)
+    WHERE workspace_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_credit_transactions_workspace_time
+    ON public.credit_transactions(workspace_id, created_at DESC)
+    WHERE workspace_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_transactions_workspace_time
+    ON public.transactions(workspace_id, created_at DESC)
+    WHERE workspace_id IS NOT NULL;
 
 -- Add comments for documentation
 COMMENT ON TABLE analytics.trend_analysis_cache IS 'Cache table for trend analysis results to improve performance';

@@ -41,7 +41,8 @@ class TrendAnalysisService:
         self,
         workspace_id: str,
         metric: str,
-        timeframe: str
+        timeframe: str,
+        skip_cache: bool = False
     ) -> Dict[str, Any]:
         """
         Perform comprehensive trend analysis.
@@ -50,12 +51,13 @@ class TrendAnalysisService:
             workspace_id: The workspace ID
             metric: Metric to analyze (executions, users, credits, etc.)
             timeframe: Time period (7d, 30d, 90d, 1y)
+            skip_cache: If True, bypass cache (used after auth check in routes)
 
         Returns:
             Complete trend analysis with insights
         """
-        # Check cache first
-        if self.cache:
+        # Check cache only if explicitly allowed (after auth in routes)
+        if not skip_cache and self.cache:
             cached = await self._get_cached_analysis(workspace_id, metric, timeframe)
             if cached:
                 return cached
@@ -178,6 +180,24 @@ class TrendAnalysisService:
                 AND created_at >= :start_date
                 GROUP BY DATE(created_at)
                 ORDER BY date
+            """,
+            'errors': """
+                SELECT DATE(created_at) as date, COUNT(*) as value
+                FROM public.agent_executions
+                WHERE workspace_id = :workspace_id
+                AND created_at >= :start_date
+                AND status IN ('failed', 'error')
+                GROUP BY DATE(created_at)
+                ORDER BY date
+            """,
+            'revenue': """
+                SELECT DATE(created_at) as date, COALESCE(SUM(amount), 0) as value
+                FROM public.transactions
+                WHERE workspace_id = :workspace_id
+                AND created_at >= :start_date
+                AND type = 'revenue'
+                GROUP BY DATE(created_at)
+                ORDER BY date
             """
         }
 
@@ -245,12 +265,18 @@ class TrendAnalysisService:
             # Determine period for decomposition
             period = self._detect_period(df)
 
-            # Perform decomposition
-            decomposition = seasonal_decompose(
-                df['value'],
-                model='additive',
-                period=period,
-                extrapolate_trend='freq'
+            # Perform decomposition with timeout protection (blocking operation)
+            def _run_decomposition():
+                return seasonal_decompose(
+                    df['value'],
+                    model='additive',
+                    period=period,
+                    extrapolate_trend='freq'
+                )
+
+            decomposition = await asyncio.wait_for(
+                asyncio.to_thread(_run_decomposition),
+                timeout=DECOMPOSITION_TIMEOUT
             )
 
             return {
@@ -279,16 +305,20 @@ class TrendAnalysisService:
                 "noise": float(np.std(decomposition.resid.dropna()) / np.std(df['value']) * 100)
                     if np.std(df['value']) != 0 else 0
             }
+        except asyncio.TimeoutError:
+            logger.warning(f"Decomposition timed out after {DECOMPOSITION_TIMEOUT}s")
+            return {}
         except Exception as e:
             logger.error(f"Decomposition failed: {e}")
             return {}
 
     async def _detect_patterns(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Detect patterns in time series."""
+        cycles = await self._detect_cycles(df)
         return {
             "seasonality": self._detect_seasonality(df),
             "growth": self._detect_growth_pattern(df),
-            "cycles": self._detect_cycles(df)
+            "cycles": cycles
         }
 
     def _detect_seasonality(self, df: pd.DataFrame) -> Dict[str, Any]:
@@ -303,7 +333,8 @@ class TrendAnalysisService:
             }
 
         try:
-            # Use autocorrelation to detect seasonality
+            # Use autocorrelation to detect seasonality (FFT is blocking operation)
+            # Note: acf with fft=True is CPU-intensive but typically fast, no async needed
             acf_values = acf(df['value'].values, nlags=min(40, len(df) // 2), fft=True)
 
             # Find peaks in ACF
@@ -425,39 +456,50 @@ class TrendAnalysisService:
             "projectedGrowth": projected_growth
         }
 
-    def _detect_cycles(self, df: pd.DataFrame) -> List[Dict[str, Any]]:
-        """Detect cyclical patterns."""
+    async def _detect_cycles(self, df: pd.DataFrame) -> List[Dict[str, Any]]:
+        """Detect cyclical patterns using FFT."""
         if len(df) < 20:
             return []
 
         try:
-            # Use FFT to detect cycles
-            values = df['value'].values
-            values = values - np.mean(values)  # Remove mean
+            # Use FFT to detect cycles (blocking operation for large datasets)
+            def _run_fft():
+                values = df['value'].values
+                values = values - np.mean(values)  # Remove mean
 
-            # Compute FFT
-            fft = np.fft.fft(values)
-            frequencies = np.fft.fftfreq(len(values))
-            power = np.abs(fft) ** 2
+                # Compute FFT
+                fft = np.fft.fft(values)
+                frequencies = np.fft.fftfreq(len(values))
+                power = np.abs(fft) ** 2
 
-            # Find significant peaks
-            peaks, properties = signal.find_peaks(power[:len(power)//2], height=np.max(power) * 0.1)
+                # Find significant peaks
+                peaks, properties = signal.find_peaks(power[:len(power)//2], height=np.max(power) * 0.1)
 
-            cycles = []
-            for peak in peaks[:3]:  # Top 3 cycles
-                if frequencies[peak] > 0:
-                    period = 1 / frequencies[peak]
-                    amplitude = np.sqrt(power[peak])
-                    phase = np.angle(fft[peak])
+                cycles = []
+                for peak in peaks[:3]:  # Top 3 cycles
+                    if frequencies[peak] > 0:
+                        period = 1 / frequencies[peak]
+                        amplitude = np.sqrt(power[peak])
+                        phase = np.angle(fft[peak])
 
-                    cycles.append({
-                        "period": float(period),
-                        "amplitude": float(amplitude),
-                        "phase": float(phase),
-                        "significance": float(power[peak] / np.sum(power))
-                    })
+                        cycles.append({
+                            "period": float(period),
+                            "amplitude": float(amplitude),
+                            "phase": float(phase),
+                            "significance": float(power[peak] / np.sum(power))
+                        })
 
+                return cycles
+
+            cycles = await asyncio.wait_for(
+                asyncio.to_thread(_run_fft),
+                timeout=FFT_TIMEOUT
+            )
             return cycles
+
+        except asyncio.TimeoutError:
+            logger.warning(f"FFT cycle detection timed out after {FFT_TIMEOUT}s")
+            return []
         except Exception as e:
             logger.error(f"Cycle detection failed: {e}")
             return []
@@ -531,23 +573,32 @@ class TrendAnalysisService:
             prophet_df = df.reset_index()
             prophet_df.columns = ['ds', 'y']
 
-            # Initialize and fit model
-            model = Prophet(
-                daily_seasonality=True,
-                weekly_seasonality=True,
-                yearly_seasonality=False,
-                seasonality_mode='additive'
+            # Prophet fitting is CPU-intensive, run with timeout protection
+            def _run_prophet():
+                # Initialize and fit model
+                model = Prophet(
+                    daily_seasonality=True,
+                    weekly_seasonality=True,
+                    yearly_seasonality=False,
+                    seasonality_mode='additive'
+                )
+
+                # Suppress Prophet output
+                import logging as prophet_logging
+                prophet_logging.getLogger('prophet').setLevel(prophet_logging.WARNING)
+
+                model.fit(prophet_df)
+
+                # Generate forecast
+                future = model.make_future_dataframe(periods=30, freq='D')
+                forecast = model.predict(future)
+
+                return forecast
+
+            forecast = await asyncio.wait_for(
+                asyncio.to_thread(_run_prophet),
+                timeout=PROPHET_TIMEOUT
             )
-
-            # Suppress Prophet output
-            import logging as prophet_logging
-            prophet_logging.getLogger('prophet').setLevel(prophet_logging.WARNING)
-
-            model.fit(prophet_df)
-
-            # Generate forecast
-            future = model.make_future_dataframe(periods=30, freq='D')
-            forecast = model.predict(future)
 
             # Extract short-term forecast (next 7 days)
             short_term = forecast[forecast['ds'] > prophet_df['ds'].max()].head(7)
@@ -579,6 +630,9 @@ class TrendAnalysisService:
                     "r2": float(max(0, min(1, r2)))
                 }
             }
+        except asyncio.TimeoutError:
+            logger.warning(f"Prophet forecasting timed out after {PROPHET_TIMEOUT}s, falling back to simple forecast")
+            return self._simple_forecast(df)
         except Exception as e:
             logger.error(f"Prophet forecast failed: {e}")
             return self._simple_forecast(df)

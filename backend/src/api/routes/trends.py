@@ -55,11 +55,12 @@ async def get_trend_analysis(
         # Validate input
         workspace_id = validate_workspace_id(workspace_id)
 
-        # Verify user has access to workspace
+        # Verify user has access to workspace FIRST (prevent cache timing attacks)
         await WorkspaceAccess.validate_workspace_access(current_user, workspace_id)
 
+        # Now safe to check cache after auth
         service = TrendAnalysisService(db)
-        analysis = await service.analyze_trend(workspace_id, metric, timeframe)
+        analysis = await service.analyze_trend(workspace_id, metric, timeframe, skip_cache=False)
 
         return analysis
 
@@ -109,18 +110,26 @@ async def get_trends_overview(
 
         # Process results, handling any exceptions
         overviews = {}
+        errors = []
         for i, result in enumerate(results):
             metric = metrics[i]
             if isinstance(result, Exception):
+                error_msg = str(result)
                 logger.warning(f"Failed to get trend for {metric} in workspace {workspace_id}: {result}")
                 overviews[metric] = {"error": "Failed to analyze", "trend": "unknown"}
+                errors.append({
+                    "metric": metric,
+                    "error": error_msg,
+                    "type": type(result).__name__
+                })
             else:
                 overviews[metric] = result[1]  # result is tuple (metric, overview)
 
         return {
             "workspaceId": workspace_id,
             "timeframe": timeframe,
-            "metrics": overviews
+            "metrics": overviews,
+            "errors": errors  # List of metrics that failed with error details
         }
 
     except HTTPException:
