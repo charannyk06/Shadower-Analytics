@@ -48,6 +48,8 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/shadower_analytics
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      APP_ENV: development
     depends_on:
       postgres:
         condition: service_healthy
@@ -60,40 +62,63 @@ services:
   # Celery Worker
   celery-worker:
     build:
-      context: ./jobs
+      context: ./backend
       dockerfile: Dockerfile
     container_name: shadower-celery-worker
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/shadower_analytics
+      REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
+      APP_ENV: production
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     volumes:
-      - ./jobs:/app
-    command: celery -A celeryconfig worker --loglevel=info
+      - ./backend:/app
+    command: celery -A src.celery_app worker --loglevel=info --concurrency=4 --max-tasks-per-child=1000
+    restart: unless-stopped
 
   # Celery Beat (Scheduler)
   celery-beat:
     build:
-      context: ./jobs
+      context: ./backend
       dockerfile: Dockerfile
     container_name: shadower-celery-beat
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/shadower_analytics
+      REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
+      APP_ENV: production
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     volumes:
-      - ./jobs:/app
-    command: celery -A celeryconfig beat --loglevel=info
+      - ./backend:/app
+    command: celery -A src.celery_app beat --loglevel=info --scheduler celery.beat:PersistentScheduler
+    restart: unless-stopped
+
+  # Flower - Celery monitoring (optional)
+  flower:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: shadower-flower
+    ports:
+      - "5555:5555"
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+    depends_on:
+      - redis
+      - celery-worker
+    command: celery -A src.celery_app flower --port=5555
+    restart: unless-stopped
 
   # Frontend Dashboard
   frontend:
