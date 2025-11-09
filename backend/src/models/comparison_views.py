@@ -7,7 +7,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Dict, List, Optional, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 # ============================================================================
@@ -434,6 +434,74 @@ class ComparisonFilters(BaseModel):
     tags: Optional[List[str]] = None
     min_success_rate: Optional[float] = Field(None, ge=0, le=100)
     max_cost: Optional[float] = Field(None, ge=0)
+
+    @field_validator('end_date')
+    @classmethod
+    def validate_end_date_not_future(cls, v):
+        """Validate end_date is not in the future"""
+        if v and v > datetime.utcnow():
+            raise ValueError("end_date cannot be in the future")
+        return v
+
+    @model_validator(mode='after')
+    def validate_date_range(self):
+        """Validate date range is valid and reasonable"""
+        if self.start_date and self.end_date:
+            # Check start is before end
+            if self.start_date > self.end_date:
+                raise ValueError("start_date must be before end_date")
+
+            # Ensure date range is reasonable (not more than 1 year)
+            delta = self.end_date - self.start_date
+            if delta.days > 365:
+                raise ValueError("Date range cannot exceed 365 days")
+
+        return self
+
+    @field_validator('agent_ids')
+    @classmethod
+    def validate_agent_ids(cls, v):
+        """Validate agent IDs are not empty strings"""
+        if v:
+            # Remove any empty strings
+            v = [aid.strip() for aid in v if aid and aid.strip()]
+            if not v:
+                raise ValueError("agent_ids cannot contain only empty strings")
+            if len(v) > 10:
+                raise ValueError("Maximum 10 agents allowed for comparison")
+        return v
+
+    @field_validator('workspace_ids')
+    @classmethod
+    def validate_workspace_ids(cls, v):
+        """Validate workspace IDs are not empty strings"""
+        if v:
+            # Remove any empty strings
+            v = [wid.strip() for wid in v if wid and wid.strip()]
+            if not v:
+                raise ValueError("workspace_ids cannot contain only empty strings")
+            if len(v) > 20:
+                raise ValueError("Maximum 20 workspaces allowed for comparison")
+        return v
+
+    @field_validator('metric_names')
+    @classmethod
+    def validate_metric_names(cls, v):
+        """Validate metric names are valid"""
+        if v:
+            valid_metrics = {
+                "success_rate",
+                "error_rate",
+                "average_runtime",
+                "throughput",
+                "cost_per_run",
+                "total_runs",
+                "credits_per_run",
+            }
+            invalid = [m for m in v if m not in valid_metrics]
+            if invalid:
+                raise ValueError(f"Invalid metric names: {', '.join(invalid)}")
+        return v
 
 
 class ComparisonOptions(BaseModel):
