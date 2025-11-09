@@ -29,7 +29,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          # Fetch full history for proper PR context
+          fetch-depth: 0
+          # Checkout the PR head ref for pull_request events
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Set PR number
         id: pr-info
@@ -43,43 +46,79 @@ jobs:
       - name: Run Claude Code Review
         id: claude-review
         uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ github.token }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: |
-            REPO: ${{ github.repository }}
-            PR NUMBER: ${{ steps.pr-info.outputs.pr_number }}
+            You are reviewing PR #${{ steps.pr-info.outputs.pr_number }} in repository ${{ github.repository }}.
 
-            Please perform a comprehensive code review of this pull request. Follow these steps:
+            **Your Task:** Perform a comprehensive code review of this pull request.
 
-            1. First, use `gh pr view ${{ steps.pr-info.outputs.pr_number }}` to get PR details (title, description, author)
-            2. Use `gh pr diff ${{ steps.pr-info.outputs.pr_number }}` to see all changes
-            3. Read the modified and new files to understand the implementation
-            4. Review the code for:
-               - Code quality and adherence to best practices
-               - Potential bugs or logic errors
-               - Performance considerations
-               - Security vulnerabilities
-               - Test coverage and quality
-               - Consistency with existing codebase patterns
-               - Documentation completeness
-            5. Check if there's a CLAUDE.md or CONTRIBUTING.md for style guidelines
-            6. Provide constructive, actionable feedback
+            **Step-by-step process:**
 
-            After your review, use `gh pr comment ${{ steps.pr-info.outputs.pr_number }} --body "<your review>"` to post your findings.
+            1. First, run: `gh pr view ${{ steps.pr-info.outputs.pr_number }} --repo ${{ github.repository }}`
+               This will show you the PR title, description, and metadata.
 
-            Format your review as markdown with clear sections:
-            ## Summary
-            ## What's Changed
-            ## Strengths
-            ## Issues Found (if any)
-            ## Suggestions for Improvement
-            ## Security & Performance Notes
-            ## Test Coverage Assessment
-            ## Overall Recommendation
+            2. Then run: `gh pr diff ${{ steps.pr-info.outputs.pr_number }} --repo ${{ github.repository }}`
+               This will show you all the code changes in the PR.
 
-            Be thorough but constructive. Focus on helping improve the code.
+            3. Use the Read, Grep, and Glob tools to:
+               - Read the full content of modified/new files
+               - Search for related code patterns
+               - Find relevant test files
+               - Check for style guide files (CLAUDE.md, CONTRIBUTING.md, etc.)
 
-          # Allow Claude access to necessary tools for comprehensive review
-          # Read: access files, Grep: search code, Glob: find files, Bash: run gh commands
-          claude_args: '--allowed-tools "Read,Grep,Glob,Bash(gh *)"'
+            4. Analyze the code for:
+               - **Code Quality:** Best practices, maintainability, readability
+               - **Bugs:** Logic errors, edge cases, potential crashes
+               - **Performance:** Inefficiencies, scalability issues
+               - **Security:** Vulnerabilities, injection risks, authentication issues
+               - **Testing:** Coverage, quality, edge case handling
+               - **Architecture:** Consistency with existing patterns
+               - **Documentation:** Comments, README updates, API docs
+
+            5. After your thorough review, post a comment using:
+               ```bash
+               gh pr comment ${{ steps.pr-info.outputs.pr_number }} --repo ${{ github.repository }} --body "YOUR_REVIEW_HERE"
+               ```
+
+            **Review Format (use markdown):**
+            ```markdown
+            ## 📋 Summary
+            [Brief overview of what this PR does]
+
+            ## 🔍 What's Changed
+            [List the main changes]
+
+            ## ✅ Strengths
+            [What's done well]
+
+            ## ⚠️ Issues Found
+            [Any problems discovered - be specific with file:line references]
+
+            ## 💡 Suggestions for Improvement
+            [Actionable recommendations]
+
+            ## 🔒 Security & Performance Notes
+            [Any security or performance concerns]
+
+            ## 🧪 Test Coverage Assessment
+            [Analysis of test quality and coverage]
+
+            ## 🎯 Overall Recommendation
+            [Approve, Request Changes, or Comment with reasoning]
+            ```
+
+            **Important:**
+            - Be constructive and helpful
+            - Cite specific files and line numbers when mentioning issues
+            - Prioritize critical issues over style nitpicks
+            - Acknowledge good practices when you see them
+            - If everything looks good, say so clearly
+
+            Begin your review now!
+
+          # Allow Claude to use necessary tools for code review
+          # Removed tool restrictions - let Claude use all available tools
 
