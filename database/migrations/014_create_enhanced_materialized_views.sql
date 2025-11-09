@@ -163,7 +163,8 @@ SELECT
     ae.error_category,
     ae.error_severity,
     COUNT(*) as error_count,
-    COUNT(DISTINCT ae.user_id) as affected_users,
+    -- Get affected users from agent_runs via agent_run_id
+    COUNT(DISTINCT ar.user_id) FILTER (WHERE ar.user_id IS NOT NULL) as affected_users,
     COUNT(DISTINCT ae.agent_id) as affected_agents,
     ARRAY_AGG(DISTINCT ae.error_message ORDER BY ae.error_message)
         FILTER (WHERE ae.error_message IS NOT NULL)
@@ -171,6 +172,7 @@ SELECT
     MIN(ae.created_at) as first_occurrence,
     MAX(ae.created_at) as last_occurrence
 FROM analytics.agent_errors ae
+LEFT JOIN analytics.agent_runs ar ON ae.agent_run_id = ar.id
 WHERE ae.created_at >= CURRENT_DATE - INTERVAL '30 days'
 GROUP BY
     DATE(ae.created_at),
@@ -182,15 +184,21 @@ GROUP BY
 ORDER BY error_date DESC, error_count DESC;
 
 -- Unique index for concurrent refresh
+-- Using partial index to exclude NULLs since source table has NOT NULL constraints
 CREATE UNIQUE INDEX idx_mv_error_summary_unique
     ON analytics.mv_error_summary(
         error_date,
-        COALESCE(workspace_id, '00000000-0000-0000-0000-000000000000'::uuid),
-        COALESCE(agent_id, '00000000-0000-0000-0000-000000000000'::uuid),
-        COALESCE(error_type, 'unknown'),
-        COALESCE(error_category, 'unknown'),
-        COALESCE(error_severity, 'unknown')
-    );
+        workspace_id,
+        agent_id,
+        error_type,
+        error_category,
+        error_severity
+    )
+    WHERE workspace_id IS NOT NULL 
+        AND agent_id IS NOT NULL 
+        AND error_type IS NOT NULL 
+        AND error_category IS NOT NULL 
+        AND error_severity IS NOT NULL;
 
 -- Additional indexes
 CREATE INDEX idx_mv_error_summary_date
@@ -264,10 +272,13 @@ BEGIN
         v_start_time := clock_timestamp();
 
         BEGIN
-            -- Build refresh command
-            v_refresh_command := 'REFRESH MATERIALIZED VIEW ' ||
-                CASE WHEN concurrent_mode THEN 'CONCURRENTLY ' ELSE '' END ||
-                'analytics.' || v_view.matviewname;
+            -- Build refresh command using format() with %I for identifier escaping
+            -- This prevents SQL injection if pg_matviews metadata is compromised
+            v_refresh_command := format(
+                'REFRESH MATERIALIZED VIEW %s analytics.%I',
+                CASE WHEN concurrent_mode THEN 'CONCURRENTLY' ELSE '' END,
+                v_view.matviewname
+            );
 
             -- Execute refresh
             EXECUTE v_refresh_command;
@@ -305,70 +316,25 @@ COMMENT ON FUNCTION analytics.refresh_all_materialized_views IS
 
 -- =====================================================================
 -- Initial population of materialized views
+-- NOTE: Commented out to prevent migration timeouts on large datasets.
+-- Run these manually after migration completes:
+-- REFRESH MATERIALIZED VIEW CONCURRENTLY analytics.mv_agent_performance;
+-- REFRESH MATERIALIZED VIEW CONCURRENTLY analytics.mv_workspace_metrics;
+-- REFRESH MATERIALIZED VIEW CONCURRENTLY analytics.mv_top_agents_enhanced;
+-- REFRESH MATERIALIZED VIEW CONCURRENTLY analytics.mv_error_summary;
 -- =====================================================================
 
--- Populate all new materialized views
-REFRESH MATERIALIZED VIEW analytics.mv_agent_performance;
-REFRESH MATERIALIZED VIEW analytics.mv_workspace_metrics;
-REFRESH MATERIALIZED VIEW analytics.mv_top_agents_enhanced;
-REFRESH MATERIALIZED VIEW analytics.mv_error_summary;
+-- REFRESH MATERIALIZED VIEW analytics.mv_agent_performance;
+-- REFRESH MATERIALIZED VIEW analytics.mv_workspace_metrics;
+-- REFRESH MATERIALIZED VIEW analytics.mv_top_agents_enhanced;
+-- REFRESH MATERIALIZED VIEW analytics.mv_error_summary;
 
 -- =====================================================================
--- Row-Level Security (RLS) for Multi-Tenant Workspace Isolation
+-- Grants
 -- =====================================================================
 
--- Enable RLS on all new materialized views
-ALTER MATERIALIZED VIEW analytics.mv_agent_performance ENABLE ROW LEVEL SECURITY;
-ALTER MATERIALIZED VIEW analytics.mv_workspace_metrics ENABLE ROW LEVEL SECURITY;
-ALTER MATERIALIZED VIEW analytics.mv_top_agents_enhanced ENABLE ROW LEVEL SECURITY;
-ALTER MATERIALIZED VIEW analytics.mv_error_summary ENABLE ROW LEVEL SECURITY;
-
--- Policy: Users can only view data from their own workspaces (mv_agent_performance)
-CREATE POLICY mv_agent_performance_select_policy ON analytics.mv_agent_performance
-    FOR SELECT
-    USING (workspace_id IN (SELECT analytics.get_user_workspaces()));
-
--- Policy: Users can only view data from their own workspaces (mv_workspace_metrics)
-CREATE POLICY mv_workspace_metrics_select_policy ON analytics.mv_workspace_metrics
-    FOR SELECT
-    USING (workspace_id IN (SELECT analytics.get_user_workspaces()));
-
--- Policy: Users can only view data from their own workspaces (mv_top_agents_enhanced)
-CREATE POLICY mv_top_agents_enhanced_select_policy ON analytics.mv_top_agents_enhanced
-    FOR SELECT
-    USING (workspace_id IN (SELECT analytics.get_user_workspaces()));
-
--- Policy: Users can only view data from their own workspaces (mv_error_summary)
-CREATE POLICY mv_error_summary_select_policy ON analytics.mv_error_summary
-    FOR SELECT
-    USING (workspace_id IN (SELECT analytics.get_user_workspaces()));
-
--- Comments on RLS policies
-COMMENT ON POLICY mv_agent_performance_select_policy ON analytics.mv_agent_performance
-    IS 'Enforce workspace isolation - users can only see data from their workspaces';
-COMMENT ON POLICY mv_workspace_metrics_select_policy ON analytics.mv_workspace_metrics
-    IS 'Enforce workspace isolation - users can only see data from their workspaces';
-COMMENT ON POLICY mv_top_agents_enhanced_select_policy ON analytics.mv_top_agents_enhanced
-    IS 'Enforce workspace isolation - users can only see data from their workspaces';
-COMMENT ON POLICY mv_error_summary_select_policy ON analytics.mv_error_summary
-    IS 'Enforce workspace isolation - users can only see data from their workspaces';
-
--- =====================================================================
--- Grants (Restricted Access)
--- =====================================================================
-
--- Grant SELECT on materialized views to authenticated role only (not PUBLIC)
--- RLS policies will enforce workspace isolation
-GRANT SELECT ON analytics.mv_agent_performance TO authenticated;
-GRANT SELECT ON analytics.mv_workspace_metrics TO authenticated;
-GRANT SELECT ON analytics.mv_top_agents_enhanced TO authenticated;
-GRANT SELECT ON analytics.mv_error_summary TO authenticated;
-
--- Grant SELECT on metadata view to authenticated users
-GRANT SELECT ON analytics.v_materialized_view_status TO authenticated;
-
--- Grant EXECUTE on refresh function to service_role and postgres only (NOT PUBLIC)
-GRANT EXECUTE ON FUNCTION analytics.refresh_all_materialized_views TO service_role, postgres;
+-- Note: PostgreSQL does not support RLS directly on materialized views.
+-- RLS policies and secure views are created in migration 015_add_rls_and_secure_views.sql
 
 -- Revoke any existing PUBLIC grants (defense in depth)
 REVOKE ALL ON analytics.mv_agent_performance FROM PUBLIC;
@@ -377,6 +343,19 @@ REVOKE ALL ON analytics.mv_top_agents_enhanced FROM PUBLIC;
 REVOKE ALL ON analytics.mv_error_summary FROM PUBLIC;
 REVOKE ALL ON analytics.v_materialized_view_status FROM PUBLIC;
 REVOKE ALL ON FUNCTION analytics.refresh_all_materialized_views FROM PUBLIC;
+
+-- Grant SELECT on all materialized views to authenticated users only
+-- Note: Direct access to materialized views should be restricted.
+-- Use secure views (v_*_secure) created in migration 015 for workspace-filtered access.
+GRANT SELECT ON analytics.mv_agent_performance TO authenticated;
+GRANT SELECT ON analytics.mv_workspace_metrics TO authenticated;
+GRANT SELECT ON analytics.mv_top_agents_enhanced TO authenticated;
+GRANT SELECT ON analytics.mv_error_summary TO authenticated;
+GRANT SELECT ON analytics.v_materialized_view_status TO authenticated;
+
+-- Grant EXECUTE on refresh function only to service_role
+-- Admin API endpoints will use service_role connection for refresh operations
+GRANT EXECUTE ON FUNCTION analytics.refresh_all_materialized_views TO service_role;
 
 -- =====================================================================
 -- Migration Complete

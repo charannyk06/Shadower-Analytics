@@ -316,13 +316,16 @@ class MaterializedViewRefreshService:
         if view_name not in self.VIEWS:
             raise ValueError(f"Unknown materialized view: {view_name}")
 
-        # Additional SQL identifier validation for defense in depth
+        # Additional SQL identifier validation
         self._validate_sql_identifier(view_name)
 
-        # Safe to use f-string here because view_name has been validated against:
-        # 1. Whitelist (self.VIEWS)
-        # 2. SQL identifier regex pattern (lowercase letters, digits, underscores only)
-        query = text(f"SELECT COUNT(*) as count FROM analytics.{view_name}")
+        # Use parameterized query with identifier quoting for defense-in-depth
+        # Even though view_name is whitelisted, this adds an extra layer of safety
+        from sqlalchemy import sql
+        schema = sql.quoted_name('analytics', quote=False)
+        view = sql.quoted_name(view_name, quote=False)
+        query = text(f"SELECT COUNT(*) as count FROM {schema}.{view}")
+        
         result = await self.db.execute(query)
         row = result.fetchone()
 

@@ -172,7 +172,7 @@ async def refresh_materialized_views(
         logger.error(f"Failed to refresh materialized views: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to refresh materialized views: {str(e)}"
+            detail="Failed to refresh materialized views. Please check server logs for details."
         )
 
 
@@ -207,19 +207,22 @@ async def refresh_single_view(
         logger.error(f"Failed to refresh view {view_name}: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to refresh view: {str(e)}"
+            detail="Failed to refresh view. Please check server logs for details."
         )
 
 
 @router.get("/status", response_model=List[ViewStatus])
 async def get_views_status(
     db: AsyncSession = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_current_active_user)
+    current_user: Dict[str, Any] = Depends(require_admin)
 ):
     """
     Get status information for all materialized views.
 
-    **Authentication**: Required
+    **Authentication**: Required (Admin role)
+    
+    Note: This endpoint returns metadata for all views across all workspaces.
+    Restricted to admin users to prevent metadata leakage.
 
     Returns:
     - List of view status including size, population status, and description
@@ -234,7 +237,7 @@ async def get_views_status(
         logger.error(f"Failed to get view status: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to get view status: {str(e)}"
+            detail="Failed to get view status. Please check server logs for details."
         )
 
 
@@ -242,12 +245,15 @@ async def get_views_status(
 async def get_view_statistics(
     view_name: str,
     db: AsyncSession = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_current_active_user)
+    current_user: Dict[str, Any] = Depends(require_admin)
 ):
     """
     Get detailed statistics for a specific materialized view.
 
-    **Authentication**: Required
+    **Authentication**: Required (Admin role)
+    
+    Note: This endpoint returns statistics for views across all workspaces.
+    Restricted to admin users to prevent metadata leakage.
 
     Parameters:
     - **view_name**: Name of the materialized view
@@ -279,19 +285,22 @@ async def get_view_statistics(
         )
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to get view statistics: {str(e)}"
+            detail="Failed to get view statistics. Please check server logs for details."
         )
 
 
 @router.get("/health", response_model=HealthCheckResponse)
 async def check_views_health(
     db: AsyncSession = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_current_active_user)
+    current_user: Dict[str, Any] = Depends(require_admin)
 ):
     """
     Check the health of all materialized views.
 
-    **Authentication**: Required
+    **Authentication**: Required (Admin role)
+    
+    Note: This endpoint returns health information for all views across all workspaces.
+    Restricted to admin users to prevent metadata leakage.
 
     Performs health checks including:
     - View population status
@@ -320,7 +329,7 @@ async def check_views_health(
         logger.error(f"Failed to check view health: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to check view health: {str(e)}"
+            detail="Failed to check view health. Please check server logs for details."
         )
 
 
@@ -328,12 +337,15 @@ async def check_views_health(
 async def get_view_row_count(
     view_name: str,
     db: AsyncSession = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_current_active_user)
+    current_user: Dict[str, Any] = Depends(require_admin)
 ):
     """
     Get the number of rows in a materialized view.
 
-    **Authentication**: Required
+    **Authentication**: Required (Admin role)
+    
+    Note: This endpoint returns row counts for views across all workspaces.
+    Restricted to admin users to prevent metadata leakage.
 
     Parameters:
     - **view_name**: Name of the materialized view
@@ -359,14 +371,18 @@ async def get_view_row_count(
         )
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to get row count: {str(e)}"
+            detail="Failed to get row count. Please check server logs for details."
         )
 
 
 @router.get("/views/list")
-async def list_available_views():
+async def list_available_views(
+    current_user: Dict[str, Any] = Depends(get_current_active_user)
+):
     """
     List all available materialized views managed by this service.
+
+    **Authentication**: Required
 
     Returns:
     - List of view names
