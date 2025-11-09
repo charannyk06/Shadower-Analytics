@@ -5,6 +5,7 @@
 
 'use client'
 
+import { useMemo } from 'react'
 import { LatencyMetrics } from '@/types/execution'
 import { Bar } from 'react-chartjs-2'
 import {
@@ -25,44 +26,50 @@ interface LatencyDistributionProps {
 }
 
 export function LatencyDistribution({ data }: LatencyDistributionProps) {
-  const chartData = {
-    labels: data.latencyDistribution.map((bucket) => bucket.bucket),
-    datasets: [
-      {
-        label: 'Executions',
-        data: data.latencyDistribution.map((bucket) => bucket.count),
-        backgroundColor: 'rgba(59, 130, 246, 0.7)',
-        borderColor: 'rgb(59, 130, 246)',
-        borderWidth: 1,
-      },
-    ],
-  }
+  const chartData = useMemo(
+    () => ({
+      labels: data.latencyDistribution.map((bucket) => bucket.bucket),
+      datasets: [
+        {
+          label: 'Executions',
+          data: data.latencyDistribution.map((bucket) => bucket.count),
+          backgroundColor: 'rgba(59, 130, 246, 0.7)',
+          borderColor: 'rgb(59, 130, 246)',
+          borderWidth: 1,
+        },
+      ],
+    }),
+    [data.latencyDistribution]
+  )
 
-  const options: ChartOptions<'bar'> = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: {
-        display: false,
-      },
-      tooltip: {
-        callbacks: {
-          afterLabel: (context) => {
-            const bucket = data.latencyDistribution[context.dataIndex]
-            return `${bucket.percentage.toFixed(1)}% of total`
+  const options: ChartOptions<'bar'> = useMemo(
+    () => ({
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          display: false,
+        },
+        tooltip: {
+          callbacks: {
+            afterLabel: (context) => {
+              const bucket = data.latencyDistribution[context.dataIndex]
+              return `${bucket.percentage.toFixed(1)}% of total`
+            },
           },
         },
       },
-    },
-    scales: {
-      y: {
-        beginAtZero: true,
-        ticks: {
-          precision: 0,
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: {
+            precision: 0,
+          },
         },
       },
-    },
-  }
+    }),
+    [data.latencyDistribution]
+  )
 
   return (
     <div className="bg-white rounded-lg shadow p-6">

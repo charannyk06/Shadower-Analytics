@@ -5,6 +5,7 @@
 
 'use client'
 
+import { useMemo } from 'react'
 import { ThroughputMetrics } from '@/types/execution'
 import { Line } from 'react-chartjs-2'
 import {
@@ -34,52 +35,58 @@ interface ThroughputChartProps {
 }
 
 export function ThroughputChart({ data }: ThroughputChartProps) {
-  const chartData = {
-    labels: data.throughputTrend.map((point) => {
-      const date = new Date(point.timestamp)
-      return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+  const chartData = useMemo(
+    () => ({
+      labels: data.throughputTrend.map((point) => {
+        const date = new Date(point.timestamp)
+        return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+      }),
+      datasets: [
+        {
+          label: 'Executions',
+          data: data.throughputTrend.map((point) => point.value),
+          borderColor: 'rgb(59, 130, 246)',
+          backgroundColor: 'rgba(59, 130, 246, 0.1)',
+          fill: true,
+          tension: 0.4,
+        },
+      ],
     }),
-    datasets: [
-      {
-        label: 'Executions',
-        data: data.throughputTrend.map((point) => point.value),
-        borderColor: 'rgb(59, 130, 246)',
-        backgroundColor: 'rgba(59, 130, 246, 0.1)',
-        fill: true,
-        tension: 0.4,
-      },
-    ],
-  }
+    [data.throughputTrend]
+  )
 
-  const options: ChartOptions<'line'> = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: {
-        display: false,
-      },
-      title: {
-        display: false,
-      },
-      tooltip: {
-        mode: 'index',
-        intersect: false,
-      },
-    },
-    scales: {
-      y: {
-        beginAtZero: true,
-        ticks: {
-          precision: 0,
+  const options: ChartOptions<'line'> = useMemo(
+    () => ({
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          display: false,
+        },
+        title: {
+          display: false,
+        },
+        tooltip: {
+          mode: 'index',
+          intersect: false,
         },
       },
-    },
-    interaction: {
-      mode: 'nearest',
-      axis: 'x',
-      intersect: false,
-    },
-  }
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: {
+            precision: 0,
+          },
+        },
+      },
+      interaction: {
+        mode: 'nearest',
+        axis: 'x',
+        intersect: false,
+      },
+    }),
+    []
+  )
 
   return (
     <div className="bg-white rounded-lg shadow p-6">

@@ -107,7 +107,7 @@ export function OverviewMetrics({ data }: OverviewMetricsProps) {
           title="Active Members"
           value={data.activeMembers}
           icon={Activity}
-          subtitle={`${((data.activeMembers / data.totalMembers) * 100 || 0).toFixed(1)}% of total`}
+          subtitle={`${(((data.activeMembers / data.totalMembers) * 100) || 0).toFixed(1)}% of total`}
         />
 
         <MetricCard

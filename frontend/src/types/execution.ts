@@ -64,7 +64,6 @@ export interface ThroughputMetrics {
 
 export interface LatencyPercentiles {
   avg: number
-  median: number
   p50: number
   p75: number
   p90: number
