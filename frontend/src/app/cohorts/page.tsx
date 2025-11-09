@@ -18,9 +18,18 @@ export default function CohortAnalysisDashboard() {
     end: new Date().toISOString().split('T')[0],
   })
 
-  // For demo purposes, using a mock workspace ID
-  // In production, this would come from auth context
+  // TODO: CRITICAL - Replace with auth context integration before production
+  // This hard-coded workspace ID is for demo purposes only
+  // In production, retrieve from: useAuth() or similar auth context hook
+  // Example: const { workspace } = useAuth(); const workspaceId = workspace?.id;
   const workspaceId = 'demo-workspace-id'
+
+  // Runtime validation - warn if still using demo workspace
+  if (typeof window !== 'undefined' && workspaceId === 'demo-workspace-id') {
+    console.warn(
+      'Using demo workspace ID. Please integrate auth context for production deployment.'
+    )
+  }
 
   const { data, isLoading, error, refetch } = useAdvancedCohortAnalysis({
     workspaceId,
@@ -42,20 +51,65 @@ export default function CohortAnalysisDashboard() {
   }
 
   if (error) {
+    const errorMessage = error instanceof Error ? error.message : 'An error occurred'
+    const isNetworkError = errorMessage.includes('network') || errorMessage.includes('fetch')
+    const isAuthError = errorMessage.includes('401') || errorMessage.includes('unauthorized')
+    const isAccessError = errorMessage.includes('403') || errorMessage.includes('forbidden')
+
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-red-600 text-xl mb-2">⚠️</div>
-          <p className="text-gray-900 font-semibold">Error loading data</p>
-          <p className="text-gray-600 text-sm mt-1">
-            {error instanceof Error ? error.message : 'An error occurred'}
-          </p>
-          <button
-            onClick={() => refetch()}
-            className="mt-4 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
-          >
-            Retry
-          </button>
+        <div className="max-w-md mx-auto px-4">
+          <div className="bg-white rounded-lg shadow-lg p-6">
+            <div className="text-center">
+              <div className="text-red-600 text-4xl mb-4">⚠️</div>
+              <h2 className="text-xl font-semibold text-gray-900 mb-2">
+                Unable to Load Cohort Data
+              </h2>
+              <p className="text-gray-600 text-sm mb-4">{errorMessage}</p>
+            </div>
+
+            <div className="mt-4 bg-blue-50 rounded-lg p-4">
+              <h3 className="text-sm font-semibold text-blue-900 mb-2">
+                Troubleshooting Steps:
+              </h3>
+              <ul className="text-sm text-blue-800 space-y-1">
+                {isNetworkError && (
+                  <>
+                    <li>• Check your internet connection</li>
+                    <li>• Verify the API server is running</li>
+                    <li>• Try refreshing the page</li>
+                  </>
+                )}
+                {isAuthError && (
+                  <>
+                    <li>• Please log in again</li>
+                    <li>• Your session may have expired</li>
+                  </>
+                )}
+                {isAccessError && (
+                  <>
+                    <li>• Verify you have access to this workspace</li>
+                    <li>• Contact your workspace administrator</li>
+                  </>
+                )}
+                {!isNetworkError && !isAuthError && !isAccessError && (
+                  <>
+                    <li>• Try adjusting the date range</li>
+                    <li>• Ensure the workspace has activity data</li>
+                    <li>• Contact support if the issue persists</li>
+                  </>
+                )}
+              </ul>
+            </div>
+
+            <button
+              onClick={() => refetch()}
+              aria-label="Retry loading cohort data"
+              className="mt-4 w-full px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 transition-colors"
+            >
+              Try Again
+            </button>
+          </div>
         </div>
       </div>
     )

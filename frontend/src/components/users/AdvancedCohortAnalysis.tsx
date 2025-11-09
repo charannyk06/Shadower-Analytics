@@ -75,8 +75,11 @@ export function AdvancedCohortAnalysis({ cohorts, comparison }: AdvancedCohortAn
       <div className="bg-white rounded-lg shadow p-6">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-semibold">Cohort Details</h3>
-          <div className="flex gap-2">
+          <div className="flex gap-2" role="tablist" aria-label="Cohort view selector">
             <button
+              role="tab"
+              aria-selected={expandedView === 'retention'}
+              aria-label="View retention data"
               onClick={() => setExpandedView('retention')}
               className={`px-3 py-1 rounded text-sm font-medium ${
                 expandedView === 'retention'
@@ -87,6 +90,9 @@ export function AdvancedCohortAnalysis({ cohorts, comparison }: AdvancedCohortAn
               Retention
             </button>
             <button
+              role="tab"
+              aria-selected={expandedView === 'metrics'}
+              aria-label="View cohort metrics"
               onClick={() => setExpandedView('metrics')}
               className={`px-3 py-1 rounded text-sm font-medium ${
                 expandedView === 'metrics'
@@ -97,6 +103,9 @@ export function AdvancedCohortAnalysis({ cohorts, comparison }: AdvancedCohortAn
               Metrics
             </button>
             <button
+              role="tab"
+              aria-selected={expandedView === 'segments'}
+              aria-label="View segment breakdown"
               onClick={() => setExpandedView('segments')}
               className={`px-3 py-1 rounded text-sm font-medium ${
                 expandedView === 'segments'
@@ -116,7 +125,7 @@ export function AdvancedCohortAnalysis({ cohorts, comparison }: AdvancedCohortAn
         ) : (
           <div className="overflow-x-auto">
             {expandedView === 'retention' && (
-              <table className="min-w-full text-sm">
+              <table className="min-w-full text-sm" aria-label="Cohort retention data by time period">
                 <thead>
                   <tr className="border-b">
                     <th className="text-left py-2 px-3 font-medium text-gray-700">Cohort</th>
@@ -136,6 +145,18 @@ export function AdvancedCohortAnalysis({ cohorts, comparison }: AdvancedCohortAn
                       key={cohort.cohortId}
                       className="border-b hover:bg-gray-50 cursor-pointer"
                       onClick={() => setSelectedCohort(cohort)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          setSelectedCohort(cohort)
+                        }
+                      }}
+                      tabIndex={0}
+                      role="button"
+                      aria-label={`Select cohort from ${new Date(cohort.cohortDate).toLocaleDateString('en-US', {
+                        month: 'long',
+                        year: 'numeric',
+                      })}`}
                     >
                       <td className="py-2 px-3 font-medium text-gray-900">
                         {new Date(cohort.cohortDate).toLocaleDateString('en-US', {
@@ -165,7 +186,7 @@ export function AdvancedCohortAnalysis({ cohorts, comparison }: AdvancedCohortAn
             )}
 
             {expandedView === 'metrics' && (
-              <table className="min-w-full text-sm">
+              <table className="min-w-full text-sm" aria-label="Cohort metrics including LTV and engagement">
                 <thead>
                   <tr className="border-b">
                     <th className="text-left py-2 px-3 font-medium text-gray-700">Cohort</th>
@@ -182,6 +203,18 @@ export function AdvancedCohortAnalysis({ cohorts, comparison }: AdvancedCohortAn
                       key={cohort.cohortId}
                       className="border-b hover:bg-gray-50 cursor-pointer"
                       onClick={() => setSelectedCohort(cohort)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          setSelectedCohort(cohort)
+                        }
+                      }}
+                      tabIndex={0}
+                      role="button"
+                      aria-label={`Select cohort from ${new Date(cohort.cohortDate).toLocaleDateString('en-US', {
+                        month: 'long',
+                        year: 'numeric',
+                      })}`}
                     >
                       <td className="py-2 px-3 font-medium text-gray-900">
                         {new Date(cohort.cohortDate).toLocaleDateString('en-US', {
@@ -214,13 +247,20 @@ export function AdvancedCohortAnalysis({ cohorts, comparison }: AdvancedCohortAn
                       </td>
                       <td className="text-center py-2 px-3">
                         <div className="flex items-center justify-center">
-                          <div className="w-24 bg-gray-200 rounded-full h-2">
+                          <div
+                            className="w-24 bg-gray-200 rounded-full h-2"
+                            role="progressbar"
+                            aria-valuenow={cohort.metrics.engagementScore}
+                            aria-valuemin={0}
+                            aria-valuemax={100}
+                            aria-label={`Engagement score: ${cohort.metrics.engagementScore.toFixed(0)} out of 100`}
+                          >
                             <div
                               className="bg-purple-600 h-2 rounded-full"
                               style={{ width: `${cohort.metrics.engagementScore}%` }}
                             ></div>
                           </div>
-                          <span className="ml-2 text-xs text-gray-600">
+                          <span className="ml-2 text-xs text-gray-600" aria-hidden="true">
                             {cohort.metrics.engagementScore.toFixed(0)}
                           </span>
                         </div>
@@ -244,7 +284,7 @@ export function AdvancedCohortAnalysis({ cohorts, comparison }: AdvancedCohortAn
                     </span>
                   </p>
                 </div>
-                <table className="min-w-full text-sm">
+                <table className="min-w-full text-sm" aria-label="Segment breakdown for selected cohort">
                   <thead>
                     <tr className="border-b">
                       <th className="text-left py-2 px-3 font-medium text-gray-700">Segment</th>
@@ -269,7 +309,14 @@ export function AdvancedCohortAnalysis({ cohorts, comparison }: AdvancedCohortAn
                         </td>
                         <td className="text-center py-2 px-3">
                           <div className="flex items-center justify-center">
-                            <div className="w-20 bg-gray-200 rounded-full h-2">
+                            <div
+                              className="w-20 bg-gray-200 rounded-full h-2"
+                              role="progressbar"
+                              aria-valuenow={(segment.count / selectedCohort.cohortSize) * 100}
+                              aria-valuemin={0}
+                              aria-valuemax={100}
+                              aria-label={`Segment share: ${((segment.count / selectedCohort.cohortSize) * 100).toFixed(0)}%`}
+                            >
                               <div
                                 className="bg-blue-600 h-2 rounded-full"
                                 style={{
@@ -277,7 +324,7 @@ export function AdvancedCohortAnalysis({ cohorts, comparison }: AdvancedCohortAn
                                 }}
                               ></div>
                             </div>
-                            <span className="ml-2 text-xs text-gray-600">
+                            <span className="ml-2 text-xs text-gray-600" aria-hidden="true">
                               {((segment.count / selectedCohort.cohortSize) * 100).toFixed(0)}%
                             </span>
                           </div>
