@@ -1,6 +1,7 @@
 """Application configuration using Pydantic settings."""
 
 from pydantic_settings import BaseSettings
+from pydantic import field_validator
 from typing import List
 from functools import lru_cache
 
@@ -18,6 +19,10 @@ class Settings(BaseSettings):
 
     # Database
     DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/shadower_analytics"
+    DB_POOL_SIZE: int = 20
+    DB_MAX_OVERFLOW: int = 10
+    DB_POOL_TIMEOUT: int = 30
+    DB_POOL_RECYCLE: int = 3600
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
@@ -55,6 +60,48 @@ class Settings(BaseSettings):
     DAILY_ROLLUP_ENABLED: bool = True
     WEEKLY_ROLLUP_ENABLED: bool = True
     MONTHLY_ROLLUP_ENABLED: bool = True
+
+    @field_validator("JWT_SECRET_KEY")
+    @classmethod
+    def validate_jwt_secret(cls, v: str, info) -> str:
+        """Validate JWT secret key strength in production."""
+        # Get APP_ENV from the values being validated
+        app_env = info.data.get("APP_ENV", "development")
+
+        # Weak secrets that should never be used
+        weak_secrets = [
+            "your-secret-key-change-in-production",
+            "secret",
+            "changeme",
+            "default",
+            "test",
+            "password",
+            "12345",
+        ]
+
+        if app_env == "production":
+            # In production, enforce strict requirements
+            if v.lower() in weak_secrets:
+                raise ValueError(
+                    "JWT_SECRET_KEY must be changed from default value in production. "
+                    "Generate a strong secret using: openssl rand -hex 32"
+                )
+            if len(v) < 32:
+                raise ValueError(
+                    "JWT_SECRET_KEY must be at least 32 characters in production. "
+                    "Generate a strong secret using: openssl rand -hex 32"
+                )
+        else:
+            # In development, warn but allow weak secrets
+            if v.lower() in weak_secrets:
+                import warnings
+                warnings.warn(
+                    f"Using default JWT_SECRET_KEY in {app_env} environment. "
+                    "This is insecure for production use.",
+                    UserWarning,
+                )
+
+        return v
 
     class Config:
         env_file = ".env"
