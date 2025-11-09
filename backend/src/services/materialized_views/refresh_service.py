@@ -60,6 +60,44 @@ class MaterializedViewRefreshService:
         """
         self.db = db
 
+    async def validate_managed_views(self) -> Dict[str, Any]:
+        """
+        Verify all managed views exist in the database.
+        
+        This helps catch configuration issues where views are created in migrations
+        but not added to the VIEWS list, or vice versa.
+
+        Returns:
+            Dictionary with validation results:
+            - missing: Views in VIEWS list but not found in database
+            - unmanaged: Views in database but not in VIEWS list
+            - valid: Views that exist in both
+        """
+        query = text("""
+            SELECT matviewname 
+            FROM pg_matviews 
+            WHERE schemaname = 'analytics'
+        """)
+        result = await self.db.execute(query)
+        existing_views = {row.matviewname for row in result.fetchall()}
+        
+        missing = set(self.VIEWS) - existing_views
+        unmanaged = existing_views - set(self.VIEWS)
+        valid = set(self.VIEWS) & existing_views
+        
+        if missing:
+            logger.warning(f"Managed views not found in database: {missing}")
+        
+        if unmanaged:
+            logger.info(f"Unmanaged materialized views found in database: {unmanaged}")
+        
+        return {
+            "missing": list(missing),
+            "unmanaged": list(unmanaged),
+            "valid": list(valid),
+            "all_valid": len(missing) == 0
+        }
+
     async def refresh_all(
         self,
         concurrent: bool = True,
@@ -154,7 +192,12 @@ class MaterializedViewRefreshService:
             query = text(query_text)
 
             # Set statement timeout (use per-view timeout if available)
-            # Use parameterized query to prevent injection
+            # Note: timeout value is from controlled dict/env var (integer), safe to interpolate
+            # PostgreSQL requires string format like '30s' for statement_timeout
+            # Using parameterized query with string format is safe here because:
+            # 1. timeout is an integer from VIEW_TIMEOUTS dict or REFRESH_TIMEOUT env var
+            # 2. The value is validated and comes from a controlled source
+            # 3. PostgreSQL's statement_timeout requires string format with 's' suffix
             timeout = self.VIEW_TIMEOUTS.get(view_name, self.REFRESH_TIMEOUT)
             await self.db.execute(
                 text("SET LOCAL statement_timeout = :timeout"),
@@ -207,9 +250,17 @@ class MaterializedViewRefreshService:
         """
         Get refresh status for all materialized views.
 
-        Returns view metadata (size, population status) for all managed views.
-        This endpoint returns administrative metadata only and is restricted to
-        admin users to prevent information leakage.
+        SECURITY NOTE: This endpoint returns ADMINISTRATIVE METADATA ONLY
+        - Returns: View sizes, population status, indexes (metadata about the views themselves)
+        - Does NOT return: Actual aggregated analytics data from the views
+        - Access: Admin-only via require_admin dependency
+        - Workspace filtering: Not applied - admins see all view metadata for system monitoring
+
+        For workspace-filtered DATA access, use the secure views:
+        - v_agent_performance_secure
+        - v_workspace_metrics_secure  
+        - v_top_agents_enhanced_secure
+        - v_error_summary_secure
 
         Note: Materialized views do not support RLS directly. Applications should
         use the secure views (v_*_secure) created in migration 015 to access

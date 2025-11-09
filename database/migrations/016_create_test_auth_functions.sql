@@ -3,13 +3,30 @@
 -- Description: Create test helper functions for auth.uid() and auth.role()
 -- Created: 2025-11-09
 -- 
--- NOTE: This migration creates mock auth functions for testing purposes.
--- In production, these functions are provided by Supabase's auth extension.
+-- WARNING: TEST ENVIRONMENT ONLY
+-- This migration should ONLY run in test/dev environments
+-- DO NOT run in production - Supabase provides these functions
 -- 
 -- For testing RLS policies, we need these functions to simulate user context.
 -- =====================================================================
 
 SET search_path TO analytics, public;
+
+-- =====================================================================
+-- Environment Guard: Prevent execution in Supabase/production
+-- =====================================================================
+
+DO $$
+BEGIN
+    -- Check if we're in Supabase/production environment
+    -- Supabase has a special role 'supabase_admin' that indicates production
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'supabase_admin') THEN
+        RAISE EXCEPTION 
+            'This migration should not run in Supabase/production environments. '
+            'Supabase provides auth.uid() and auth.role() functions automatically. '
+            'This migration is for test/dev environments only.';
+    END IF;
+END $$;
 
 -- =====================================================================
 -- Create auth schema if it doesn't exist (for testing)

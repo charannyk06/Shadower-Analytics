@@ -51,7 +51,9 @@ CREATE INDEX idx_mv_agent_performance_runs
     ON analytics.mv_agent_performance(total_runs DESC);
 
 -- Comments
-COMMENT ON MATERIALIZED VIEW analytics.mv_agent_performance IS 'Agent performance metrics aggregated from agent_runs - last 30 days';
+COMMENT ON MATERIALIZED VIEW analytics.mv_agent_performance IS 
+    'Agent performance metrics aggregated from agent_runs - last 30 days. '
+    'Admin/service_role only. Users should query v_agent_performance_secure for workspace-filtered access.';
 
 -- =====================================================================
 -- Materialized View: mv_workspace_metrics
@@ -98,7 +100,9 @@ CREATE INDEX idx_mv_workspace_metrics_activity
     ON analytics.mv_workspace_metrics(last_activity_at DESC);
 
 -- Comments
-COMMENT ON MATERIALIZED VIEW analytics.mv_workspace_metrics IS 'Workspace-level aggregated metrics from agent runs - last 30 days';
+COMMENT ON MATERIALIZED VIEW analytics.mv_workspace_metrics IS 
+    'Workspace-level aggregated metrics from agent runs - last 30 days. '
+    'Admin/service_role only. Users should query v_workspace_metrics_secure for workspace-filtered access.';
 
 -- =====================================================================
 -- Materialized View: mv_top_agents_enhanced
@@ -155,7 +159,9 @@ CREATE INDEX idx_mv_top_agents_enhanced_success_rate
     ON analytics.mv_top_agents_enhanced(success_rate DESC);
 
 -- Comments
-COMMENT ON MATERIALIZED VIEW analytics.mv_top_agents_enhanced IS 'Enhanced top agents with rankings by multiple criteria - last 30 days';
+COMMENT ON MATERIALIZED VIEW analytics.mv_top_agents_enhanced IS 
+    'Enhanced top agents with rankings by multiple criteria - last 30 days. '
+    'Admin/service_role only. Users should query v_top_agents_enhanced_secure for workspace-filtered access.';
 
 -- =====================================================================
 -- Materialized View: mv_error_summary
@@ -223,7 +229,9 @@ CREATE INDEX idx_mv_error_summary_severity
     ON analytics.mv_error_summary(error_severity, error_count DESC);
 
 -- Comments
-COMMENT ON MATERIALIZED VIEW analytics.mv_error_summary IS 'Error summary with patterns and severity levels - last 30 days';
+COMMENT ON MATERIALIZED VIEW analytics.mv_error_summary IS 
+    'Error summary with patterns and severity levels - last 30 days. '
+    'Admin/service_role only. Users should query v_error_summary_secure for workspace-filtered access.';
 
 -- =====================================================================
 -- View for Materialized View Metadata
@@ -338,17 +346,32 @@ COMMENT ON FUNCTION analytics.refresh_all_materialized_views IS
 -- =====================================================================
 -- Initial population of materialized views
 -- NOTE: Commented out to prevent migration timeouts on large datasets.
--- Run these manually after migration completes:
--- REFRESH MATERIALIZED VIEW CONCURRENTLY analytics.mv_agent_performance;
--- REFRESH MATERIALIZED VIEW CONCURRENTLY analytics.mv_workspace_metrics;
--- REFRESH MATERIALIZED VIEW CONCURRENTLY analytics.mv_top_agents_enhanced;
--- REFRESH MATERIALIZED VIEW CONCURRENTLY analytics.mv_error_summary;
 -- =====================================================================
 
 -- REFRESH MATERIALIZED VIEW analytics.mv_agent_performance;
 -- REFRESH MATERIALIZED VIEW analytics.mv_workspace_metrics;
 -- REFRESH MATERIALIZED VIEW analytics.mv_top_agents_enhanced;
 -- REFRESH MATERIALIZED VIEW analytics.mv_error_summary;
+
+-- =====================================================================
+-- Post-Migration Steps (REQUIRED)
+-- =====================================================================
+-- After migration completes successfully:
+-- 
+-- 1. Verify views were created:
+--    SELECT * FROM analytics.v_materialized_view_status;
+-- 
+-- 2. Populate views (run as service_role or postgres):
+--    SELECT * FROM analytics.refresh_all_materialized_views(true);
+-- 
+-- 3. Verify population:
+--    SELECT view_name, ispopulated FROM pg_matviews WHERE schemaname = 'analytics';
+-- 
+-- 4. Set up cron job or scheduled task for periodic refresh
+-- 
+-- Note: Until views are populated, queries will return empty results.
+-- This is expected behavior - views must be refreshed before use.
+-- =====================================================================
 
 -- =====================================================================
 -- Grants
@@ -365,13 +388,20 @@ REVOKE ALL ON analytics.mv_error_summary FROM PUBLIC;
 REVOKE ALL ON analytics.v_materialized_view_status FROM PUBLIC;
 REVOKE ALL ON FUNCTION analytics.refresh_all_materialized_views FROM PUBLIC;
 
--- Grant SELECT on all materialized views to authenticated users only
--- Note: Direct access to materialized views should be restricted.
--- Use secure views (v_*_secure) created in migration 015 for workspace-filtered access.
-GRANT SELECT ON analytics.mv_agent_performance TO authenticated;
-GRANT SELECT ON analytics.mv_workspace_metrics TO authenticated;
-GRANT SELECT ON analytics.mv_top_agents_enhanced TO authenticated;
-GRANT SELECT ON analytics.mv_error_summary TO authenticated;
+-- CRITICAL SECURITY: Materialized views contain aggregated data across ALL workspaces.
+-- Direct access to materialized views is restricted to service_role (admin operations only).
+-- Regular users MUST use secure views (v_*_secure) created in migration 015 for workspace-filtered access.
+-- Granting SELECT to authenticated would allow any authenticated user to see data from ALL workspaces,
+-- violating multi-tenant data isolation.
+
+-- Grant SELECT on materialized views ONLY to service_role for admin operations
+GRANT SELECT ON analytics.mv_agent_performance TO service_role;
+GRANT SELECT ON analytics.mv_workspace_metrics TO service_role;
+GRANT SELECT ON analytics.mv_top_agents_enhanced TO service_role;
+GRANT SELECT ON analytics.mv_error_summary TO service_role;
+
+-- Grant SELECT on metadata view to authenticated (metadata only, not data)
+-- This view only shows view metadata (size, population status), not aggregated data
 GRANT SELECT ON analytics.v_materialized_view_status TO authenticated;
 
 -- Grant EXECUTE on refresh function only to service_role

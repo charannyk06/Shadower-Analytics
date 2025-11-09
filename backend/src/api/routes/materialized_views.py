@@ -19,6 +19,10 @@ from src.api.dependencies.auth import require_admin, get_current_active_user
 
 logger = logging.getLogger(__name__)
 
+# Module-level constant for view name validation
+# This avoids importing the service class inside the validator function
+ALLOWED_VIEW_NAMES = set(MaterializedViewRefreshService.VIEWS)
+
 router = APIRouter(prefix="/materialized-views", tags=["materialized-views"])
 
 
@@ -48,13 +52,11 @@ class RefreshRequest(BaseModel):
     def validate_view_names(cls, v):
         """Validate view names against whitelist."""
         if v is not None:
-            from src.services.materialized_views.refresh_service import MaterializedViewRefreshService
-            allowed = set(MaterializedViewRefreshService.VIEWS)
-            invalid = set(v) - allowed
+            invalid = set(v) - ALLOWED_VIEW_NAMES
             if invalid:
                 raise ValueError(
                     f"Invalid view names: {sorted(invalid)}. "
-                    f"Allowed views: {sorted(allowed)}"
+                    f"Allowed views: {sorted(ALLOWED_VIEW_NAMES)}"
                 )
         return v
 
@@ -235,6 +237,8 @@ async def get_views_status(
     Get status information for all materialized views.
 
     **Authentication**: Required (Admin role)
+    **Authorization**: Admin users have global access to view metadata across all workspaces.
+    This is by design to enable system monitoring and troubleshooting.
     
     Note: This endpoint returns metadata for all views across all workspaces.
     Restricted to admin users to prevent metadata leakage.
@@ -266,6 +270,8 @@ async def get_view_statistics(
     Get detailed statistics for a specific materialized view.
 
     **Authentication**: Required (Admin role)
+    **Authorization**: Admin users have global access to view statistics across all workspaces.
+    This is by design to enable system monitoring and troubleshooting.
     
     Note: This endpoint returns statistics for views across all workspaces.
     Restricted to admin users to prevent metadata leakage.
@@ -313,6 +319,8 @@ async def check_views_health(
     Check the health of all materialized views.
 
     **Authentication**: Required (Admin role)
+    **Authorization**: Admin users have global access to view health information across all workspaces.
+    This is by design to enable system monitoring and troubleshooting.
     
     Note: This endpoint returns health information for all views across all workspaces.
     Restricted to admin users to prevent metadata leakage.
@@ -358,6 +366,8 @@ async def get_view_row_count(
     Get the number of rows in a materialized view.
 
     **Authentication**: Required (Admin role)
+    **Authorization**: Admin users have global access to row counts across all workspaces.
+    This is by design to enable system monitoring and troubleshooting.
     
     Note: This endpoint returns row counts for views across all workspaces.
     Restricted to admin users to prevent metadata leakage.

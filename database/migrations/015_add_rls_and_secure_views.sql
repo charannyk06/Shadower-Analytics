@@ -11,6 +11,19 @@
 SET search_path TO analytics, public;
 
 -- =====================================================================
+-- CRITICAL: Revoke direct access to materialized views
+-- Users MUST use secure views (v_*_secure) which enforce workspace filtering
+-- =====================================================================
+
+-- Revoke SELECT access from authenticated role on materialized views
+-- These views contain aggregated data across ALL workspaces
+-- Defense in depth: Even if migration 014 grants were missed, this ensures security
+REVOKE SELECT ON analytics.mv_agent_performance FROM authenticated;
+REVOKE SELECT ON analytics.mv_workspace_metrics FROM authenticated;
+REVOKE SELECT ON analytics.mv_top_agents_enhanced FROM authenticated;
+REVOKE SELECT ON analytics.mv_error_summary FROM authenticated;
+
+-- =====================================================================
 -- Enable Row-Level Security on Source Tables
 -- =====================================================================
 
@@ -115,8 +128,8 @@ COMMENT ON VIEW analytics.v_error_summary_secure IS
 -- Grants for Secure Views
 -- =====================================================================
 
--- Revoke PUBLIC grants on materialized views (will be done in migration 014 fix)
 -- Grant SELECT on secure views to authenticated users
+-- These views enforce workspace filtering via get_user_workspaces()
 GRANT SELECT ON analytics.v_agent_performance_secure TO authenticated;
 GRANT SELECT ON analytics.v_workspace_metrics_secure TO authenticated;
 GRANT SELECT ON analytics.v_top_agents_enhanced_secure TO authenticated;

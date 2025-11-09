@@ -366,8 +366,12 @@ class TestWorkspaceIsolation:
             assert isinstance(rows, list), "Secure view should be queryable"
 
         except Exception as e:
-            # If migrations aren't applied or tables don't exist, skip
-            pytest.skip(f"Test requires database setup with migrations 014 and 015: {str(e)}")
+            # CRITICAL: RLS tests MUST fail if database isn't configured
+            # Don't skip - these are security-critical tests
+            pytest.fail(
+                f"CRITICAL: Test requires database setup with migrations 014 and 015. "
+                f"RLS policies must be tested before production deployment: {str(e)}"
+            )
 
     @pytest.mark.integration
     @pytest.mark.asyncio
@@ -438,7 +442,11 @@ class TestWorkspaceIsolation:
             assert workspace_b_id in workspace_ids, "Admin should see workspace_b data"
 
         except Exception as e:
-            pytest.skip(f"Test requires database setup: {str(e)}")
+            # CRITICAL: RLS tests MUST fail if database isn't configured
+            pytest.fail(
+                f"CRITICAL: Test requires database setup with migrations 014 and 015. "
+                f"RLS policies must be tested before production deployment: {str(e)}"
+            )
 
     @pytest.mark.integration
     @pytest.mark.asyncio
@@ -532,7 +540,11 @@ class TestWorkspaceIsolation:
             assert isinstance(workspace_ids, list), "Secure view should filter by workspace"
 
         except Exception as e:
-            pytest.skip(f"Test requires database setup with migrations: {str(e)}")
+            # CRITICAL: RLS tests MUST fail if database isn't configured
+            pytest.fail(
+                f"CRITICAL: Test requires database setup with migrations 014 and 015. "
+                f"RLS policies must be tested before production deployment: {str(e)}"
+            )
 
 
 # =====================================================================
