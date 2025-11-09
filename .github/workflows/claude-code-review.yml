@@ -29,7 +29,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          # Fetch full history for proper PR context
+          fetch-depth: 0
+          # Checkout the PR head ref for pull_request events
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Set PR number
         id: pr-info
@@ -43,24 +46,81 @@ jobs:
       - name: Run Claude Code Review
         id: claude-review
         uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ github.token }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: |
-            REPO: ${{ github.repository }}
-            PR NUMBER: ${{ steps.pr-info.outputs.pr_number }}
+            You are reviewing PR #${{ steps.pr-info.outputs.pr_number }} in repository ${{ github.repository }}.
 
-            Please review this pull request and provide feedback on:
-            - Code quality and best practices
-            - Potential bugs or issues
-            - Performance considerations
-            - Security concerns
-            - Test coverage
+            **Your Task:** Perform a comprehensive code review of this pull request.
 
-            Use the repository's CLAUDE.md for guidance on style and conventions. Be constructive and helpful in your feedback.
+            **Step-by-step process:**
 
-            Use `gh pr comment` with your Bash tool to leave your review as a comment on the PR.
+            1. First, run: `gh pr view ${{ steps.pr-info.outputs.pr_number }} --repo ${{ github.repository }}`
+               This will show you the PR title, description, and metadata.
 
-          # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
-          # or https://docs.claude.com/en/docs/claude-code/cli-reference for available options
-          claude_args: '--allowed-tools "Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*)"'
+            2. Then run: `gh pr diff ${{ steps.pr-info.outputs.pr_number }} --repo ${{ github.repository }}`
+               This will show you all the code changes in the PR.
+
+            3. Use the Read, Grep, and Glob tools to:
+               - Read the full content of modified/new files
+               - Search for related code patterns
+               - Find relevant test files
+               - Check for style guide files (CLAUDE.md, CONTRIBUTING.md, etc.)
+
+            4. Analyze the code for:
+               - **Code Quality:** Best practices, maintainability, readability
+               - **Bugs:** Logic errors, edge cases, potential crashes
+               - **Performance:** Inefficiencies, scalability issues
+               - **Security:** Vulnerabilities, injection risks, authentication issues
+               - **Testing:** Coverage, quality, edge case handling
+               - **Architecture:** Consistency with existing patterns
+               - **Documentation:** Comments, README updates, API docs
+
+            5. After your thorough review, post a comment using:
+               ```bash
+               gh pr comment ${{ steps.pr-info.outputs.pr_number }} --repo ${{ github.repository }} --body "YOUR_REVIEW_HERE"
+               ```
+
+            **Review Format (use markdown):**
+            ```markdown
+            ## 📋 Summary
+            [Brief overview of what this PR does]
+
+            ## 🔍 What's Changed
+            [List the main changes]
+
+            ## ✅ Strengths
+            [What's done well]
+
+            ## ⚠️ Issues Found
+            [Any problems discovered - be specific with file:line references]
+
+            ## 💡 Suggestions for Improvement
+            [Actionable recommendations]
+
+            ## 🔒 Security & Performance Notes
+            [Any security or performance concerns]
+
+            ## 🧪 Test Coverage Assessment
+            [Analysis of test quality and coverage]
+
+            ## 🎯 Overall Recommendation
+            [Approve, Request Changes, or Comment with reasoning]
+            ```
+
+            **Important:**
+            - Be constructive and helpful
+            - Cite specific files and line numbers when mentioning issues
+            - Prioritize critical issues over style nitpicks
+            - Acknowledge good practices when you see them
+            - If everything looks good, say so clearly
+
+            Begin your review now!
+
+          # Allow Claude to use necessary tools for code review
+          # Using wildcard for Bash to allow all gh commands
+          claude_args: >-
+            --allowed-tools "Read,Grep,Glob,Bash"
 

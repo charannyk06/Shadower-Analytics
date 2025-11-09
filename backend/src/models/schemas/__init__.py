@@ -5,3 +5,4 @@ from .agents import *
 from .users import *
 from .workspaces import *
 from .common import *
+from .leaderboards import *
