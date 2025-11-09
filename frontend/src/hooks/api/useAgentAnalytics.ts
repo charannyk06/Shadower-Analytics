@@ -2,7 +2,7 @@
  * Agent Analytics API Hooks
  */
 
-import { useQuery, UseQueryResult } from '@tanstack/react-query';
+import { useQuery, useQueryClient, UseQueryResult } from '@tanstack/react-query';
 import { AgentAnalytics, TimeFrame } from '@/types/agent-analytics';
 import { apiClient } from '@/lib/api/client';
 
@@ -88,8 +88,3 @@ export function usePrefetchAgentAnalytics() {
     });
   };
 }
-
-// Export for convenience
-import { useQueryClient } from '@tanstack/react-query';
-
-export { useQueryClient };

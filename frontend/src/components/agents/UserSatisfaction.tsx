@@ -30,9 +30,6 @@ export function UserSatisfaction({ userMetrics }: UserSatisfactionProps) {
     { rating: '1⭐', count: userMetrics.userRatings.distribution['1'], fill: '#ef4444' },
   ];
 
-  const hourLabels = ['12am', '3am', '6am', '9am', '12pm', '3pm', '6pm', '9pm'];
-  const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
   return (
     <div className="space-y-6">
       <h2 className="text-xl font-semibold text-gray-900">User Satisfaction</h2>
