@@ -25,11 +25,14 @@ class Settings(BaseSettings):
     DB_POOL_RECYCLE: int = 3600
 
     # Redis
-    REDIS_URL: str = "redis://localhost:6379/0"
+    # For development with password: redis://:password@localhost:6379/0
+    # For production: Use strong password from environment variable
+    REDIS_URL: str = "redis://:shadower_redis_dev_password_change_in_production@localhost:6379/0"
+    REDIS_PASSWORD: Optional[str] = "shadower_redis_dev_password_change_in_production"
 
     # Celery
-    CELERY_BROKER_URL: str = "redis://localhost:6379/1"
-    CELERY_RESULT_BACKEND: str = "redis://localhost:6379/2"
+    CELERY_BROKER_URL: str = "redis://:shadower_redis_dev_password_change_in_production@localhost:6379/1"
+    CELERY_RESULT_BACKEND: str = "redis://:shadower_redis_dev_password_change_in_production@localhost:6379/2"
 
     # Security & Authentication
     JWT_SECRET_KEY: str = "your-secret-key-change-in-production"

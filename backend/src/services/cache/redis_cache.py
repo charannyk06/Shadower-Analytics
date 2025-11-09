@@ -1,13 +1,29 @@
 """Enhanced Redis cache implementation with warming and invalidation."""
 
 import asyncio
+import json
+import re
 from typing import Any, Optional, Callable, Dict
 import logging
+from .metrics import (
+    record_cache_hit,
+    record_cache_miss,
+    record_cache_error,
+    record_cache_invalidation,
+    track_cache_operation,
+)
+from ...core.constants import CACHE_KEY_MAX_LENGTH, CACHE_KEY_PATTERN
 
 from .keys import CacheKeys
 from ...core.redis import RedisClient
 
 logger = logging.getLogger(__name__)
+
+
+class CacheKeyValidationError(ValueError):
+    """Exception raised for invalid cache keys."""
+
+    pass
 
 
 class CacheService:
@@ -21,6 +37,30 @@ class CacheService:
             redis_client: RedisClient instance
         """
         self.redis = redis_client
+        self._key_pattern = re.compile(CACHE_KEY_PATTERN)
+
+    def _validate_cache_key(self, key: str) -> None:
+        """Validate cache key format and length.
+
+        Args:
+            key: Cache key to validate
+
+        Raises:
+            CacheKeyValidationError: If key is invalid
+        """
+        if not key:
+            raise CacheKeyValidationError("Cache key cannot be empty")
+
+        if len(key) > CACHE_KEY_MAX_LENGTH:
+            raise CacheKeyValidationError(
+                f"Cache key exceeds maximum length of {CACHE_KEY_MAX_LENGTH} characters"
+            )
+
+        if not self._key_pattern.match(key):
+            raise CacheKeyValidationError(
+                f"Cache key contains invalid characters. "
+                f"Only alphanumeric, colon, underscore, hyphen, and dot are allowed"
+            )
 
     async def get(self, key: str) -> Optional[Any]:
         """
@@ -32,7 +72,22 @@ class CacheService:
         Returns:
             Cached value or None
         """
-        return await self.redis.get(key)
+        try:
+            self._validate_cache_key(key)
+            value = await self.redis.get(key)
+            if value is not None:
+                record_cache_hit("get", self._get_key_pattern(key))
+            else:
+                record_cache_miss("get", self._get_key_pattern(key))
+            return value
+        except CacheKeyValidationError as e:
+            logger.warning(f"Invalid cache key: {e}")
+            record_cache_error("get", "ValidationError")
+            return None
+        except Exception as e:
+            logger.error(f"Cache get error: {e}")
+            record_cache_error("get", type(e).__name__)
+            return None
 
     async def set(self, key: str, value: Any, ttl: int = CacheKeys.TTL_MEDIUM):
         """
@@ -43,7 +98,15 @@ class CacheService:
             value: Value to cache
             ttl: Time to live in seconds
         """
-        await self.redis.set(key, value, expire=ttl)
+        try:
+            self._validate_cache_key(key)
+            await self.redis.set(key, value, expire=ttl)
+        except CacheKeyValidationError as e:
+            logger.warning(f"Invalid cache key: {e}")
+            record_cache_error("set", "ValidationError")
+        except Exception as e:
+            logger.error(f"Cache set error: {e}")
+            record_cache_error("set", type(e).__name__)
 
     async def delete(self, key: str) -> bool:
         """
@@ -55,7 +118,18 @@ class CacheService:
         Returns:
             True if key was deleted
         """
-        return await self.redis.delete(key)
+        try:
+            self._validate_cache_key(key)
+            result = await self.redis.delete(key)
+            return result
+        except CacheKeyValidationError as e:
+            logger.warning(f"Invalid cache key: {e}")
+            record_cache_error("delete", "ValidationError")
+            return False
+        except Exception as e:
+            logger.error(f"Cache delete error: {e}")
+            record_cache_error("delete", type(e).__name__)
+            return False
 
     async def exists(self, key: str) -> bool:
         """
@@ -67,7 +141,17 @@ class CacheService:
         Returns:
             True if key exists
         """
-        return await self.redis.exists(key)
+        try:
+            self._validate_cache_key(key)
+            return await self.redis.exists(key)
+        except CacheKeyValidationError as e:
+            logger.warning(f"Invalid cache key: {e}")
+            record_cache_error("exists", "ValidationError")
+            return False
+        except Exception as e:
+            logger.error(f"Cache exists error: {e}")
+            record_cache_error("exists", type(e).__name__)
+            return False
 
     async def get_or_compute(
         self, key: str, compute_func: Callable, ttl: int = CacheKeys.TTL_MEDIUM
@@ -84,7 +168,7 @@ class CacheService:
             Cached or computed value
         """
         # Check cache first
-        value = await self.redis.get(key)
+        value = await self.get(key)
 
         if value is not None:
             logger.debug(f"Cache hit for key: {key}")
@@ -95,7 +179,7 @@ class CacheService:
         value = await compute_func()
 
         # Cache the result
-        await self.redis.set(key, value, expire=ttl)
+        await self.set(key, value, ttl=ttl)
         logger.debug(f"Cached computed value for key: {key}")
 
         return value
@@ -114,7 +198,7 @@ class CacheService:
 
         total_deleted = 0
         for pattern in patterns:
-            deleted = await self.redis.flush_pattern(pattern)
+            deleted = await self.clear_pattern(pattern)
             total_deleted += deleted
 
         logger.info(
@@ -133,7 +217,7 @@ class CacheService:
             Number of keys deleted
         """
         pattern = CacheKeys.get_agent_pattern(agent_id)
-        deleted = await self.redis.flush_pattern(pattern)
+        deleted = await self.clear_pattern(pattern)
 
         logger.info(f"Invalidated {deleted} cache entries for agent {agent_id}")
         return deleted
@@ -152,7 +236,7 @@ class CacheService:
 
         total_deleted = 0
         for pattern in patterns:
-            deleted = await self.redis.flush_pattern(pattern)
+            deleted = await self.clear_pattern(pattern)
             total_deleted += deleted
 
         logger.info(f"Invalidated {total_deleted} cache entries for user {user_id}")
@@ -272,12 +356,56 @@ class CacheService:
 
     async def clear_pattern(self, pattern: str) -> int:
         """
-        Clear all keys matching pattern (backward compatibility).
+        Clear all keys matching pattern using SCAN (production-safe).
 
         Args:
             pattern: Redis key pattern
 
         Returns:
             Number of keys deleted
+
+        Note: This uses SCAN instead of KEYS for production safety.
+        There is a potential race condition where keys created during
+        SCAN iteration might be missed. This is acceptable for cache
+        invalidation use cases.
         """
-        return await self.redis.flush_pattern(pattern)
+        try:
+            cursor = 0
+            deleted_count = 0
+
+            while True:
+                cursor, keys = await self.redis.redis.scan(
+                    cursor=cursor, match=pattern, count=100
+                )
+
+                if keys:
+                    await self.redis.redis.delete(*keys)
+                    deleted_count += len(keys)
+
+                if cursor == 0:
+                    break
+
+            if deleted_count > 0:
+                logger.info(f"Cleared {deleted_count} keys matching pattern: {pattern}")
+                record_cache_invalidation(pattern)
+
+            return deleted_count
+        except Exception as e:
+            logger.error(f"Cache clear pattern error: {e}")
+            record_cache_error("clear_pattern", type(e).__name__)
+            return 0
+
+    @staticmethod
+    def _get_key_pattern(key: str) -> str:
+        """Extract pattern from cache key for metrics.
+
+        Args:
+            key: Cache key (e.g., "metric:cpu:user:123")
+
+        Returns:
+            Key pattern (e.g., "metric:cpu")
+        """
+        parts = key.split(":")
+        if len(parts) >= 2:
+            return f"{parts[0]}:{parts[1]}"
+        return parts[0] if parts else "unknown"
