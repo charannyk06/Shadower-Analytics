@@ -14,6 +14,7 @@ from .credits import router as credits_router
 from .errors import router as errors_router
 from .trends import router as trends_router
 from .leaderboards import router as leaderboards_router
+from .funnels import router as funnels_router
 
 __all__ = [
     "executive_router",
@@ -30,4 +31,5 @@ __all__ = [
     "errors_router",
     "trends_router",
     "leaderboards_router",
+    "funnels_router",
 ]

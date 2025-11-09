@@ -64,4 +64,11 @@ export const endpoints = {
   workspaceLeaderboard: `${API_VERSION}/leaderboards/workspaces`,
   refreshLeaderboards: (workspaceId: string) => `${API_VERSION}/leaderboards/refresh/${workspaceId}`,
   myAgentRank: (agentId: string) => `${API_VERSION}/leaderboards/my-rank/agent/${agentId}`,
+
+  // Funnels
+  funnelDefinitions: `${API_VERSION}/funnels/definitions`,
+  funnelDefinition: (funnelId: string) => `${API_VERSION}/funnels/definitions/${funnelId}`,
+  funnelAnalyze: (funnelId: string) => `${API_VERSION}/funnels/definitions/${funnelId}/analyze`,
+  funnelJourneys: (funnelId: string) => `${API_VERSION}/funnels/definitions/${funnelId}/journeys`,
+  funnelPerformanceSummary: `${API_VERSION}/funnels/performance-summary`,
 } as const;
