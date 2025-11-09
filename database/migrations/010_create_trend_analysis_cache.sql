@@ -33,11 +33,6 @@ CREATE INDEX idx_trend_analysis_expires
 CREATE INDEX idx_trend_analysis_calculated
     ON analytics.trend_analysis_cache(calculated_at DESC);
 
--- Composite index for common query patterns
-CREATE INDEX idx_trend_analysis_lookup
-    ON analytics.trend_analysis_cache(workspace_id, metric, timeframe)
-    WHERE expires_at > NOW();
-
 -- Function to automatically update updated_at timestamp
 CREATE OR REPLACE FUNCTION analytics.update_trend_analysis_updated_at()
 RETURNS TRIGGER AS $$
