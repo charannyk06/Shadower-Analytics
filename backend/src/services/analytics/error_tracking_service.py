@@ -2,8 +2,9 @@
 
 import asyncio
 import hashlib
+import json
 import re
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Dict, Any, List, Optional
 import logging
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +17,11 @@ logger = logging.getLogger(__name__)
 
 class ErrorTrackingService:
     """Service for comprehensive error tracking and analysis."""
+    
+    # Compile regex patterns once at class level for performance
+    _LINE_NUMBER_PATTERN = re.compile(r':\d+:\d+')
+    _STRING_LITERAL_PATTERN = re.compile(r'"[^"]*"')
+    _NUMBER_PATTERN = re.compile(r'\d+')
 
     def __init__(self, db: AsyncSession):
         self.db = db
@@ -43,16 +49,19 @@ class ErrorTrackingService:
         if existing:
             # Update existing error
             error_id = existing['error_id']
-            await self._update_error_occurrence(error_id, error_data)
+            await self._update_error_occurrence(error_id, error_data, commit=False)
         else:
             # Create new error entry
-            error_id = await self._create_new_error(fingerprint, workspace_id, error_data)
+            error_id = await self._create_new_error(fingerprint, workspace_id, error_data, commit=False)
 
         # Create occurrence record
-        await self._create_occurrence(error_id, error_data)
+        await self._create_occurrence(error_id, error_data, commit=False)
 
         # Update timeline
-        await self._update_timeline(workspace_id, error_data)
+        await self._update_timeline(workspace_id, error_data, commit=False)
+
+        # Commit all changes in a single transaction
+        await self.db.commit()
 
         return error_id
 
@@ -181,9 +190,9 @@ class ErrorTrackingService:
 
         # Normalize stack trace (remove line numbers and specific values)
         stack_trace = error_data.get('stack_trace', '')
-        normalized_stack = re.sub(r':\d+:\d+', '', stack_trace)
-        normalized_stack = re.sub(r'"[^"]*"', '""', normalized_stack)
-        normalized_stack = re.sub(r'\d+', 'N', normalized_stack)
+        normalized_stack = self._LINE_NUMBER_PATTERN.sub('', stack_trace)
+        normalized_stack = self._STRING_LITERAL_PATTERN.sub('""', normalized_stack)
+        normalized_stack = self._NUMBER_PATTERN.sub('N', normalized_stack)
 
         # Create fingerprint
         fingerprint_data = f"{error_type}:{normalized_stack[:500]}"
@@ -227,7 +236,8 @@ class ErrorTrackingService:
         self,
         fingerprint: str,
         workspace_id: str,
-        error_data: Dict[str, Any]
+        error_data: Dict[str, Any],
+        commit: bool = True
     ) -> str:
         """Create a new error entry.
 
@@ -235,6 +245,7 @@ class ErrorTrackingService:
             fingerprint: Error fingerprint
             workspace_id: Workspace ID
             error_data: Error details
+            commit: Whether to commit the transaction
 
         Returns:
             error_id: New error ID
@@ -277,10 +288,12 @@ class ErrorTrackingService:
                 'message': error_data.get('message', ''),
                 'severity': error_data.get('severity', 'medium'),
                 'stack_trace': error_data.get('stack_trace', ''),
-                'context': error_data.get('context', '{}')
+                'context': json.dumps(error_data.get('context', {}))
             }
         )
-        await self.db.commit()
+        
+        if commit:
+            await self.db.commit()
 
         row = result.fetchone()
         return str(row.error_id)
@@ -288,13 +301,15 @@ class ErrorTrackingService:
     async def _update_error_occurrence(
         self,
         error_id: str,
-        error_data: Dict[str, Any]
+        error_data: Dict[str, Any],
+        commit: bool = True
     ):
         """Update existing error with new occurrence.
 
         Args:
             error_id: Error ID
             error_data: Error details
+            commit: Whether to commit the transaction
         """
         query = text("""
             UPDATE analytics.errors
@@ -306,18 +321,22 @@ class ErrorTrackingService:
         """)
 
         await self.db.execute(query, {'error_id': error_id})
-        await self.db.commit()
+        
+        if commit:
+            await self.db.commit()
 
     async def _create_occurrence(
         self,
         error_id: str,
-        error_data: Dict[str, Any]
+        error_data: Dict[str, Any],
+        commit: bool = True
     ):
         """Create occurrence record.
 
         Args:
             error_id: Error ID
             error_data: Error details
+            commit: Whether to commit the transaction
         """
         query = text("""
             INSERT INTO analytics.error_occurrences (
@@ -350,23 +369,27 @@ class ErrorTrackingService:
                 'user_id': context.get('userId'),
                 'agent_id': context.get('agentId'),
                 'run_id': context.get('runId'),
-                'metadata': error_data.get('metadata', '{}'),
+                'metadata': json.dumps(error_data.get('metadata', {})),
                 'environment': context.get('environment'),
                 'version': context.get('version')
             }
         )
-        await self.db.commit()
+        
+        if commit:
+            await self.db.commit()
 
     async def _update_timeline(
         self,
         workspace_id: str,
-        error_data: Dict[str, Any]
+        error_data: Dict[str, Any],
+        commit: bool = True
     ):
         """Update error timeline.
 
         Args:
             workspace_id: Workspace ID
             error_data: Error details
+            commit: Whether to commit the transaction
         """
         query = text("""
             SELECT analytics.update_error_timeline(
@@ -384,7 +407,9 @@ class ErrorTrackingService:
                 'severity': error_data.get('severity', 'medium')
             }
         )
-        await self.db.commit()
+        
+        if commit:
+            await self.db.commit()
 
     async def _get_error_overview(
         self,

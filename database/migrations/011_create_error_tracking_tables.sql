@@ -284,7 +284,15 @@ SELECT
     COUNT(*) FILTER (WHERE e.status = 'ignored') as ignored_errors,
 
     -- Impact
-    SUM(COALESCE(ARRAY_LENGTH(e.users_affected, 1), 0)) as total_users_affected,
+    (
+        SELECT COUNT(DISTINCT user_id)
+        FROM (
+            SELECT UNNEST(e2.users_affected) AS user_id
+            FROM analytics.errors e2
+            WHERE e2.workspace_id = e.workspace_id
+              AND DATE_TRUNC('day', e2.last_seen) = DATE_TRUNC('day', e.last_seen)
+        ) AS all_users
+    ) as total_users_affected,
     SUM(e.executions_affected) as total_executions_affected,
     SUM(e.credits_lost) as total_credits_lost,
     SUM(e.cascading_failures) as total_cascading_failures,

@@ -3,6 +3,15 @@
 from typing import List, Optional, Dict, Any, Literal
 from pydantic import BaseModel, Field
 from datetime import datetime
+from enum import Enum
+
+
+class TimeFrame(str, Enum):
+    """Time frame options for error tracking."""
+    TWENTY_FOUR_HOURS = "24h"
+    SEVEN_DAYS = "7d"
+    THIRTY_DAYS = "30d"
+    NINETY_DAYS = "90d"
 
 
 class ErrorSample(BaseModel):
