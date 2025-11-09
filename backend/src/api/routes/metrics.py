@@ -122,7 +122,7 @@ async def get_execution_metrics(
         logger.error(f"Error fetching execution metrics: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to fetch execution metrics for workspace '{workspace_id}' and timeframe '{timeframe}'"
+            detail=f"Failed to fetch execution metrics for workspace '{workspace_id}' and timeframe '{timeframe}'",
         )
 
 
@@ -158,11 +158,7 @@ async def get_execution_realtime(
 
         if not allowed:
             logger.warning(f"Rate limit exceeded for {identifier} on realtime metrics")
-            raise HTTPException(
-                status_code=429,
-                detail=error_msg,
-                headers={"Retry-After": "60"}
-            )
+            raise HTTPException(status_code=429, detail=error_msg, headers={"Retry-After": "60"})
 
         # Validate workspace access
         await WorkspaceAccess.validate_workspace_access(current_user, workspace_id)
@@ -171,10 +167,7 @@ async def get_execution_realtime(
         service = ExecutionMetricsService(db)
         realtime = await service.get_realtime_metrics(workspace_id)
 
-        return {
-            "workspaceId": workspace_id,
-            "realtime": realtime
-        }
+        return {"workspaceId": workspace_id, "realtime": realtime}
 
     except HTTPException:
         raise
@@ -182,7 +175,7 @@ async def get_execution_realtime(
         logger.error(f"Error fetching realtime execution metrics: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to fetch realtime execution metrics for workspace '{workspace_id}'"
+            detail=f"Failed to fetch realtime execution metrics for workspace '{workspace_id}'",
         )
 
 
@@ -213,7 +206,7 @@ async def get_execution_throughput(
         return {
             "workspaceId": workspace_id,
             "timeframe": timeframe,
-            "throughput": metrics['throughput']
+            "throughput": metrics["throughput"],
         }
 
     except HTTPException:
@@ -222,7 +215,7 @@ async def get_execution_throughput(
         logger.error(f"Error fetching throughput metrics: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to fetch throughput metrics for workspace '{workspace_id}' and timeframe '{timeframe}'"
+            detail=f"Failed to fetch throughput metrics for workspace '{workspace_id}' and timeframe '{timeframe}'",
         )
 
 
@@ -250,11 +243,7 @@ async def get_execution_latency(
         service = ExecutionMetricsService(db)
         metrics = await service.get_execution_metrics(workspace_id, timeframe)
 
-        return {
-            "workspaceId": workspace_id,
-            "timeframe": timeframe,
-            "latency": metrics['latency']
-        }
+        return {"workspaceId": workspace_id, "timeframe": timeframe, "latency": metrics["latency"]}
 
     except HTTPException:
         raise
@@ -262,7 +251,7 @@ async def get_execution_latency(
         logger.error(f"Error fetching latency metrics: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to fetch latency metrics for workspace '{workspace_id}' and timeframe '{timeframe}'"
+            detail=f"Failed to fetch latency metrics for workspace '{workspace_id}' and timeframe '{timeframe}'",
         )
 
 
@@ -271,13 +260,11 @@ async def get_trend_analysis(
     workspace_id: str = Query(..., description="Workspace ID"),
     metric: str = Query(
         ...,
-        regex="^(executions|users|credits|errors|success_rate|revenue)$",
-        description="Metric to analyze"
+        regex="^(executions|users|credits|errors|success_rate)$",
+        description="Metric to analyze",
     ),
     timeframe: str = Query(
-        "30d",
-        regex="^(7d|30d|90d|1y)$",
-        description="Time window for analysis"
+        "30d", regex="^(7d|30d|90d|1y)$", description="Time window for analysis"
     ),
     current_user: Dict[str, Any] = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -318,5 +305,5 @@ async def get_trend_analysis(
         raise HTTPException(
             status_code=500,
             detail=f"Failed to fetch trend analysis for workspace '{workspace_id}', "
-                   f"metric '{metric}', and timeframe '{timeframe}'"
+            f"metric '{metric}', and timeframe '{timeframe}'",
         )

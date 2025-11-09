@@ -62,7 +62,7 @@ export function useTrendAnalysis(
     queryKey: ['trend-analysis', workspaceId, metric, timeframe],
     queryFn: () => fetchTrendAnalysis({ workspaceId, metric, timeframe }),
     staleTime: 5 * 60 * 1000, // Consider data fresh for 5 minutes
-    cacheTime: 30 * 60 * 1000, // Keep in cache for 30 minutes
+    gcTime: 30 * 60 * 1000, // Keep in cache for 30 minutes
     retry: 2,
     enabled: !!workspaceId && !!metric,
     ...options
