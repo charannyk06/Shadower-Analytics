@@ -1,5 +1,6 @@
 """SQLAlchemy database models."""
 
+from uuid import uuid4
 from sqlalchemy import Column, String, Integer, Float, DateTime, Boolean, JSON, Enum, Index
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
@@ -314,7 +315,7 @@ class FunnelDefinition(Base):
         {'schema': 'analytics'}
     )
 
-    id = Column(String, primary_key=True, index=True)
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
     workspace_id = Column(String, index=True, nullable=False)
 
     # Funnel metadata
@@ -388,7 +389,7 @@ class FunnelAnalysisResult(Base):
         {'schema': 'analytics'}
     )
 
-    id = Column(String, primary_key=True, index=True)
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
     funnel_id = Column(String, index=True, nullable=False)
     workspace_id = Column(String, index=True, nullable=False)
 
@@ -427,7 +428,7 @@ class FunnelStepPerformance(Base):
         {'schema': 'analytics'}
     )
 
-    id = Column(String, primary_key=True, index=True)
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
     funnel_id = Column(String, index=True, nullable=False)
     workspace_id = Column(String, index=True, nullable=False)
 
@@ -533,7 +534,7 @@ class UserFunnelJourney(Base):
         {'schema': 'analytics'}
     )
 
-    id = Column(String, primary_key=True, index=True)
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
     funnel_id = Column(String, index=True, nullable=False)
     workspace_id = Column(String, index=True, nullable=False)
     user_id = Column(String, index=True, nullable=False)
