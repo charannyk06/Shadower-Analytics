@@ -120,5 +120,7 @@ jobs:
             Begin your review now!
 
           # Allow Claude to use necessary tools for code review
-          # Removed tool restrictions - let Claude use all available tools
+          # Using wildcard for Bash to allow all gh commands
+          claude_args: >-
+            --allowed-tools "Read,Grep,Glob,Bash"
 
