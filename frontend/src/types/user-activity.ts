@@ -141,6 +141,7 @@ export interface RetentionCurvePoint {
 }
 
 export interface CohortRetention {
+  day0: number  // 100%
   day1: number
   day7: number
   day14: number
@@ -149,10 +150,50 @@ export interface CohortRetention {
   day90: number
 }
 
+export interface CohortMetrics {
+  avgRevenue: number
+  ltv: number
+  churnRate: number
+  engagementScore: number
+}
+
+export interface CohortSegment {
+  segment: string
+  count: number
+  retention: number
+}
+
 export interface Cohort {
   cohortDate: string
   cohortSize: number
   retention: CohortRetention
+}
+
+export interface CohortAdvanced {
+  cohortId: string
+  cohortDate: string
+  cohortSize: number
+  retention: CohortRetention
+  metrics: CohortMetrics
+  segments: CohortSegment[]
+}
+
+export type CohortType = 'signup' | 'activation' | 'feature_adoption' | 'custom'
+export type CohortPeriod = 'daily' | 'weekly' | 'monthly'
+export type CohortTrend = 'improving' | 'declining' | 'stable'
+
+export interface CohortComparison {
+  bestPerforming: string | null
+  worstPerforming: string | null
+  avgRetention: number
+  trend: CohortTrend
+}
+
+export interface CohortAnalysisData {
+  cohortType: CohortType
+  cohortPeriod: CohortPeriod
+  cohorts: CohortAdvanced[]
+  comparison: CohortComparison
 }
 
 export interface RiskSegment {
