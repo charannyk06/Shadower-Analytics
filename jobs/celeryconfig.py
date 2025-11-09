@@ -51,6 +51,23 @@ app.conf.beat_schedule = {
         'task': 'maintenance.cleanup.cleanup_old_data',
         'schedule': crontab(hour=3, minute=0),  # Daily at 03:00
     },
+    # Cache maintenance tasks
+    'cache-cleanup': {
+        'task': 'maintenance.cache_maintenance.cleanup_expired_cache',
+        'schedule': crontab(hour=4, minute=0),  # Daily at 04:00
+    },
+    'cache-health-check': {
+        'task': 'maintenance.cache_maintenance.cache_health_check',
+        'schedule': crontab(minute='*/15'),  # Every 15 minutes
+    },
+    'cache-refresh-materialized': {
+        'task': 'maintenance.cache_maintenance.refresh_materialized_cache',
+        'schedule': crontab(minute=30),  # Every hour at :30
+    },
+    'cache-warm-priority': {
+        'task': 'maintenance.cache_maintenance.warm_priority_cache',
+        'schedule': crontab(hour='*/6', minute=0),  # Every 6 hours
+    },
 }
 
 # Auto-discover tasks
