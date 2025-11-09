@@ -321,7 +321,7 @@ BEGIN
 
     -- Calculate engagement score (based on avg activity per user)
     SELECT LEAST(100, ROUND(
-        (avg_activity_per_user / NULLIF(10, 0) * 100)::numeric
+        (avg_activity_per_user / 10 * 100)::numeric
     ))
     INTO v_engagement_score
     FROM analytics.workspace_metrics_daily

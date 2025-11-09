@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { MemberAnalytics, MemberActivityItem } from '@/types/workspace';
+import { MemberAnalytics } from '@/types/workspace';
 import { Users, Award, AlertCircle } from 'lucide-react';
 
 interface MemberActivityProps {

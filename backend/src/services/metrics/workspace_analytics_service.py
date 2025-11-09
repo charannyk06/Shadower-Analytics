@@ -1,38 +1,37 @@
 """Workspace analytics service with comprehensive metrics calculation."""
 
 import asyncio
-from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional
 import logging
-from sqlalchemy.ext.asyncio import AsyncSession
+from datetime import datetime, timedelta
+from typing import Optional
+
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from ...models.schemas.workspaces import (
-    WorkspaceAnalytics,
-    WorkspaceOverview,
-    HealthFactors,
-    MemberAnalytics,
-    MembersByRole,
-    MemberActivityItem,
-    TopContributor,
-    InactiveMember,
-    AgentUsage,
-    AgentPerformance,
     AgentEfficiency,
-    ResourceUtilization,
+    AgentPerformance,
+    AgentUsage,
+    APIUsage,
+    Benchmarks,
+    Billing,
     Credits,
     DailyConsumption,
+    HealthFactors,
+    InactiveMember,
+    MemberActivityItem,
+    MemberAnalytics,
+    MembersByRole,
+    ResourceUtilization,
     Storage,
-    APIUsage,
-    Billing,
+    TopContributor,
     UsageLimit,
-    BillingHistory,
-    BillingRecommendation,
+    WorkspaceAnalytics,
     WorkspaceComparison,
+    WorkspaceOverview,
     WorkspaceRanking,
-    Benchmarks,
-    SimilarWorkspace,
 )
-from ..cache import cached, CacheKeys
+from ..cache import CacheKeys, cached
 
 logger = logging.getLogger(__name__)
 
@@ -54,9 +53,7 @@ def calculate_start_date(timeframe: str) -> datetime:
 
 
 def determine_workspace_status(
-    last_activity_at: Optional[datetime],
-    active_members: int,
-    health_score: int
+    last_activity_at: Optional[datetime], active_members: int, health_score: int
 ) -> str:
     """Determine workspace status based on activity and health."""
     if not last_activity_at:
@@ -74,10 +71,7 @@ def determine_workspace_status(
         return "active"
 
 
-def determine_activity_trend(
-    current_activity: int,
-    previous_activity: int
-) -> str:
+def determine_activity_trend(current_activity: int, previous_activity: int) -> str:
     """Determine activity trend based on current vs previous period."""
     if previous_activity == 0:
         return "increasing" if current_activity > 0 else "stable"
@@ -93,15 +87,13 @@ def determine_activity_trend(
 
 
 async def get_workspace_overview(
-    db: AsyncSession,
-    workspace_id: str,
-    start_date: datetime,
-    end_date: datetime
+    db: AsyncSession, workspace_id: str, start_date: datetime, end_date: datetime
 ) -> WorkspaceOverview:
     """Get workspace overview metrics."""
 
     # Get workspace basic info and member counts
-    workspace_query = text("""
+    workspace_query = text(
+        """
         SELECT
             w.id,
             w.name,
@@ -119,7 +111,8 @@ async def get_workspace_overview(
         LEFT JOIN public.workspace_invites wi ON w.id = wi.workspace_id
         WHERE w.id = :workspace_id
         GROUP BY w.id, w.name, w.created_at
-    """)
+    """
+    )
 
     result = await db.execute(workspace_query, {"workspace_id": workspace_id})
     workspace_data = result.fetchone()
@@ -128,40 +121,44 @@ async def get_workspace_overview(
         raise ValueError(f"Workspace {workspace_id} not found")
 
     # Get activity metrics for current period
-    activity_query = text("""
+    activity_query = text(
+        """
         SELECT
             COUNT(*) as total_activity,
             MAX(created_at) as last_activity_at
         FROM analytics.user_activity
         WHERE workspace_id = :workspace_id
             AND created_at BETWEEN :start_date AND :end_date
-    """)
+    """
+    )
 
-    result = await db.execute(activity_query, {
-        "workspace_id": workspace_id,
-        "start_date": start_date,
-        "end_date": end_date
-    })
+    result = await db.execute(
+        activity_query,
+        {"workspace_id": workspace_id, "start_date": start_date, "end_date": end_date},
+    )
     activity_data = result.fetchone()
 
     # Get previous period activity for trend calculation
     prev_start = start_date - (end_date - start_date)
-    prev_activity_query = text("""
+    prev_activity_query = text(
+        """
         SELECT COUNT(*) as prev_activity
         FROM analytics.user_activity
         WHERE workspace_id = :workspace_id
             AND created_at BETWEEN :prev_start AND :start_date
-    """)
+    """
+    )
 
-    result = await db.execute(prev_activity_query, {
-        "workspace_id": workspace_id,
-        "prev_start": prev_start,
-        "start_date": start_date
-    })
+    result = await db.execute(
+        prev_activity_query,
+        {"workspace_id": workspace_id, "prev_start": prev_start, "start_date": start_date},
+    )
     prev_activity_data = result.fetchone()
 
     # Calculate health score
-    health_factors = await calculate_health_score(db, workspace_id, start_date, end_date)
+    health_factors, overall_health_score = await calculate_health_score(
+        db, workspace_id, start_date, end_date
+    )
 
     total_members = workspace_data.total_members or 0
     active_members = workspace_data.active_members or 0
@@ -170,20 +167,20 @@ async def get_workspace_overview(
 
     # Determine status and trend
     status = determine_workspace_status(
-        activity_data.last_activity_at,
-        active_members,
-        health_factors.activity
+        activity_data.last_activity_at, active_members, overall_health_score
     )
 
     activity_trend = determine_activity_trend(total_activity, prev_activity)
 
     # Calculate member growth (comparing to 30 days ago)
-    member_growth_query = text("""
+    member_growth_query = text(
+        """
         SELECT COUNT(DISTINCT user_id) as members_30d_ago
         FROM public.workspace_members
         WHERE workspace_id = :workspace_id
             AND joined_at < NOW() - INTERVAL '30 days'
-    """)
+    """
+    )
 
     result = await db.execute(member_growth_query, {"workspace_id": workspace_id})
     growth_data = result.fetchone()
@@ -199,27 +196,29 @@ async def get_workspace_overview(
         pending_invites=workspace_data.pending_invites or 0,
         member_growth=round(member_growth, 2),
         total_activity=total_activity,
-        avg_activity_per_member=round(total_activity / total_members, 2) if total_members > 0 else 0,
-        last_activity_at=activity_data.last_activity_at.isoformat() if activity_data.last_activity_at else None,
+        avg_activity_per_member=(
+            round(total_activity / total_members, 2) if total_members > 0 else 0
+        ),
+        last_activity_at=(
+            activity_data.last_activity_at.isoformat() if activity_data.last_activity_at else None
+        ),
         activity_trend=activity_trend,
-        health_score=health_factors.activity,
+        health_score=overall_health_score,
         health_factors=health_factors,
         status=status,
         days_active=int(workspace_data.days_active or 0),
-        created_at=workspace_data.created_at.isoformat()
+        created_at=workspace_data.created_at.isoformat(),
     )
 
 
 async def calculate_health_score(
-    db: AsyncSession,
-    workspace_id: str,
-    start_date: datetime,
-    end_date: datetime
+    db: AsyncSession, workspace_id: str, start_date: datetime, end_date: datetime
 ) -> HealthFactors:
     """Calculate workspace health score factors."""
 
     # Activity Score (based on active member percentage)
-    activity_query = text("""
+    activity_query = text(
+        """
         SELECT
             COUNT(DISTINCT user_id) as total_members,
             COUNT(DISTINCT user_id) FILTER (
@@ -227,7 +226,8 @@ async def calculate_health_score(
             ) as active_members
         FROM public.workspace_members
         WHERE workspace_id = :workspace_id
-    """)
+    """
+    )
 
     result = await db.execute(activity_query, {"workspace_id": workspace_id})
     activity_data = result.fetchone()
@@ -235,15 +235,19 @@ async def calculate_health_score(
     total_members = activity_data.total_members or 0
     active_members = activity_data.active_members or 0
 
-    activity_score = min(100, int((active_members / total_members * 100)) if total_members > 0 else 0)
+    activity_score = (
+        int(min(100, (active_members / total_members * 100))) if total_members > 0 else 0
+    )
 
     # Engagement Score (based on average activity per user)
-    engagement_query = text("""
+    engagement_query = text(
+        """
         SELECT COUNT(*) as total_activity
         FROM analytics.user_activity
         WHERE workspace_id = :workspace_id
             AND created_at >= NOW() - INTERVAL '7 days'
-    """)
+    """
+    )
 
     result = await db.execute(engagement_query, {"workspace_id": workspace_id})
     engagement_data = result.fetchone()
@@ -253,20 +257,21 @@ async def calculate_health_score(
     engagement_score = min(100, int(avg_activity_per_user * 10))  # Normalize to 0-100
 
     # Efficiency Score (based on agent success rate)
-    efficiency_query = text("""
+    efficiency_query = text(
+        """
         SELECT
             COUNT(*) as total_runs,
             COUNT(*) FILTER (WHERE status = 'success') as successful_runs
         FROM public.agent_runs
         WHERE workspace_id = :workspace_id
             AND started_at BETWEEN :start_date AND :end_date
-    """)
+    """
+    )
 
-    result = await db.execute(efficiency_query, {
-        "workspace_id": workspace_id,
-        "start_date": start_date,
-        "end_date": end_date
-    })
+    result = await db.execute(
+        efficiency_query,
+        {"workspace_id": workspace_id, "start_date": start_date, "end_date": end_date},
+    )
     efficiency_data = result.fetchone()
 
     total_runs = efficiency_data.total_runs or 0
@@ -276,31 +281,42 @@ async def calculate_health_score(
     # Reliability Score (inverse of error rate)
     reliability_score = efficiency_score  # For now, use same as efficiency
 
-    return HealthFactors(
-        activity=activity_score,
-        engagement=engagement_score,
-        efficiency=efficiency_score,
-        reliability=reliability_score
+    # Calculate overall health score as weighted average
+    # Weights: Activity 30%, Engagement 30%, Efficiency 25%, Reliability 15%
+    overall_health_score = int(
+        (activity_score * 0.30)
+        + (engagement_score * 0.30)
+        + (efficiency_score * 0.25)
+        + (reliability_score * 0.15)
+    )
+
+    return (
+        HealthFactors(
+            activity=activity_score,
+            engagement=engagement_score,
+            efficiency=efficiency_score,
+            reliability=reliability_score,
+        ),
+        overall_health_score,
     )
 
 
 async def get_member_analytics(
-    db: AsyncSession,
-    workspace_id: str,
-    start_date: datetime,
-    end_date: datetime
+    db: AsyncSession, workspace_id: str, start_date: datetime, end_date: datetime
 ) -> MemberAnalytics:
     """Get detailed member analytics."""
 
     # Get members by role
-    role_query = text("""
+    role_query = text(
+        """
         SELECT
             role,
             COUNT(*) as count
         FROM public.workspace_members
         WHERE workspace_id = :workspace_id
         GROUP BY role
-    """)
+    """
+    )
 
     result = await db.execute(role_query, {"workspace_id": workspace_id})
     role_data = result.fetchall()
@@ -310,7 +326,8 @@ async def get_member_analytics(
         setattr(members_by_role, row.role.lower(), row.count)
 
     # Get activity distribution
-    activity_query = text("""
+    activity_query = text(
+        """
         SELECT
             wm.user_id,
             u.name as user_name,
@@ -332,13 +349,13 @@ async def get_member_analytics(
         GROUP BY wm.user_id, u.name, wm.role
         ORDER BY activity_count DESC
         LIMIT 100
-    """)
+    """
+    )
 
-    result = await db.execute(activity_query, {
-        "workspace_id": workspace_id,
-        "start_date": start_date,
-        "end_date": end_date
-    })
+    result = await db.execute(
+        activity_query,
+        {"workspace_id": workspace_id, "start_date": start_date, "end_date": end_date},
+    )
     activity_data = result.fetchall()
 
     activity_distribution = [
@@ -348,13 +365,14 @@ async def get_member_analytics(
             role=row.role,
             activity_count=row.activity_count,
             last_active_at=row.last_active_at.isoformat() if row.last_active_at else None,
-            engagement_level=row.engagement_level
+            engagement_level=row.engagement_level,
         )
         for row in activity_data
     ]
 
     # Get top contributors
-    contributor_query = text("""
+    contributor_query = text(
+        """
         SELECT
             wm.user_id,
             u.name as user_name,
@@ -371,13 +389,13 @@ async def get_member_analytics(
         HAVING COUNT(ar.id) > 0
         ORDER BY agent_runs DESC
         LIMIT 10
-    """)
+    """
+    )
 
-    result = await db.execute(contributor_query, {
-        "workspace_id": workspace_id,
-        "start_date": start_date,
-        "end_date": end_date
-    })
+    result = await db.execute(
+        contributor_query,
+        {"workspace_id": workspace_id, "start_date": start_date, "end_date": end_date},
+    )
     contributor_data = result.fetchall()
 
     top_contributors = [
@@ -387,14 +405,15 @@ async def get_member_analytics(
             contribution={
                 "agentRuns": row.agent_runs,
                 "successRate": float(row.success_rate or 0),
-                "creditsUsed": float(row.credits_used or 0)
-            }
+                "creditsUsed": float(row.credits_used or 0),
+            },
         )
         for row in contributor_data
     ]
 
     # Get inactive members (no activity in last 30 days)
-    inactive_query = text("""
+    inactive_query = text(
+        """
         SELECT
             wm.user_id,
             u.name as user_name,
@@ -406,7 +425,8 @@ async def get_member_analytics(
             AND (wm.last_active_at IS NULL OR wm.last_active_at < NOW() - INTERVAL '30 days')
         ORDER BY days_since_active DESC
         LIMIT 20
-    """)
+    """
+    )
 
     result = await db.execute(inactive_query, {"workspace_id": workspace_id})
     inactive_data = result.fetchall()
@@ -416,7 +436,7 @@ async def get_member_analytics(
             user_id=str(row.user_id),
             user_name=row.user_name or "Unknown",
             last_active_at=row.last_active_at.isoformat() if row.last_active_at else "Never",
-            days_since_active=int(row.days_since_active or 9999)
+            days_since_active=int(row.days_since_active or 9999),
         )
         for row in inactive_data
     ]
@@ -425,20 +445,18 @@ async def get_member_analytics(
         members_by_role=members_by_role,
         activity_distribution=activity_distribution,
         top_contributors=top_contributors,
-        inactive_members=inactive_members
+        inactive_members=inactive_members,
     )
 
 
 async def get_agent_usage(
-    db: AsyncSession,
-    workspace_id: str,
-    start_date: datetime,
-    end_date: datetime
+    db: AsyncSession, workspace_id: str, start_date: datetime, end_date: datetime
 ) -> AgentUsage:
     """Get agent usage analytics."""
 
     # Get agent counts
-    agent_count_query = text("""
+    agent_count_query = text(
+        """
         SELECT
             COUNT(DISTINCT id) as total_agents,
             COUNT(DISTINCT id) FILTER (
@@ -446,13 +464,15 @@ async def get_agent_usage(
             ) as active_agents
         FROM public.agents
         WHERE workspace_id = :workspace_id
-    """)
+    """
+    )
 
     result = await db.execute(agent_count_query, {"workspace_id": workspace_id})
     count_data = result.fetchone()
 
     # Get agent performance
-    agent_query = text("""
+    agent_query = text(
+        """
         SELECT
             a.id as agent_id,
             a.name as agent_name,
@@ -468,13 +488,12 @@ async def get_agent_usage(
         GROUP BY a.id, a.name
         ORDER BY runs DESC
         LIMIT 50
-    """)
+    """
+    )
 
-    result = await db.execute(agent_query, {
-        "workspace_id": workspace_id,
-        "start_date": start_date,
-        "end_date": end_date
-    })
+    result = await db.execute(
+        agent_query, {"workspace_id": workspace_id, "start_date": start_date, "end_date": end_date}
+    )
     agent_data = result.fetchall()
 
     agents = [
@@ -485,7 +504,7 @@ async def get_agent_usage(
             success_rate=float(row.success_rate or 0),
             avg_runtime=float(row.avg_runtime or 0),
             credits_consumed=float(row.credits_consumed or 0),
-            last_run_at=row.last_run_at.isoformat() if row.last_run_at else None
+            last_run_at=row.last_run_at.isoformat() if row.last_run_at else None,
         )
         for row in agent_data
     ]
@@ -506,7 +525,7 @@ async def get_agent_usage(
         most_efficient=most_efficient,
         least_efficient=least_efficient,
         avg_success_rate=round(avg_success, 2),
-        avg_runtime=round(avg_runtime, 2)
+        avg_runtime=round(avg_runtime, 2),
     )
 
     return AgentUsage(
@@ -514,27 +533,26 @@ async def get_agent_usage(
         active_agents=count_data.active_agents or 0,
         agents=agents,
         usage_by_agent={},  # Can be populated with time-series data if needed
-        agent_efficiency=agent_efficiency
+        agent_efficiency=agent_efficiency,
     )
 
 
 async def get_resource_utilization(
-    db: AsyncSession,
-    workspace_id: str,
-    start_date: datetime,
-    end_date: datetime
+    db: AsyncSession, workspace_id: str, start_date: datetime, end_date: datetime
 ) -> ResourceUtilization:
     """Get resource utilization metrics."""
 
     # Get credit usage
-    credit_query = text("""
+    credit_query = text(
+        """
         SELECT
             wc.allocated_credits,
             wc.consumed_credits,
             wc.allocated_credits - wc.consumed_credits as remaining_credits
         FROM public.workspace_credits wc
         WHERE wc.workspace_id = :workspace_id
-    """)
+    """
+    )
 
     result = await db.execute(credit_query, {"workspace_id": workspace_id})
     credit_data = result.fetchone()
@@ -546,7 +564,8 @@ async def get_resource_utilization(
     utilization_rate = (consumed / allocated * 100) if allocated > 0 else 0
 
     # Get daily consumption for last 30 days
-    daily_query = text("""
+    daily_query = text(
+        """
         SELECT
             DATE(ar.started_at) as date,
             SUM(ar.credits_consumed) as credits
@@ -555,16 +574,14 @@ async def get_resource_utilization(
             AND ar.started_at >= NOW() - INTERVAL '30 days'
         GROUP BY DATE(ar.started_at)
         ORDER BY date DESC
-    """)
+    """
+    )
 
     result = await db.execute(daily_query, {"workspace_id": workspace_id})
     daily_data = result.fetchall()
 
     daily_consumption = [
-        DailyConsumption(
-            date=row.date.isoformat(),
-            credits=float(row.credits or 0)
-        )
+        DailyConsumption(date=row.date.isoformat(), credits=float(row.credits or 0))
         for row in daily_data
     ]
 
@@ -584,42 +601,26 @@ async def get_resource_utilization(
         utilization_rate=round(utilization_rate, 2),
         projected_exhaustion=projected_exhaustion,
         consumption_by_model={},  # Can be populated from agent_runs model column
-        daily_consumption=daily_consumption
+        daily_consumption=daily_consumption,
     )
 
     # Storage metrics (placeholder - would need actual file tracking)
-    storage = Storage(
-        used=0,
-        limit=10737418240,  # 10GB
-        utilization_rate=0,
-        breakdown={}
-    )
+    storage = Storage(used=0, limit=10737418240, utilization_rate=0, breakdown={})  # 10GB
 
     # API usage (placeholder - would need actual API tracking)
-    api_usage = APIUsage(
-        total_calls=0,
-        rate_limit=10000,
-        utilization_rate=0,
-        by_endpoint={}
-    )
+    api_usage = APIUsage(total_calls=0, rate_limit=10000, utilization_rate=0, by_endpoint={})
 
-    return ResourceUtilization(
-        credits=credits,
-        storage=storage,
-        api_usage=api_usage
-    )
+    return ResourceUtilization(credits=credits, storage=storage, api_usage=api_usage)
 
 
 async def get_billing_info(
-    db: AsyncSession,
-    workspace_id: str,
-    start_date: datetime,
-    end_date: datetime
+    db: AsyncSession, workspace_id: str, start_date: datetime, end_date: datetime
 ) -> Billing:
     """Get billing and subscription information."""
 
     # Get workspace subscription info
-    sub_query = text("""
+    sub_query = text(
+        """
         SELECT
             w.plan,
             w.billing_status,
@@ -629,7 +630,8 @@ async def get_billing_info(
         FROM public.workspaces w
         LEFT JOIN public.workspace_subscriptions ws ON w.id = ws.workspace_id
         WHERE w.id = :workspace_id
-    """)
+    """
+    )
 
     result = await db.execute(sub_query, {"workspace_id": workspace_id})
     sub_data = result.fetchone()
@@ -642,7 +644,7 @@ async def get_billing_info(
         "members": UsageLimit(used=0, limit=10),
         "agents": UsageLimit(used=0, limit=50),
         "credits": UsageLimit(used=0, limit=1000),
-        "storage": UsageLimit(used=0, limit=10737418240)
+        "storage": UsageLimit(used=0, limit=10737418240),
     }
 
     # Billing history (placeholder)
@@ -659,18 +661,16 @@ async def get_billing_info(
         last_month_cost=float(sub_data.last_month_cost or 0) if sub_data else 0,
         limits=limits,
         history=history,
-        recommendations=recommendations
+        recommendations=recommendations,
     )
 
 
-async def get_workspace_comparison(
-    db: AsyncSession,
-    workspace_id: str
-) -> WorkspaceComparison:
+async def get_workspace_comparison(db: AsyncSession, workspace_id: str) -> WorkspaceComparison:
     """Get workspace comparison data (admin only)."""
 
     # Query the materialized view for comparison data
-    comparison_query = text("""
+    comparison_query = text(
+        """
         SELECT
             health_rank as overall,
             total_workspaces,
@@ -680,7 +680,8 @@ async def get_workspace_comparison(
             cost_vs_avg_pct
         FROM analytics.mv_workspace_comparison
         WHERE workspace_id = :workspace_id
-    """)
+    """
+    )
 
     result = await db.execute(comparison_query, {"workspace_id": workspace_id})
     comp_data = result.fetchone()
@@ -688,51 +689,37 @@ async def get_workspace_comparison(
     if not comp_data:
         # Return default values if no comparison data
         return WorkspaceComparison(
-            ranking=WorkspaceRanking(
-                overall=1,
-                total_workspaces=1,
-                percentile=100.0
-            ),
-            benchmarks=Benchmarks(
-                activity_vs_avg=0.0,
-                efficiency_vs_avg=0.0,
-                cost_vs_avg=0.0
-            ),
-            similar_workspaces=[]
+            ranking=WorkspaceRanking(overall=1, total_workspaces=1, percentile=100.0),
+            benchmarks=Benchmarks(activity_vs_avg=0.0, efficiency_vs_avg=0.0, cost_vs_avg=0.0),
+            similar_workspaces=[],
         )
 
     ranking = WorkspaceRanking(
         overall=comp_data.overall,
         total_workspaces=comp_data.total_workspaces,
-        percentile=float(comp_data.percentile)
+        percentile=float(comp_data.percentile),
     )
 
     benchmarks = Benchmarks(
         activity_vs_avg=float(comp_data.activity_vs_avg_pct or 0),
         efficiency_vs_avg=float(comp_data.efficiency_vs_avg_pct or 0),
-        cost_vs_avg=float(comp_data.cost_vs_avg_pct or 0)
+        cost_vs_avg=float(comp_data.cost_vs_avg_pct or 0),
     )
 
     # Find similar workspaces (placeholder - would need similarity algorithm)
     similar_workspaces = []
 
     return WorkspaceComparison(
-        ranking=ranking,
-        benchmarks=benchmarks,
-        similar_workspaces=similar_workspaces
+        ranking=ranking, benchmarks=benchmarks, similar_workspaces=similar_workspaces
     )
 
 
 @cached(
-    key_func=lambda workspace_id, timeframe, include_comparison:
-        f"{CacheKeys.WORKSPACE_PREFIX}:analytics:{workspace_id}:{timeframe}:{include_comparison}",
-    ttl=CacheKeys.TTL_LONG
+    key_func=lambda workspace_id, timeframe, include_comparison: f"{CacheKeys.WORKSPACE_PREFIX}:analytics:{workspace_id}:{timeframe}:{include_comparison}",
+    ttl=CacheKeys.TTL_LONG,
 )
 async def get_workspace_analytics(
-    db: AsyncSession,
-    workspace_id: str,
-    timeframe: str = "30d",
-    include_comparison: bool = False
+    db: AsyncSession, workspace_id: str, timeframe: str = "30d", include_comparison: bool = False
 ) -> WorkspaceAnalytics:
     """Get comprehensive workspace analytics.
 
@@ -750,9 +737,11 @@ async def get_workspace_analytics(
     start_date = calculate_start_date(timeframe)
 
     # Get workspace basic info
-    workspace_query = text("""
+    workspace_query = text(
+        """
         SELECT name, plan FROM public.workspaces WHERE id = :workspace_id
-    """)
+    """
+    )
     result = await db.execute(workspace_query, {"workspace_id": workspace_id})
     workspace = result.fetchone()
 
@@ -783,5 +772,5 @@ async def get_workspace_analytics(
         agent_usage=results[2],
         resource_utilization=results[3],
         billing=results[4],
-        comparison=results[5] if include_comparison else None
+        comparison=results[5] if include_comparison else None,
     )

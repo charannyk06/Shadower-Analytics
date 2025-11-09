@@ -1,14 +1,18 @@
 """Workspace metrics routes."""
 
-from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, Depends, Query, Path, HTTPException
+import logging
 from datetime import date, timedelta
+from typing import Any, Dict, List
+
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...core.database import get_db
-from ...models.schemas.workspaces import WorkspaceMetrics, WorkspaceStats, WorkspaceAnalytics
+from ...models.schemas.workspaces import WorkspaceAnalytics, WorkspaceMetrics, WorkspaceStats
 from ...services.metrics.workspace_analytics_service import get_workspace_analytics
-from ..dependencies.auth import get_current_user, require_admin
+from ..dependencies.auth import get_current_user
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/workspaces", tags=["workspaces"])
 
@@ -69,13 +73,10 @@ async def get_workspace_users(
 async def get_workspace_analytics_endpoint(
     workspace_id: str = Path(..., description="Workspace ID"),
     timeframe: str = Query(
-        "30d",
-        regex="^(24h|7d|30d|90d|all)$",
-        description="Time period for analytics"
+        "30d", pattern="^(24h|7d|30d|90d|all)$", description="Time period for analytics"
     ),
     include_comparison: bool = Query(
-        False,
-        description="Include cross-workspace comparison (admin only)"
+        False, description="Include cross-workspace comparison (admin only)"
     ),
     current_user: Dict[str, Any] = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -113,8 +114,7 @@ async def get_workspace_analytics_endpoint(
         user_role = current_user.get("role", "").lower()
         if user_role not in ["owner", "admin"]:
             raise HTTPException(
-                status_code=403,
-                detail="Workspace comparison data is only available to admins"
+                status_code=403, detail="Workspace comparison data is only available to admins"
             )
 
     try:
@@ -122,18 +122,12 @@ async def get_workspace_analytics_endpoint(
             db=db,
             workspace_id=workspace_id,
             timeframe=timeframe,
-            include_comparison=include_comparison
+            include_comparison=include_comparison,
         )
         return analytics
 
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        # Log the error
-        import logging
-        logger = logging.getLogger(__name__)
         logger.error(f"Error fetching workspace analytics for {workspace_id}: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to fetch workspace analytics"
-        )
+        raise HTTPException(status_code=500, detail="Failed to fetch workspace analytics")
