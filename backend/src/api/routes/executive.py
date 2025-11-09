@@ -1,19 +1,83 @@
 """Executive dashboard routes - CEO metrics and KPIs with caching."""
 
 from typing import List, Dict, Any
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from datetime import datetime
+import logging
 
 from ...core.database import get_db
-from ...models.schemas.metrics import ExecutiveMetrics, TimeRange
-from ...services.metrics.executive_service import executive_metrics_service
+from ...models.schemas.metrics import (
+    ExecutiveMetrics,
+    ExecutiveDashboardResponse,
+    TimeRange,
+)
+from ...services.metrics.executive_service import (
+    executive_metrics_service,
+    get_executive_dashboard_data,
+)
 from ..dependencies.auth import get_current_user, require_owner_or_admin
 from ..middleware.workspace import WorkspaceAccess
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/executive", tags=["executive"])
 
 
-@router.get("/overview")
+@router.get("/dashboard", response_model=ExecutiveDashboardResponse)
+async def get_executive_dashboard(
+    workspace_id: str = Query(None, description="Workspace ID to query"),
+    timeframe: str = Query("7d", regex="^(24h|7d|30d|90d|all)$"),
+    current_user: Dict[str, Any] = Depends(require_owner_or_admin),
+    db=Depends(get_db),
+):
+    """Get comprehensive executive dashboard with all metrics, trends, and KPIs.
+
+    Requires: owner or admin role
+
+    Args:
+        workspace_id: Target workspace (defaults to user's workspace)
+        timeframe: Time period - 24h, 7d, 30d, 90d, or all
+
+    Returns:
+        Complete dashboard data including:
+        - User metrics (DAU/WAU/MAU)
+        - Execution metrics (runs, success rate, credits)
+        - Business metrics (MRR, ARR, LTV, CAC, churn)
+        - Agent metrics (top agents, performance)
+        - Trend data (time-series for charts)
+        - Active alerts
+        - Top users
+    """
+    try:
+        # Use current workspace if not specified
+        if not workspace_id:
+            workspace_id = current_user.get("workspace_id")
+
+        if not workspace_id:
+            raise HTTPException(status_code=400, detail="Workspace ID required")
+
+        # Validate workspace access
+        await WorkspaceAccess.validate_workspace_access(current_user, workspace_id)
+
+        # Get comprehensive dashboard data
+        dashboard_data = await get_executive_dashboard_data(
+            db=db,
+            workspace_id=workspace_id,
+            timeframe=timeframe,
+        )
+
+        return dashboard_data
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching executive dashboard: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to fetch executive dashboard data"
+        )
+
+
+@router.get("/overview", response_model=ExecutiveMetrics)
 async def get_executive_overview(
     workspace_id: str = Query(None, description="Workspace ID to query"),
     timeframe: str = Query(
