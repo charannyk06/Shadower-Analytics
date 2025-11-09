@@ -22,6 +22,7 @@ from .routes import (
 )
 from .middleware.cors import setup_cors
 from .middleware.logging import RequestLoggingMiddleware
+from .middleware.rate_limit import RateLimitMiddleware
 
 # Configure logging
 logging.basicConfig(
@@ -44,6 +45,7 @@ setup_cors(app)
 
 # Add middleware
 app.add_middleware(RequestLoggingMiddleware)
+app.add_middleware(RateLimitMiddleware)
 
 # Include routers
 app.include_router(health_router)

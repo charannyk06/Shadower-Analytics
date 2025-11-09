@@ -86,20 +86,32 @@ async def list_workspaces(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     db=Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ):
-    """List all workspaces with basic metrics."""
+    """
+    List all workspaces with basic metrics.
+
+    Requires authentication. Returns only workspaces the user has access to.
+    """
     # Implementation will be added
+    # TODO: Filter by workspaces user has access to
     return []
 
 
 @router.get("/{workspace_id}", response_model=WorkspaceStats)
 async def get_workspace_details(
-    workspace_id: str = Path(...),
+    workspace_id: str = Path(..., min_length=1, max_length=64),
     start_date: date = Query(default_factory=lambda: date.today() - timedelta(days=30)),
     end_date: date = Query(default_factory=date.today),
     db=Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ):
-    """Get detailed metrics for a specific workspace."""
+    """
+    Get detailed metrics for a specific workspace.
+
+    Requires authentication and workspace membership.
+    """
+    # TODO: Verify workspace access
     # Implementation will be added
     return {
         "workspace_id": workspace_id,
@@ -111,24 +123,36 @@ async def get_workspace_details(
 
 @router.get("/{workspace_id}/agents")
 async def get_workspace_agents(
-    workspace_id: str = Path(...),
+    workspace_id: str = Path(..., min_length=1, max_length=64),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     db=Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ):
-    """Get agents in a workspace."""
+    """
+    Get agents in a workspace.
+
+    Requires authentication and workspace membership.
+    """
+    # TODO: Verify workspace access
     # Implementation will be added
     return {"agents": [], "total": 0}
 
 
 @router.get("/{workspace_id}/users")
 async def get_workspace_users(
-    workspace_id: str = Path(...),
+    workspace_id: str = Path(..., min_length=1, max_length=64),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     db=Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ):
-    """Get users in a workspace."""
+    """
+    Get users in a workspace.
+
+    Requires authentication and workspace membership.
+    """
+    # TODO: Verify workspace access
     # Implementation will be added
     return {"users": [], "total": 0}
 

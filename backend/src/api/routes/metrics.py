@@ -35,8 +35,13 @@ async def get_metrics_summary(
     start_date: date = Query(default_factory=lambda: date.today() - timedelta(days=30)),
     end_date: date = Query(default_factory=date.today),
     db=Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ):
-    """Get summary of all metrics."""
+    """
+    Get summary of all metrics.
+
+    Requires authentication.
+    """
     # Implementation will be added
     return {
         "users": {},
@@ -48,11 +53,16 @@ async def get_metrics_summary(
 
 @router.get("/trends")
 async def get_metrics_trends(
-    metric_type: str = Query(..., regex="^(users|agents|executions|revenue)$"),
-    timeframe: str = Query("30d", regex="^(7d|30d|90d|1y)$"),
+    metric_type: str = Query(..., pattern="^(users|agents|executions|revenue)$"),
+    timeframe: str = Query("30d", pattern="^(7d|30d|90d|1y)$"),
     db=Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ):
-    """Get trend data for a specific metric."""
+    """
+    Get trend data for a specific metric.
+
+    Requires authentication.
+    """
     # Implementation will be added
     return {"trend": [], "summary": {}}
 
@@ -65,8 +75,13 @@ async def compare_metrics(
     previous_start: date = Query(...),
     previous_end: date = Query(...),
     db=Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ):
-    """Compare metrics between two time periods."""
+    """
+    Compare metrics between two time periods.
+
+    Requires authentication.
+    """
     # Implementation will be added
     return {
         "current": {},
@@ -79,8 +94,13 @@ async def compare_metrics(
 @router.get("/realtime")
 async def get_realtime_metrics(
     db=Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ):
-    """Get real-time metrics (last 5 minutes)."""
+    """
+    Get real-time metrics (last 5 minutes).
+
+    Requires authentication.
+    """
     # Implementation will be added
     return {
         "active_users": 0,
