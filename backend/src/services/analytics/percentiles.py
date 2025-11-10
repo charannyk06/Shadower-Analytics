@@ -2,7 +2,6 @@
 
 import numpy as np
 from typing import List, Dict, Any, Optional
-from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 import logging
@@ -27,6 +26,29 @@ class PercentileCalculator:
             db: Database session for database-based calculations (optional)
         """
         self.db = db
+
+    @staticmethod
+    def _parse_timeframe(timeframe: str) -> str:
+        """Parse timeframe shorthand to PostgreSQL interval format.
+
+        Args:
+            timeframe: Shorthand format like '7d', '24h', '30d', '1h'
+
+        Returns:
+            PostgreSQL interval format like '7 days', '24 hours', '30 days', '1 hour'
+        """
+        import re
+        match = re.match(r'^(\d+)([hd])$', timeframe)
+        if not match:
+            # If already in correct format or unknown, return as-is
+            return timeframe
+        
+        value, unit = match.groups()
+        unit_map = {
+            'h': 'hours',
+            'd': 'days'
+        }
+        return f"{value} {unit_map[unit]}"
 
     @staticmethod
     async def calculate_percentiles(
@@ -93,6 +115,9 @@ class PercentileCalculator:
         if not self.db:
             raise ValueError("Database session required for database-based calculations")
 
+        # Parse timeframe to PostgreSQL interval format
+        parsed_timeframe = self._parse_timeframe(timeframe)
+
         query = text("""
             SELECT
                 PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY runtime_seconds) as p50,
@@ -113,7 +138,7 @@ class PercentileCalculator:
 
         result = await self.db.execute(
             query,
-            {"workspace_id": workspace_id, "timeframe": timeframe}
+            {"workspace_id": workspace_id, "timeframe": parsed_timeframe}
         )
         row = result.fetchone()
 
@@ -170,9 +195,12 @@ class PercentileCalculator:
         if metric_name not in valid_metrics:
             raise ValueError(f"Invalid metric name. Must be one of: {valid_metrics}")
 
+        # Parse timeframe to PostgreSQL interval format
+        parsed_timeframe = self._parse_timeframe(timeframe)
+
         # Build query with optional agent filter
         where_clause = "WHERE workspace_id = :workspace_id AND started_at >= NOW() - INTERVAL :timeframe"
-        params = {"workspace_id": workspace_id, "timeframe": timeframe}
+        params = {"workspace_id": workspace_id, "timeframe": parsed_timeframe}
 
         if agent_id:
             where_clause += " AND agent_id = :agent_id"
@@ -236,11 +264,14 @@ class PercentileCalculator:
                 "outlier_count": 0,
                 "outlier_percentage": 0.0,
                 "lower_bound": 0.0,
-                "upper_bound": 0.0
+                "upper_bound": 0.0,
+                "method": method
             }
 
         arr = np.array(values, dtype=float)
-        arr = arr[~np.isnan(arr)]
+        nan_mask = ~np.isnan(arr)
+        original_indices = np.arange(len(arr))[nan_mask]
+        arr = arr[nan_mask]
 
         if len(arr) == 0:
             return {
@@ -249,7 +280,8 @@ class PercentileCalculator:
                 "outlier_count": 0,
                 "outlier_percentage": 0.0,
                 "lower_bound": 0.0,
-                "upper_bound": 0.0
+                "upper_bound": 0.0,
+                "method": method
             }
 
         if method == "iqr":
@@ -271,7 +303,7 @@ class PercentileCalculator:
         # Find outliers
         outlier_mask = (arr < lower_bound) | (arr > upper_bound)
         outliers = arr[outlier_mask].tolist()
-        outlier_indices = np.where(outlier_mask)[0].tolist()
+        outlier_indices = original_indices[outlier_mask].tolist()
 
         return {
             "outliers": outliers,

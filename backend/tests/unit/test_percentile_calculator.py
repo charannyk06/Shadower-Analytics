@@ -341,6 +341,9 @@ class TestPercentileCalculator:
 
         assert np.nan not in result["outliers"]
         assert 100 in result["outliers"]
+        # Verify that the index is correct relative to the original array
+        # 100 is at index 5 in the original array [1, 2, np.nan, 3, 4, 100]
+        assert 5 in result["outlier_indices"]
 
     def test_detect_outliers_invalid_method(self):
         """Test outlier detection with invalid method."""
