@@ -73,6 +73,59 @@ def format_duration(seconds: float) -> str:
         return f"{hours:.1f}h"
 
 
+def normalize_timeframe_to_interval(timeframe: str) -> str:
+    """Normalize timeframe string to PostgreSQL interval format.
+
+    Args:
+        timeframe: Time range string (e.g., '1h', '24h', '7d', '30d', '1y')
+
+    Returns:
+        PostgreSQL interval string (e.g., '1 hour', '24 hours', '7 days', '30 days', '1 year')
+
+    Examples:
+        >>> normalize_timeframe_to_interval('7d')
+        '7 days'
+        >>> normalize_timeframe_to_interval('24h')
+        '24 hours'
+        >>> normalize_timeframe_to_interval('1h')
+        '1 hour'
+    """
+    # Handle hours
+    if timeframe.endswith('h'):
+        hours = int(timeframe[:-1])
+        return f"{hours} hour{'s' if hours != 1 else ''}"
+    
+    # Handle days
+    elif timeframe.endswith('d'):
+        days = int(timeframe[:-1])
+        return f"{days} day{'s' if days != 1 else ''}"
+    
+    # Handle weeks
+    elif timeframe.endswith('w'):
+        weeks = int(timeframe[:-1])
+        days = weeks * 7
+        return f"{days} day{'s' if days != 1 else ''}"
+    
+    # Handle months
+    elif timeframe.endswith('m'):
+        months = int(timeframe[:-1])
+        days = months * 30  # Approximate
+        return f"{days} days"
+    
+    # Handle years
+    elif timeframe.endswith('y'):
+        years = int(timeframe[:-1])
+        return f"{years} year{'s' if years != 1 else ''}"
+    
+    # If already in PostgreSQL format, return as-is
+    elif ' ' in timeframe and any(keyword in timeframe.lower() for keyword in ['hour', 'day', 'week', 'month', 'year']):
+        return timeframe
+    
+    # Default fallback
+    else:
+        return "7 days"
+
+
 def calculate_start_date(timeframe: str, from_date: Optional[datetime] = None) -> datetime:
     """Calculate start date based on timeframe.
 
