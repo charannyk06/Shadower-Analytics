@@ -6,6 +6,7 @@ from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 import logging
+from ...utils.datetime import normalize_timeframe_to_interval
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +94,9 @@ class PercentileCalculator:
         if not self.db:
             raise ValueError("Database session required for database-based calculations")
 
+        # Normalize timeframe to PostgreSQL interval format
+        normalized_timeframe = normalize_timeframe_to_interval(timeframe)
+
         query = text("""
             SELECT
                 PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY runtime_seconds) as p50,
@@ -107,13 +111,13 @@ class PercentileCalculator:
                 COUNT(*) as count
             FROM analytics.agent_runs
             WHERE workspace_id = :workspace_id
-                AND started_at >= NOW() - INTERVAL :timeframe
+                AND started_at >= NOW() - CAST(:timeframe AS INTERVAL)
                 AND runtime_seconds IS NOT NULL
         """)
 
         result = await self.db.execute(
             query,
-            {"workspace_id": workspace_id, "timeframe": timeframe}
+            {"workspace_id": workspace_id, "timeframe": normalized_timeframe}
         )
         row = result.fetchone()
 
@@ -170,9 +174,12 @@ class PercentileCalculator:
         if metric_name not in valid_metrics:
             raise ValueError(f"Invalid metric name. Must be one of: {valid_metrics}")
 
+        # Normalize timeframe to PostgreSQL interval format
+        normalized_timeframe = normalize_timeframe_to_interval(timeframe)
+
         # Build query with optional agent filter
-        where_clause = "WHERE workspace_id = :workspace_id AND started_at >= NOW() - INTERVAL :timeframe"
-        params = {"workspace_id": workspace_id, "timeframe": timeframe}
+        where_clause = "WHERE workspace_id = :workspace_id AND started_at >= NOW() - CAST(:timeframe AS INTERVAL)"
+        params = {"workspace_id": workspace_id, "timeframe": normalized_timeframe}
 
         if agent_id:
             where_clause += " AND agent_id = :agent_id"
@@ -309,8 +316,8 @@ class PercentileCalculator:
         if metric_name not in valid_metrics:
             raise ValueError(f"Invalid metric name. Must be one of: {valid_metrics}")
 
-        where_clause = "WHERE workspace_id = :workspace_id AND started_at >= CURRENT_DATE - INTERVAL :days"
-        params = {"workspace_id": workspace_id, "days": f"{days} days"}
+        where_clause = "WHERE workspace_id = :workspace_id AND started_at >= CURRENT_DATE - (:days * INTERVAL '1 day')"
+        params = {"workspace_id": workspace_id, "days": days}
 
         if agent_id:
             where_clause += " AND agent_id = :agent_id"
