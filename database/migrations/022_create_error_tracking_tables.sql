@@ -1,5 +1,5 @@
 -- =====================================================================
--- Migration: 011_create_error_tracking_tables.sql
+-- Migration: 022_create_error_tracking_tables.sql
 -- Description: Create comprehensive error tracking tables
 -- Created: 2025-11-09
 -- =====================================================================

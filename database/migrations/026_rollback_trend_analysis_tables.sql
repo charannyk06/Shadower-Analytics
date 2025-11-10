@@ -1,5 +1,6 @@
+-- Migration: 026_rollback_trend_analysis_tables.sql
 -- Rollback Migration for Trend Analysis Tables
--- Reverses changes made in 012_create_trend_analysis_tables.sql
+-- Reverses changes made in 024_create_trend_analysis_tables.sql
 
 -- Drop trigger first
 DROP TRIGGER IF EXISTS trend_analysis_updated_at ON analytics.trend_analysis_cache;

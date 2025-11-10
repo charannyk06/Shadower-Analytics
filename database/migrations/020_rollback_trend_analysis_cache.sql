@@ -1,3 +1,4 @@
+-- Migration: 020_rollback_trend_analysis_cache.sql
 -- Rollback migration for trend analysis cache
 -- This script safely removes the trend analysis cache infrastructure
 

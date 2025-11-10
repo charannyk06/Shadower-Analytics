@@ -1,5 +1,5 @@
 -- Update trend analysis cache table to add user_id for proper scoping
--- Migration: 010_b_update_trend_analysis_cache_add_user_id.sql
+-- Migration: 018_update_trend_analysis_cache_add_user_id.sql
 --
 -- IMPORTANT: This migration clears existing cache to prevent information leakage.
 -- Cache entries will be regenerated on next request with proper user_id scoping.

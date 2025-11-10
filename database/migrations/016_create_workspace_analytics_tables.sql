@@ -1,5 +1,5 @@
 -- =====================================================================
--- Migration: 010_create_workspace_analytics_tables.sql
+-- Migration: 016_create_workspace_analytics_tables.sql
 -- Description: Create workspace analytics tables, indexes, and materialized views
 -- Created: 2025-11-09
 -- =====================================================================

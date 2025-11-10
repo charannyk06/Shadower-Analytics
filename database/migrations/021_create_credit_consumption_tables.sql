@@ -1,5 +1,5 @@
 -- =====================================================================
--- Migration: 011_create_credit_consumption_tables.sql
+-- Migration: 021_create_credit_consumption_tables.sql
 -- Description: Create comprehensive credit consumption tracking tables
 -- Created: 2025-11-09
 -- =====================================================================

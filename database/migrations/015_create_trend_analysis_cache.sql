@@ -1,5 +1,5 @@
 -- Trend analysis cache table for improved performance
--- Migration: 010_create_trend_analysis_cache.sql
+-- Migration: 015_create_trend_analysis_cache.sql
 
 -- Create trend analysis cache table
 CREATE TABLE IF NOT EXISTS analytics.trend_analysis_cache (
