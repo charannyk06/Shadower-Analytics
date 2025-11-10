@@ -3,6 +3,7 @@
 from typing import Dict, Any, Optional, List, Literal
 from fastapi import APIRouter, Depends, Query, Path, HTTPException, Body
 from datetime import datetime
+from dateutil import parser as dateutil_parser
 import logging
 
 from ...core.database import get_db
@@ -308,9 +309,27 @@ async def analyze_funnel(
             f"(user: {current_user.get('user_id')})"
         )
 
-        # Parse dates if provided
-        start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00')) if start_date else None
-        end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00')) if end_date else None
+        # Parse dates if provided with proper error handling
+        start_dt = None
+        end_dt = None
+
+        if start_date:
+            try:
+                start_dt = dateutil_parser.isoparse(start_date)
+            except (ValueError, TypeError) as e:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid start_date format. Expected ISO 8601 format: {str(e)}"
+                )
+
+        if end_date:
+            try:
+                end_dt = dateutil_parser.isoparse(end_date)
+            except (ValueError, TypeError) as e:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid end_date format. Expected ISO 8601 format: {str(e)}"
+                )
 
         service = FunnelAnalysisService(db)
         analysis = await service.analyze_funnel(

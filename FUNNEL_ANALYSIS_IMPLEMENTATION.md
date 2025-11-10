@@ -9,7 +9,7 @@ This document describes the implementation of the Funnel Analysis feature for Sh
 ### Backend Components
 
 #### 1. Database Layer
-- **Location**: `database/migrations/014_create_funnel_analysis_tables.sql`
+- **Location**: `database/migrations/017_create_funnel_analysis_tables.sql`
 - **Tables**:
   - `analytics.funnel_definitions` - Stores funnel configurations
   - `analytics.funnel_analysis_results` - Caches analysis results
@@ -296,7 +296,7 @@ function FunnelDashboard({ workspaceId }: { workspaceId: string }) {
 ### Database Migration
 ```bash
 # Run migration
-psql -U user -d database -f database/migrations/014_create_funnel_analysis_tables.sql
+psql -U user -d database -f database/migrations/017_create_funnel_analysis_tables.sql
 
 # Verify tables created
 \dt analytics.funnel_*

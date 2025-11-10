@@ -189,6 +189,20 @@ CREATE INDEX IF NOT EXISTS idx_user_journeys_path
     ON analytics.user_funnel_journeys USING GIN(journey_path);
 
 -- ===================================================================
+-- HELPER FUNCTIONS
+-- ===================================================================
+
+-- Function to automatically update updated_at timestamp
+-- Note: Defined locally to avoid migration dependency issues
+CREATE OR REPLACE FUNCTION analytics.update_funnel_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- ===================================================================
 -- TRIGGERS FOR AUTO-UPDATING TIMESTAMPS
 -- ===================================================================
 
@@ -197,21 +211,21 @@ DROP TRIGGER IF EXISTS funnel_definitions_updated_at ON analytics.funnel_definit
 CREATE TRIGGER funnel_definitions_updated_at
     BEFORE UPDATE ON analytics.funnel_definitions
     FOR EACH ROW
-    EXECUTE FUNCTION analytics.update_trend_analysis_updated_at();
+    EXECUTE FUNCTION analytics.update_funnel_updated_at();
 
 -- Funnel Step Performance Trigger
 DROP TRIGGER IF EXISTS funnel_step_performance_updated_at ON analytics.funnel_step_performance;
 CREATE TRIGGER funnel_step_performance_updated_at
     BEFORE UPDATE ON analytics.funnel_step_performance
     FOR EACH ROW
-    EXECUTE FUNCTION analytics.update_trend_analysis_updated_at();
+    EXECUTE FUNCTION analytics.update_funnel_updated_at();
 
 -- User Funnel Journeys Trigger
 DROP TRIGGER IF EXISTS user_funnel_journeys_updated_at ON analytics.user_funnel_journeys;
 CREATE TRIGGER user_funnel_journeys_updated_at
     BEFORE UPDATE ON analytics.user_funnel_journeys
     FOR EACH ROW
-    EXECUTE FUNCTION analytics.update_trend_analysis_updated_at();
+    EXECUTE FUNCTION analytics.update_funnel_updated_at();
 
 -- ===================================================================
 -- HELPER FUNCTIONS
