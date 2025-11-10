@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Any, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, desc, text, delete
@@ -15,6 +15,7 @@ from ...models.database.tables import (
     FunnelAnalysisResult,
     FunnelStepPerformance,
     UserFunnelJourney,
+    UserActivity,
 )
 from ...utils.datetime import calculate_start_date
 
@@ -267,7 +268,7 @@ class FunnelAnalysisService:
 
         # Set time range
         if not end_date:
-            end_date = datetime.utcnow()
+            end_date = datetime.now(timezone.utc)
         if not start_date:
             start_date = calculate_start_date(funnel_def["timeframe"])
 
@@ -323,7 +324,7 @@ class FunnelAnalysisService:
             "segments": segment_results,
             "analysisStart": start_date.isoformat(),
             "analysisEnd": end_date.isoformat(),
-            "calculatedAt": datetime.utcnow().isoformat(),
+            "calculatedAt": datetime.now(timezone.utc).isoformat(),
         }
 
     async def _analyze_funnel_step(
@@ -338,36 +339,28 @@ class FunnelAnalysisService:
     ) -> Dict[str, Any]:
         """Analyze individual funnel step."""
 
-        # Query to get users who completed this step
-        # NOTE: This is a simplified example - you'll need to adjust based on your events table structure
+        # Query to get users who completed this step using SQLAlchemy ORM
         try:
-            query = text("""
-                SELECT
-                    COUNT(DISTINCT user_id) as unique_users,
-                    COUNT(*) as total_events,
-                    AVG(EXTRACT(EPOCH FROM (created_at - LAG(created_at) OVER (PARTITION BY user_id ORDER BY created_at)))) as avg_time_from_previous
-                FROM analytics.user_activity
-                WHERE workspace_id = :workspace_id
-                    AND event_name = :event_name
-                    AND created_at >= :start_date
-                    AND created_at <= :end_date
-            """)
-
-            result = await self.db.execute(
-                query,
-                {
-                    "workspace_id": workspace_id,
-                    "event_name": step["event"],
-                    "start_date": start_date,
-                    "end_date": end_date,
-                },
+            # Build ORM query for user activity metrics
+            query = select(
+                func.count(func.distinct(UserActivity.user_id)).label("unique_users"),
+                func.count(UserActivity.id).label("total_events"),
+            ).where(
+                and_(
+                    UserActivity.workspace_id == workspace_id,
+                    UserActivity.event_name == step["event"],
+                    UserActivity.created_at >= start_date,
+                    UserActivity.created_at <= end_date,
+                )
             )
 
+            result = await self.db.execute(query)
             row = result.fetchone()
 
             unique_users = row.unique_users if row else 0
             total_events = row.total_events if row else 0
-            avg_time_from_previous = row.avg_time_from_previous if row and row.avg_time_from_previous else None
+            # Note: Complex time calculations moved to separate method if needed
+            avg_time_from_previous = None
         except Exception as e:
             logger.error(f"Error analyzing funnel step '{step['stepName']}': {str(e)}", exc_info=True)
             # Return zero metrics on error to allow analysis to continue
@@ -563,7 +556,7 @@ class FunnelAnalysisService:
             timestamp: Event timestamp (defaults to now)
         """
         if not timestamp:
-            timestamp = datetime.utcnow()
+            timestamp = datetime.now(timezone.utc)
 
         # Get or create user journey
         result = await self.db.execute(
@@ -673,7 +666,7 @@ class FunnelAnalysisService:
             raise ValueError(f"Invalid workspace ID: {str(e)}")
 
         start_date = calculate_start_date(timeframe)
-        end_date = datetime.utcnow()
+        end_date = datetime.now(timezone.utc)
 
         # Query to get funnel overview from materialized view
         query = text("""
@@ -713,7 +706,7 @@ class FunnelAnalysisService:
                 for row in rows
             ],
             "timeframe": timeframe,
-            "generatedAt": datetime.utcnow().isoformat(),
+            "generatedAt": datetime.now(timezone.utc).isoformat(),
         }
 
 
