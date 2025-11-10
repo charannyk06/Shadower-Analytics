@@ -1,4 +1,5 @@
--- Rollback migration for 010_b_update_trend_analysis_cache_add_user_id.sql
+-- Migration: 019_rollback_trend_analysis_cache_user_id.sql
+-- Rollback migration for 018_update_trend_analysis_cache_add_user_id.sql
 -- This script reverts the user_id changes to the trend_analysis_cache table
 --
 -- WARNING: This rollback will clear the cache and remove user-scoped security.

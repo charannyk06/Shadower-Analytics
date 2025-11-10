@@ -1,5 +1,5 @@
 -- =====================================================================
--- Migration: 010_add_execution_performance_indexes.sql
+-- Migration: 017_add_execution_performance_indexes.sql
 -- Description: Add composite indexes for execution metrics performance
 -- Created: 2025-11-09
 -- =====================================================================

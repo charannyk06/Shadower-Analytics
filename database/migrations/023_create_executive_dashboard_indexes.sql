@@ -1,5 +1,5 @@
 -- =====================================================================
--- Migration: 011_create_executive_dashboard_indexes.sql
+-- Migration: 023_create_executive_dashboard_indexes.sql
 -- Description: Create performance indexes for executive dashboard queries
 -- Created: 2025-11-09
 -- Purpose: Optimize queries for DAU/WAU/MAU, execution metrics, and KPIs

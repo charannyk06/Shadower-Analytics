@@ -13,8 +13,9 @@ import time
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text
+from sqlalchemy import text, column, func as sql_func
 import logging
+import uuid
 from ...utils.datetime import normalize_timeframe_to_interval
 
 logger = logging.getLogger(__name__)
@@ -166,7 +167,7 @@ class PercentileCalculator:
         """Calculate runtime percentiles from database.
 
         Args:
-            workspace_id: Workspace identifier
+            workspace_id: Workspace identifier (must be valid UUID)
             timeframe: Time interval (e.g., '1h', '24h', '7d', '30d')
             user_id: Optional user ID for workspace access validation
 
@@ -174,16 +175,23 @@ class PercentileCalculator:
             Dictionary containing runtime percentile metrics
 
         Raises:
-            ValueError: If database session not provided or invalid timeframe
+            ValueError: If database session not provided, invalid timeframe, or invalid UUID format
             PermissionError: If user_id provided but lacks workspace access
 
         Security:
             - Validates workspace access if user_id provided
+            - Validates UUID format to prevent injection
             - Uses parameterized queries (no SQL injection)
             - RLS policies enforce row-level security at database layer
         """
         if not self.db:
             raise ValueError("Database session required for database-based calculations")
+        
+        # Validate UUID format
+        try:
+            uuid.UUID(workspace_id)
+        except ValueError:
+            raise ValueError(f"Invalid workspace_id format: {workspace_id}. Must be a valid UUID.")
 
         # Validate workspace access (defense-in-depth)
         if user_id:
@@ -274,7 +282,11 @@ class PercentileCalculator:
         metric_name: str,
         timeframe: str = "7d",
         agent_id: Optional[str] = None,
+<<<<<<< HEAD
         user_id: Optional[str] = None
+=======
+        current_user_id: Optional[str] = None
+>>>>>>> 8960dd8 (Fix critical security issues and migration conflicts)
     ) -> Dict[str, Any]:
         """Calculate percentiles for any metric from database.
 
@@ -283,7 +295,7 @@ class PercentileCalculator:
         before any SQL construction.
 
         Args:
-            workspace_id: Workspace identifier
+            workspace_id: Workspace identifier (must be valid UUID)
             metric_name: Name of metric ('runtime_seconds', 'credits_consumed', 'tokens_used')
             timeframe: Time interval (e.g., '7d', '24h')
             agent_id: Optional agent identifier for agent-specific metrics
@@ -293,11 +305,12 @@ class PercentileCalculator:
             Dictionary containing metric percentile analysis
 
         Raises:
-            ValueError: If metric_name not in VALID_METRICS or invalid timeframe
+            ValueError: If metric_name not in VALID_METRICS, invalid timeframe, or invalid UUID format
             PermissionError: If user lacks workspace access
 
         Security:
             - Validates metric_name against VALID_METRICS whitelist
+            - Validates UUID format to prevent injection
             - Uses separate queries per metric (no f-string interpolation)
             - Validates workspace access if user_id provided
             - Uses parameterized query parameters only
@@ -305,12 +318,25 @@ class PercentileCalculator:
         if not self.db:
             raise ValueError("Database session required for database-based calculations")
 
+        # Validate UUID format
+        try:
+            uuid.UUID(workspace_id)
+        except ValueError:
+            raise ValueError(f"Invalid workspace_id format: {workspace_id}. Must be a valid UUID.")
+
         # Validate metric name against whitelist
         if metric_name not in self.VALID_METRICS:
             raise ValueError(
                 f"Invalid metric name: '{metric_name}'. "
                 f"Must be one of: {self.VALID_METRICS}"
             )
+
+        # Validate agent_id UUID format if provided
+        if agent_id:
+            try:
+                uuid.UUID(agent_id)
+            except ValueError:
+                raise ValueError(f"Invalid agent_id format: {agent_id}. Must be a valid UUID.")
 
         # Validate workspace access
         if user_id:
@@ -534,9 +560,9 @@ class PercentileCalculator:
         """Calculate daily percentile trends over time.
 
         Args:
-            workspace_id: Workspace identifier
+            workspace_id: Workspace identifier (must be valid UUID)
             metric_name: Metric to analyze (from VALID_METRICS)
-            days: Number of days to analyze
+            days: Number of days to analyze (must be positive)
             agent_id: Optional agent identifier
             user_id: Optional user ID for workspace access validation
 
@@ -544,16 +570,30 @@ class PercentileCalculator:
             Dictionary containing daily percentile trends
 
         Raises:
-            ValueError: If metric_name not in VALID_METRICS
+            ValueError: If metric_name not in VALID_METRICS, invalid UUID format, or invalid days parameter
             PermissionError: If user lacks workspace access
 
         Security:
             - Validates metric_name against VALID_METRICS whitelist
+            - Validates UUID format to prevent injection
             - Uses separate hardcoded queries (no SQL injection)
             - Validates workspace access if user_id provided
         """
         if not self.db:
             raise ValueError("Database session required for trend calculations")
+
+        # Validate UUID format
+        try:
+            uuid.UUID(workspace_id)
+        except ValueError:
+            raise ValueError(f"Invalid workspace_id format: {workspace_id}. Must be a valid UUID.")
+
+        # Validate days parameter
+        if not isinstance(days, int) or days <= 0:
+            raise ValueError(f"Invalid days parameter: {days}. Must be a positive integer.")
+        
+        if days > 365:
+            raise ValueError(f"Days parameter too large: {days}. Maximum is 365 days.")
 
         # Validate metric name
         if metric_name not in self.VALID_METRICS:
@@ -561,6 +601,13 @@ class PercentileCalculator:
                 f"Invalid metric name: '{metric_name}'. "
                 f"Must be one of: {self.VALID_METRICS}"
             )
+
+        # Validate agent_id UUID format if provided
+        if agent_id:
+            try:
+                uuid.UUID(agent_id)
+            except ValueError:
+                raise ValueError(f"Invalid agent_id format: {agent_id}. Must be a valid UUID.")
 
         # Validate workspace access
         if user_id:

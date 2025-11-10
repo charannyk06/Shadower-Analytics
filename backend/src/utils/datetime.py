@@ -82,6 +82,9 @@ def normalize_timeframe_to_interval(timeframe: str) -> str:
     Returns:
         PostgreSQL interval string (e.g., '1 hour', '24 hours', '7 days', '30 days', '1 year')
 
+    Raises:
+        ValueError: If timeframe format is invalid or value is out of range
+
     Examples:
         >>> normalize_timeframe_to_interval('7d')
         '7 days'
@@ -90,40 +93,67 @@ def normalize_timeframe_to_interval(timeframe: str) -> str:
         >>> normalize_timeframe_to_interval('1h')
         '1 hour'
     """
-    # Handle hours
-    if timeframe.endswith('h'):
-        hours = int(timeframe[:-1])
-        return f"{hours} hour{'s' if hours != 1 else ''}"
+    import re
     
-    # Handle days
-    elif timeframe.endswith('d'):
-        days = int(timeframe[:-1])
-        return f"{days} day{'s' if days != 1 else ''}"
+    # Validate input
+    if not timeframe:
+        return "7 days"
     
-    # Handle weeks
-    elif timeframe.endswith('w'):
-        weeks = int(timeframe[:-1])
-        days = weeks * 7
-        return f"{days} day{'s' if days != 1 else ''}"
-    
-    # Handle months
-    elif timeframe.endswith('m'):
-        months = int(timeframe[:-1])
-        days = months * 30  # Approximate
-        return f"{days} days"
-    
-    # Handle years
-    elif timeframe.endswith('y'):
-        years = int(timeframe[:-1])
-        return f"{years} year{'s' if years != 1 else ''}"
-    
-    # If already in PostgreSQL format, return as-is
-    elif ' ' in timeframe and any(keyword in timeframe.lower() for keyword in ['hour', 'day', 'week', 'month', 'year']):
+    # Validate format: digits followed by single letter, or PostgreSQL format
+    if ' ' in timeframe and any(keyword in timeframe.lower() for keyword in ['hour', 'day', 'week', 'month', 'year']):
+        # Already in PostgreSQL format, return as-is
         return timeframe
     
-    # Default fallback
-    else:
-        return "7 days"
+    # Validate format: must be digits followed by single letter (h, d, w, m, y)
+    if not re.match(r'^\d+[hdwmy]$', timeframe):
+        raise ValueError(
+            f"Invalid timeframe format: '{timeframe}'. "
+            "Expected format: <number><unit> (e.g., '7d', '24h', '1y') "
+            "where unit is one of: h (hours), d (days), w (weeks), m (months), y (years)"
+        )
+    
+    # Extract number and unit
+    unit = timeframe[-1]
+    try:
+        number = int(timeframe[:-1])
+    except ValueError:
+        raise ValueError(f"Invalid timeframe number: '{timeframe[:-1]}'. Must be a positive integer.")
+    
+    # Validate reasonable ranges
+    max_values = {'h': 8760, 'd': 365, 'w': 52, 'm': 12, 'y': 10}
+    
+    if number <= 0:
+        raise ValueError(f"Timeframe value must be positive, got: {number}")
+    
+    if number > max_values.get(unit, 365):
+        raise ValueError(
+            f"Timeframe value too large: {number}{unit}. "
+            f"Maximum for '{unit}' is {max_values[unit]}"
+        )
+    
+    # Handle hours
+    if unit == 'h':
+        return f"{number} hour{'s' if number != 1 else ''}"
+    
+    # Handle days
+    elif unit == 'd':
+        return f"{number} day{'s' if number != 1 else ''}"
+    
+    # Handle weeks
+    elif unit == 'w':
+        days = number * 7
+        return f"{days} day{'s' if days != 1 else ''}"
+    
+    # Handle months - use PostgreSQL native month intervals for accuracy
+    elif unit == 'm':
+        return f"{number} month{'s' if number != 1 else ''}"
+    
+    # Handle years
+    elif unit == 'y':
+        return f"{number} year{'s' if number != 1 else ''}"
+    
+    # Should never reach here due to regex validation above
+    raise ValueError(f"Unsupported timeframe unit: '{unit}'")
 
 
 def calculate_start_date(timeframe: str, from_date: Optional[datetime] = None) -> datetime:

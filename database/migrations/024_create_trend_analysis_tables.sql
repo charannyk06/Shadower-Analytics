@@ -1,3 +1,4 @@
+-- Migration: 024_create_trend_analysis_tables.sql
 -- Trend Analysis Tables Migration
 -- Creates tables for caching trend analysis results
 
