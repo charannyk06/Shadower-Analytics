@@ -21,6 +21,7 @@ from .routes import (
     errors_router,
     trends_router,
     leaderboards_router,
+    funnels_router,
     materialized_views_router,
 )
 from .middleware.cors import setup_cors
@@ -65,6 +66,7 @@ app.include_router(credits_router)
 app.include_router(errors_router)
 app.include_router(trends_router)
 app.include_router(leaderboards_router)
+app.include_router(funnels_router)
 app.include_router(materialized_views_router)
 
 

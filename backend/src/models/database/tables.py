@@ -1,5 +1,6 @@
 """SQLAlchemy database models."""
 
+from uuid import uuid4
 from sqlalchemy import Column, String, Integer, Float, DateTime, Boolean, JSON, Enum, Index
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
@@ -304,6 +305,37 @@ class ExecutionMetricsHourly(Base):
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
 
+class FunnelDefinition(Base):
+    """Funnel definitions table."""
+
+    __tablename__ = "funnel_definitions"
+    __table_args__ = (
+        Index('idx_funnel_definitions_workspace', 'workspace_id', 'status'),
+        Index('idx_funnel_definitions_created', 'created_at'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    workspace_id = Column(String, index=True, nullable=False)
+
+    # Funnel metadata
+    name = Column(String(255), nullable=False)
+    description = Column(String)
+    status = Column(String(20), nullable=False, default='active')  # 'active', 'paused', 'archived'
+
+    # Funnel configuration stored as JSON
+    steps = Column(JSON, nullable=False)
+
+    # Analysis settings
+    timeframe = Column(String(20), default='30d')
+    segment_by = Column(String(50))
+
+    # Metadata
+    created_by = Column(String)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
 class ExecutionMetricsDaily(Base):
     """Daily execution metrics aggregation table."""
 
@@ -341,6 +373,88 @@ class ExecutionMetricsDaily(Base):
     health_score = Column(Float, default=0.0)
 
     # Timestamps
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+class FunnelAnalysisResult(Base):
+    """Funnel analysis results table."""
+
+    __tablename__ = "funnel_analysis_results"
+    __table_args__ = (
+        Index('idx_funnel_results_funnel', 'funnel_id', 'analysis_start'),
+        Index('idx_funnel_results_workspace_time', 'workspace_id', 'analysis_start', 'analysis_end'),
+        Index('idx_funnel_results_calculated', 'calculated_at'),
+        Index('idx_funnel_results_segment', 'funnel_id', 'segment_name'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    funnel_id = Column(String, index=True, nullable=False)
+    workspace_id = Column(String, index=True, nullable=False)
+
+    # Analysis timeframe
+    analysis_start = Column(DateTime, nullable=False)
+    analysis_end = Column(DateTime, nullable=False)
+
+    # Step results stored as JSON array
+    step_results = Column(JSON, nullable=False)
+
+    # Overall funnel metrics
+    total_entered = Column(Integer, nullable=False, default=0)
+    total_completed = Column(Integer, nullable=False, default=0)
+    overall_conversion_rate = Column(Float, nullable=False, default=0.0)
+    avg_time_to_complete = Column(Float)
+    biggest_drop_off_step = Column(String(255))
+    biggest_drop_off_rate = Column(Float)
+
+    # Segment analysis
+    segment_name = Column(String(100))
+    segment_results = Column(JSON)
+
+    # Metadata
+    calculated_at = Column(DateTime, default=func.now())
+    created_at = Column(DateTime, default=func.now())
+
+
+class FunnelStepPerformance(Base):
+    """Funnel step performance table."""
+
+    __tablename__ = "funnel_step_performance"
+    __table_args__ = (
+        Index('idx_funnel_step_performance_funnel', 'funnel_id', 'step_order', 'period_start'),
+        Index('idx_funnel_step_performance_period', 'period_start', 'period_end'),
+        Index('idx_funnel_step_performance_conversion', 'funnel_id', 'conversion_rate'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    funnel_id = Column(String, index=True, nullable=False)
+    workspace_id = Column(String, index=True, nullable=False)
+
+    # Step identification
+    step_id = Column(String(100), nullable=False)
+    step_name = Column(String(255), nullable=False)
+    step_order = Column(Integer, nullable=False)
+    event_name = Column(String(255), nullable=False)
+
+    # Time period
+    period_start = Column(DateTime, nullable=False)
+    period_end = Column(DateTime, nullable=False)
+
+    # Step metrics
+    total_users = Column(Integer, nullable=False, default=0)
+    unique_users = Column(Integer, nullable=False, default=0)
+    users_from_previous_step = Column(Integer, nullable=False, default=0)
+    conversion_rate = Column(Float, nullable=False, default=0.0)
+    drop_off_rate = Column(Float, nullable=False, default=0.0)
+    avg_time_from_previous = Column(Float)
+    median_time_from_previous = Column(Float)
+
+    # Drop-off analysis
+    drop_off_reasons = Column(JSON)
+
+    # Metadata
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
@@ -404,5 +518,44 @@ class CreditConsumptionHourly(Base):
     credits_per_success = Column(Float, default=0.0)
 
     # Timestamps
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+class UserFunnelJourney(Base):
+    """User funnel journeys table."""
+
+    __tablename__ = "user_funnel_journeys"
+    __table_args__ = (
+        Index('idx_user_journeys_funnel_status', 'funnel_id', 'status', 'started_at'),
+        Index('idx_user_journeys_user', 'user_id', 'started_at'),
+        Index('idx_user_journeys_workspace', 'workspace_id', 'started_at'),
+        Index('idx_user_journeys_segment', 'funnel_id', 'user_segment'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    funnel_id = Column(String, index=True, nullable=False)
+    workspace_id = Column(String, index=True, nullable=False)
+    user_id = Column(String, index=True, nullable=False)
+
+    # Journey tracking
+    started_at = Column(DateTime, nullable=False)
+    completed_at = Column(DateTime)
+    last_step_reached = Column(String(100))
+    last_step_order = Column(Integer)
+    status = Column(String(20), nullable=False)  # 'in_progress', 'completed', 'abandoned'
+
+    # Journey path
+    journey_path = Column(JSON, nullable=False, default=list)
+
+    # Time metrics
+    total_time_spent = Column(Float)
+    time_per_step = Column(JSON)
+
+    # User segment
+    user_segment = Column(String(100))
+
+    # Metadata
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
