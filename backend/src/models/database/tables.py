@@ -559,3 +559,75 @@ class UserFunnelJourney(Base):
     # Metadata
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+class AnomalyDetection(Base):
+    """Anomaly detections table."""
+
+    __tablename__ = "anomaly_detections"
+    __table_args__ = (
+        Index('idx_anomaly_workspace_time', 'workspace_id', 'detected_at'),
+        Index('idx_anomaly_severity_ack', 'severity', 'is_acknowledged'),
+        Index('idx_anomaly_metric_workspace', 'metric_type', 'workspace_id'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    workspace_id = Column(String, index=True, nullable=False)
+    metric_type = Column(String(100), index=True, nullable=False)
+    detected_at = Column(DateTime, index=True, nullable=False)
+    anomaly_value = Column(Float)
+    expected_range = Column(JSON)
+    anomaly_score = Column(Float, nullable=False)
+    severity = Column(String(20), index=True, nullable=False)  # low, medium, high, critical
+    detection_method = Column(String(50), nullable=False)  # zscore, isolation_forest, lstm, threshold
+    context = Column(JSON)
+    is_acknowledged = Column(Boolean, default=False, nullable=False)
+    acknowledged_by = Column(String)
+    acknowledged_at = Column(DateTime)
+    notes = Column(String)
+    created_at = Column(DateTime, default=func.now())
+
+
+class AnomalyRule(Base):
+    """Anomaly detection rules configuration table."""
+
+    __tablename__ = "anomaly_rules"
+    __table_args__ = (
+        Index('idx_anomaly_rules_workspace_metric', 'workspace_id', 'metric_type'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    workspace_id = Column(String, index=True)  # NULL = global rule
+    metric_type = Column(String(100), index=True, nullable=False)
+    rule_name = Column(String(255), nullable=False)
+    detection_method = Column(String(50), nullable=False)
+    parameters = Column(JSON, nullable=False)
+    is_active = Column(Boolean, index=True, default=True, nullable=False)
+    auto_alert = Column(Boolean, default=False, nullable=False)
+    alert_channels = Column(JSON)
+    created_by = Column(String, nullable=False)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+class BaselineModel(Base):
+    """Baseline models storage for anomaly detection."""
+
+    __tablename__ = "baseline_models"
+    __table_args__ = (
+        Index('idx_baseline_models_workspace_metric', 'workspace_id', 'metric_type'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    workspace_id = Column(String, index=True, nullable=False)
+    metric_type = Column(String(100), index=True, nullable=False)
+    model_type = Column(String(50), index=True, nullable=False)  # zscore, isolation_forest, lstm
+    model_parameters = Column(JSON, nullable=False)
+    statistics = Column(JSON, nullable=False)  # mean, std, percentiles
+    training_data_start = Column(DateTime, nullable=False)
+    training_data_end = Column(DateTime, nullable=False)
+    accuracy_metrics = Column(JSON)
+    last_updated = Column(DateTime, default=func.now())
