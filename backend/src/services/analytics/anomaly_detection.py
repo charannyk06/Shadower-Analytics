@@ -47,15 +47,11 @@ class AnomalyDetectionService:
     """
 
     # Valid metric types (whitelist for SQL safety)
+    # Only metrics that can be aggregated from execution_logs
     VALID_METRICS = [
         'runtime_seconds',
         'credits_consumed',
-        'tokens_used',
         'executions',
-        'error_rate',
-        'success_rate',
-        'user_activity',
-        'api_latency'
     ]
 
     # Severity thresholds based on z-score
@@ -323,12 +319,11 @@ class AnomalyDetectionService:
         query = text("""
             SELECT
                 DATE_TRUNC('hour', started_at) as timestamp,
-                AVG(CASE
-                    WHEN :metric_type = 'runtime_seconds' THEN duration
-                    WHEN :metric_type = 'credits_consumed' THEN credits_used
-                    WHEN :metric_type = 'executions' THEN 1
-                    ELSE 0
-                END) as value,
+                CASE
+                    WHEN :metric_type = 'runtime_seconds' THEN AVG(duration)
+                    WHEN :metric_type = 'credits_consumed' THEN SUM(credits_used)
+                    WHEN :metric_type = 'executions' THEN COUNT(*)
+                END as value,
                 COUNT(*) as count
             FROM execution_logs
             WHERE workspace_id = :workspace_id
@@ -411,15 +406,18 @@ class AnomalyDetectionService:
         Args:
             workspace_id: Workspace ID for data isolation
             sensitivity: Detection sensitivity (default: 2.5 std devs)
-            window_hours: Rolling window size in hours
+            window_hours: Rolling window size in hours (converted to days for lookback)
 
         Returns:
             List of detected usage spikes with details
         """
+        # Convert window_hours to days (minimum 1 day)
+        lookback_days = max(1, window_hours // 24)
+
         return await self.detect_metric_anomalies(
             metric_type='credits_consumed',
             workspace_id=workspace_id,
-            lookback_days=30,
+            lookback_days=lookback_days,
             sensitivity=sensitivity,
             method='zscore'
         )

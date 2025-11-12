@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text, select, and_
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 import uuid
 
 from ...core.database import get_db
@@ -190,15 +190,12 @@ async def detect_anomalies(
         workspace_id = validate_workspace_id(workspace_id)
         await WorkspaceAccess.validate_workspace_access(current_user, workspace_id)
 
-        # Override workspace_id from path
-        request.workspace_id = workspace_id
-
         service = AnomalyDetectionService(db)
 
         result = await asyncio.wait_for(
             service.detect_metric_anomalies(
                 metric_type=request.metric_type,
-                workspace_id=request.workspace_id,
+                workspace_id=workspace_id,
                 lookback_days=request.lookback_days,
                 sensitivity=request.sensitivity,
                 method=request.method.value,

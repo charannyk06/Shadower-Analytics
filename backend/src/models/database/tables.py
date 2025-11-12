@@ -1,7 +1,8 @@
 """SQLAlchemy database models."""
 
 from uuid import uuid4
-from sqlalchemy import Column, String, Integer, Float, DateTime, Boolean, JSON, Enum, Index
+from sqlalchemy import Column, String, Integer, Float, DateTime, Boolean, JSON, Enum, Index, Numeric, Date
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
 from datetime import datetime
@@ -576,9 +577,9 @@ class AnomalyDetection(Base):
     workspace_id = Column(String, index=True, nullable=False)
     metric_type = Column(String(100), index=True, nullable=False)
     detected_at = Column(DateTime, index=True, nullable=False)
-    anomaly_value = Column(Float)
+    anomaly_value = Column(Numeric)
     expected_range = Column(JSON)
-    anomaly_score = Column(Float, nullable=False)
+    anomaly_score = Column(Numeric, nullable=False)
     severity = Column(String(20), index=True, nullable=False)  # low, medium, high, critical
     detection_method = Column(String(50), nullable=False)  # zscore, isolation_forest, lstm, threshold
     context = Column(JSON)
@@ -627,7 +628,7 @@ class BaselineModel(Base):
     model_type = Column(String(50), index=True, nullable=False)  # zscore, isolation_forest, lstm
     model_parameters = Column(JSON, nullable=False)
     statistics = Column(JSON, nullable=False)  # mean, std, percentiles
-    training_data_start = Column(DateTime, nullable=False)
-    training_data_end = Column(DateTime, nullable=False)
+    training_data_start = Column(Date, nullable=False)
+    training_data_end = Column(Date, nullable=False)
     accuracy_metrics = Column(JSON)
     last_updated = Column(DateTime, default=func.now())

@@ -49,7 +49,6 @@ class DetectAnomaliesRequest(BaseModel):
     )
 
     metric_type: str = Field(..., description="Type of metric to analyze")
-    workspace_id: str = Field(..., description="Workspace ID")
     lookback_days: int = Field(30, ge=1, le=365, description="Days of historical data")
     sensitivity: float = Field(2.5, ge=1.0, le=5.0, description="Detection sensitivity")
     method: DetectionMethod = Field(
@@ -64,12 +63,7 @@ class DetectAnomaliesRequest(BaseModel):
         valid_metrics = [
             'runtime_seconds',
             'credits_consumed',
-            'tokens_used',
             'executions',
-            'error_rate',
-            'success_rate',
-            'user_activity',
-            'api_latency'
         ]
         if v not in valid_metrics:
             raise ValueError(f"metric_type must be one of {valid_metrics}")
@@ -84,7 +78,6 @@ class DetectUsageSpikesRequest(BaseModel):
         populate_by_name=True,
     )
 
-    workspace_id: str = Field(..., description="Workspace ID")
     sensitivity: float = Field(2.5, ge=1.0, le=5.0, description="Detection sensitivity")
     window_hours: int = Field(24, ge=1, le=168, description="Rolling window in hours")
 
@@ -97,7 +90,6 @@ class DetectErrorPatternsRequest(BaseModel):
         populate_by_name=True,
     )
 
-    workspace_id: str = Field(..., description="Workspace ID")
     window_hours: int = Field(24, ge=1, le=168, description="Analysis window in hours")
 
 
@@ -110,7 +102,6 @@ class DetectUserBehaviorRequest(BaseModel):
     )
 
     user_id: str = Field(..., description="User ID to analyze")
-    workspace_id: str = Field(..., description="Workspace ID")
     lookback_days: int = Field(30, ge=7, le=365, description="Days of historical data")
 
 
@@ -123,7 +114,6 @@ class TrainBaselineRequest(BaseModel):
     )
 
     metric_type: str = Field(..., description="Type of metric to model")
-    workspace_id: str = Field(..., description="Workspace ID")
     training_days: int = Field(90, ge=30, le=365, description="Training period in days")
     model_type: ModelType = Field(
         ModelType.ZSCORE,
@@ -137,12 +127,7 @@ class TrainBaselineRequest(BaseModel):
         valid_metrics = [
             'runtime_seconds',
             'credits_consumed',
-            'tokens_used',
             'executions',
-            'error_rate',
-            'success_rate',
-            'user_activity',
-            'api_latency'
         ]
         if v not in valid_metrics:
             raise ValueError(f"metric_type must be one of {valid_metrics}")
@@ -184,12 +169,7 @@ class CreateAnomalyRuleRequest(BaseModel):
         valid_metrics = [
             'runtime_seconds',
             'credits_consumed',
-            'tokens_used',
             'executions',
-            'error_rate',
-            'success_rate',
-            'user_activity',
-            'api_latency'
         ]
         if v not in valid_metrics:
             raise ValueError(f"metric_type must be one of {valid_metrics}")

@@ -27,14 +27,15 @@ The Anomaly Detection System provides statistical anomaly detection for metrics 
 
 ### Monitored Metrics
 
-- `runtime_seconds` - Execution duration anomalies
-- `credits_consumed` - Usage spike detection
-- `tokens_used` - Token consumption patterns
-- `executions` - Execution count anomalies
-- `error_rate` - Error pattern detection
-- `success_rate` - Success rate degradation
-- `user_activity` - Behavioral anomalies
-- `api_latency` - Performance degradation
+The following metrics can be analyzed from execution logs:
+
+- `runtime_seconds` - Execution duration anomalies (average per hour)
+- `credits_consumed` - Usage spike detection (total per hour)
+- `executions` - Execution count anomalies (count per hour)
+
+Additional specialized detection:
+- Error patterns via `detect_error_patterns()` endpoint
+- User behavior via `detect_user_behavior_anomalies()` endpoint
 
 ### Severity Levels
 
