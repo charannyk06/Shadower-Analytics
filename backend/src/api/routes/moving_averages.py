@@ -1,13 +1,10 @@
 """Moving averages API routes."""
 
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 from fastapi import APIRouter, Depends, Query, HTTPException, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 import asyncio
 import logging
-
-# Request timeout for moving average calculations (30 seconds)
-CALCULATION_TIMEOUT_SECONDS = 30
 
 from ...core.database import get_db
 from ...services.analytics.moving_averages import MovingAverageService
@@ -18,6 +15,9 @@ from ..middleware.workspace import WorkspaceAccess
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/moving-averages", tags=["moving-averages"])
+
+# Request timeout for moving average calculations (30 seconds)
+CALCULATION_TIMEOUT_SECONDS = 30
 
 # Rate limiter for moving average calculations
 ma_limiter = RateLimiter(
@@ -293,9 +293,18 @@ async def calculate_custom_moving_average(
                 detail="Maximum 10,000 data points allowed for custom calculation"
             )
 
-        # Convert to pandas Series
+        # Validate all values are numeric
         import pandas as pd
-        series = pd.Series(values)
+        try:
+            numeric_values = [float(v) for v in values]
+        except (ValueError, TypeError) as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"All values must be numeric: {e}"
+            )
+
+        # Convert to pandas Series
+        series = pd.Series(numeric_values)
 
         # Calculate moving average
         service = MovingAverageService()
@@ -304,26 +313,39 @@ async def calculate_custom_moving_average(
         elif ma_type == 'ema':
             ma_values = service.calculate_ema(series, window)
         elif ma_type == 'wma':
-            if not weights:
+            # Validate weights for WMA
+            if not weights or not isinstance(weights, list):
                 raise HTTPException(
                     status_code=400,
-                    detail="'weights' required for WMA"
+                    detail="'weights' must be a non-empty list for WMA"
+                )
+            if len(weights) != window:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Number of weights ({len(weights)}) must match window size ({window})"
                 )
             ma_values = service.calculate_wma(series, weights)
 
         # Identify trend
         trend = service.identify_trend(series, ma_values)
 
+        # Handle NaN values in output
+        import math
+
+        current_val = series.iloc[-1]
+        current_ma_val = ma_values.iloc[-1]
+        avg_val = series.mean()
+
         return {
             "ma_type": ma_type,
             "window": window,
             "values": values,
-            "moving_averages": ma_values.tolist(),
+            "moving_averages": [None if (isinstance(v, float) and math.isnan(v)) else v for v in ma_values.tolist()],
             "trend": trend,
             "summary": {
-                "current_value": float(series.iloc[-1]),
-                "current_ma": float(ma_values.iloc[-1]),
-                "avg_value": float(series.mean()),
+                "current_value": None if pd.isna(current_val) else float(current_val),
+                "current_ma": None if pd.isna(current_ma_val) else float(current_ma_val),
+                "avg_value": None if pd.isna(avg_val) else float(avg_val),
                 "data_points": len(values)
             }
         }

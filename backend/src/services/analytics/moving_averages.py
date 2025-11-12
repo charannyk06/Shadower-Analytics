@@ -13,7 +13,7 @@ import pandas as pd
 import numpy as np
 import time
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, date
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 import logging
@@ -165,7 +165,11 @@ class MovingAverageService:
         last_ma = ma_values.iloc[-1]
 
         # Get previous moving average
-        prev_ma = ma_values.iloc[-2] if len(ma_values) >= 2 else last_ma
+        prev_ma = ma_values.iloc[-2]
+
+        # Check for NaN values
+        if pd.isna(last_data) or pd.isna(last_ma) or pd.isna(prev_ma):
+            return 'neutral'
 
         # Check if current value is above MA and MA is increasing
         if last_data > last_ma and last_ma > prev_ma:
@@ -299,7 +303,7 @@ class MovingAverageService:
         ])
 
         # Sort by date to ensure proper time series
-        df = df.sort_values('date')
+        df = df.sort_values('date').reset_index(drop=True)
 
         # Calculate moving average based on type
         if ma_type == 'sma':
@@ -312,24 +316,31 @@ class MovingAverageService:
         # Identify trend
         trend = self.identify_trend(df['value'], df['moving_average'])
 
-        # Calculate summary statistics
+        # Calculate summary statistics with NaN handling
+        current_val = df['value'].iloc[-1]
+        current_ma_val = df['moving_average'].iloc[-1]
+        avg_val = df['value'].mean()
+        min_val = df['value'].min()
+        max_val = df['value'].max()
+
         summary = {
-            "current_value": round(float(df['value'].iloc[-1]), 2),
-            "current_ma": round(float(df['moving_average'].iloc[-1]), 2),
-            "avg_value": round(float(df['value'].mean()), 2),
-            "min_value": round(float(df['value'].min()), 2),
-            "max_value": round(float(df['value'].max()), 2),
+            "current_value": None if pd.isna(current_val) else round(float(current_val), 2),
+            "current_ma": None if pd.isna(current_ma_val) else round(float(current_ma_val), 2),
+            "avg_value": None if pd.isna(avg_val) else round(float(avg_val), 2),
+            "min_value": None if pd.isna(min_val) else round(float(min_val), 2),
+            "max_value": None if pd.isna(max_val) else round(float(max_val), 2),
             "data_points": len(df),
             "trend": trend
         }
 
-        # Convert to output format
+        # Convert to output format with NaN handling
         data = []
         for _, row in df.iterrows():
+            ma_val = row['moving_average']
             data.append({
-                "date": row['date'].isoformat() if isinstance(row['date'], datetime) else str(row['date']),
+                "date": row['date'].isoformat() if isinstance(row['date'], (datetime, date)) else str(row['date']),
                 "value": round(float(row['value']), 2),
-                "moving_average": round(float(row['moving_average']), 2)
+                "moving_average": None if pd.isna(ma_val) else round(float(ma_val), 2)
             })
 
         logger.info(
@@ -512,6 +523,23 @@ class MovingAverageService:
         # Check if short-term MA is above long-term MA (bullish signal)
         short_term = sorted_results[0]['current_ma']
         long_term = sorted_results[-1]['current_ma']
+
+        # Handle None, NaN, or zero values
+        if (
+            short_term is None or long_term is None or
+            short_term == 0.0 or long_term == 0.0 or
+            (isinstance(short_term, float) and np.isnan(short_term)) or
+            (isinstance(long_term, float) and np.isnan(long_term))
+        ):
+            return {
+                "insight": "Insufficient data for reliable comparison",
+                "signal": "neutral",
+                "short_term_window": sorted_results[0]['window'],
+                "long_term_window": sorted_results[-1]['window'],
+                "short_term_ma": short_term,
+                "long_term_ma": long_term,
+                "spread": 0.0
+            }
 
         signal = "bullish" if short_term > long_term else "bearish" if short_term < long_term else "neutral"
 

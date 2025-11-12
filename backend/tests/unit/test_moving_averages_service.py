@@ -2,10 +2,9 @@
 
 import pytest
 import pandas as pd
-import numpy as np
 from unittest.mock import MagicMock, AsyncMock
 from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import datetime, date
+from datetime import date
 
 from src.services.analytics.moving_averages import MovingAverageService
 
