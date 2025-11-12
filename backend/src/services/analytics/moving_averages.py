@@ -216,8 +216,8 @@ class MovingAverageService:
         # Validate UUID format
         try:
             uuid.UUID(workspace_id)
-        except ValueError:
-            raise ValueError(f"Invalid workspace_id format: {workspace_id}. Must be a valid UUID.")
+        except ValueError as e:
+            raise ValueError(f"Invalid workspace_id format: {workspace_id}. Must be a valid UUID.") from e
 
         # Validate metric name
         if metric not in self.VALID_METRICS:

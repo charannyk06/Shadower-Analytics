@@ -112,13 +112,13 @@ async def get_moving_average_analysis(
             raise HTTPException(
                 status_code=504,
                 detail=f"Calculation timed out after {CALCULATION_TIMEOUT_SECONDS} seconds. Try a shorter timeframe."
-            )
+            ) from None  # Intentionally suppress traceback for timeout
 
     except HTTPException:
         raise
     except ValueError as e:
         logger.warning(f"Invalid input for moving average calculation: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         logger.error(
             f"Moving average calculation failed",
@@ -132,7 +132,7 @@ async def get_moving_average_analysis(
         raise HTTPException(
             status_code=500,
             detail="Failed to calculate moving average"
-        )
+        ) from e
 
 
 @router.get("/{workspace_id}/compare", dependencies=[Depends(ma_limiter)])
@@ -210,13 +210,13 @@ async def compare_moving_averages(
             raise HTTPException(
                 status_code=504,
                 detail="Comparison timed out. Try fewer window sizes or a shorter timeframe."
-            )
+            ) from None  # Intentionally suppress traceback for timeout
 
     except HTTPException:
         raise
     except ValueError as e:
         logger.warning(f"Invalid input for moving average comparison: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         logger.error(
             f"Moving average comparison failed",
@@ -230,7 +230,7 @@ async def compare_moving_averages(
         raise HTTPException(
             status_code=500,
             detail="Failed to compare moving averages"
-        )
+        ) from e
 
 
 @router.post("/{workspace_id}/calculate-custom", dependencies=[Depends(ma_limiter)])
@@ -332,7 +332,7 @@ async def calculate_custom_moving_average(
         raise
     except ValueError as e:
         logger.warning(f"Invalid input for custom moving average: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         logger.error(
             f"Custom moving average calculation failed",
@@ -342,4 +342,4 @@ async def calculate_custom_moving_average(
         raise HTTPException(
             status_code=500,
             detail="Failed to calculate custom moving average"
-        )
+        ) from e
