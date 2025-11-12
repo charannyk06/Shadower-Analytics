@@ -211,6 +211,24 @@ class TestMovingAverageService:
         expected = (1*1 + 2*2 + 3*3 + 4*4 + 5*5) / (1+2+3+4+5)
         assert abs(result.iloc[-1] - expected) < 0.01
 
+    def test_calculate_wma_partial_window_alignment(self):
+        """Test WMA uses correct weights for partial windows."""
+        data = pd.Series([10, 20, 30, 40, 50])
+        weights = [1, 2, 3, 4, 5]
+
+        result = MovingAverageService.calculate_wma(data, weights)
+
+        # First value should use only first weight: (10*1) / 1 = 10
+        assert abs(result.iloc[0] - 10.0) < 0.01
+
+        # Second value should use first two weights: (10*1 + 20*2) / (1+2) = 50/3
+        expected_2nd = (10*1 + 20*2) / (1+2)
+        assert abs(result.iloc[1] - expected_2nd) < 0.01
+
+        # Third value should use first three weights: (10*1 + 20*2 + 30*3) / (1+2+3) = 140/6
+        expected_3rd = (10*1 + 20*2 + 30*3) / (1+2+3)
+        assert abs(result.iloc[2] - expected_3rd) < 0.01
+
     # ===================================================================
     # IDENTIFY_TREND TESTS
     # ===================================================================

@@ -135,8 +135,8 @@ class MovingAverageService:
         def weighted_avg(values):
             """Apply weighted average to a window of values."""
             if len(values) < len(weights):
-                # Use subset of weights for partial windows
-                window_weights = weights[-len(values):]
+                # Use subset of weights for partial windows (from the beginning)
+                window_weights = weights[:len(values)]
             else:
                 window_weights = weights
 
