@@ -10,6 +10,7 @@ to prevent SQL injection.
 
 import pandas as pd
 import numpy as np
+import math
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -405,8 +406,8 @@ class AnomalyDetectionService:
         Returns:
             List of detected usage spikes with details
         """
-        # Convert window_hours to days (minimum 1 day)
-        lookback_days = max(1, window_hours // 24)
+        # Convert hours to whole days while covering the full window (ceiling to avoid truncation)
+        lookback_days = max(1, math.ceil(window_hours / 24))
 
         return await self.detect_metric_anomalies(
             metric_type='credits_consumed',
