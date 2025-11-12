@@ -1,13 +1,12 @@
 """Anomaly detection API routes."""
 
-from typing import Dict, Any, Optional, List
-from fastapi import APIRouter, Depends, Query, HTTPException, Body, Path
+from typing import Dict, Any, Optional
+from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text, select, and_
+from sqlalchemy import select, and_
 import asyncio
 import logging
 from datetime import datetime, timedelta
-import uuid
 
 from ...core.database import get_db
 from ...services.analytics.anomaly_detection import AnomalyDetectionService
@@ -20,16 +19,12 @@ from ...models.schemas.anomalies import (
     TrainBaselineRequest,
     AcknowledgeAnomalyRequest,
     CreateAnomalyRuleRequest,
-    UpdateAnomalyRuleRequest,
     AnomalyDetectionResponse,
     AnomalyListResponse,
     AnomalyRuleResponse,
-    BaselineModelResponse,
     BaselineModelDetailResponse,
     AnomalySummaryResponse,
-    HealthCheckResponse,
     SeverityLevel,
-    DetectionMethod,
 )
 from ...utils.validators import validate_workspace_id
 from ..dependencies.auth import get_current_user

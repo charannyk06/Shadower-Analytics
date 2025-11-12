@@ -10,22 +10,16 @@ to prevent SQL injection.
 
 import pandas as pd
 import numpy as np
-from typing import List, Dict, Any, Optional, Tuple
-from datetime import datetime, timedelta, date
+from typing import List, Dict, Any, Optional
+from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text, select
+from sqlalchemy import text
 from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import StandardScaler
 import logging
 import uuid
 
-from ...models.database.tables import (
-    AnomalyDetection,
-    AnomalyRule,
-    BaselineModel,
-    ExecutionLog
-)
-from ...utils.datetime import normalize_timeframe_to_interval
+from ...models.database.tables import BaselineModel
 
 logger = logging.getLogger(__name__)
 
@@ -193,8 +187,8 @@ class AnomalyDetectionService:
             logger.warning("No features provided for Isolation Forest")
             return []
 
-        # Handle missing values
-        data_clean = data.fillna(data.mean())
+        # Handle missing values efficiently: forward-fill, then back-fill for any remaining NaNs
+        data_clean = data.ffill().bfill()
 
         # Standardize features
         scaler = StandardScaler()
@@ -480,7 +474,12 @@ class AnomalyDetectionService:
             columns=['timestamp', 'total_executions', 'failed_count', 'avg_duration']
         )
         df['timestamp'] = pd.to_datetime(df['timestamp'])
-        df['error_rate'] = df['failed_count'] / df['total_executions'].replace(0, 1)
+        # Set error_rate to np.nan where total_executions == 0 to avoid division by zero
+        df['error_rate'] = np.where(
+            df['total_executions'] == 0,
+            np.nan,
+            df['failed_count'] / df['total_executions']
+        )
         df.set_index('timestamp', inplace=True)
 
         # Detect anomalies using isolation forest
@@ -497,7 +496,7 @@ class AnomalyDetectionService:
                 'workspace_id': workspace_id,
                 'detected_at': anomaly['timestamp'].isoformat() if isinstance(anomaly['timestamp'], pd.Timestamp) else anomaly['timestamp'],
                 'anomaly_score': anomaly['score'],
-                'severity': self.determine_severity(anomaly['score'] * 2),  # Scale for severity
+                'severity': self.determine_severity(anomaly['score']),
                 'detection_method': 'isolation_forest',
                 'context': {
                     'features': anomaly['features'],
@@ -588,7 +587,7 @@ class AnomalyDetectionService:
                 'user_id': user_id,
                 'detected_at': anomaly['timestamp'].isoformat() if isinstance(anomaly['timestamp'], pd.Timestamp) else anomaly['timestamp'],
                 'anomaly_score': score,
-                'severity': self.determine_severity(score * 2),
+                'severity': self.determine_severity(score),
                 'detection_method': 'isolation_forest',
                 'context': {
                     'features': anomaly['features'],
