@@ -17,6 +17,7 @@ from .leaderboards import router as leaderboards_router
 from .funnels import router as funnels_router
 from .materialized_views import router as materialized_views_router
 from .moving_averages import router as moving_averages_router
+from .alerts import router as alerts_router
 
 __all__ = [
     "executive_router",
@@ -36,4 +37,5 @@ __all__ = [
     "funnels_router",
     "materialized_views_router",
     "moving_averages_router",
+    "alerts_router",
 ]

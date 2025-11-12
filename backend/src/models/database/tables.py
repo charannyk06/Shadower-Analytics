@@ -1,7 +1,8 @@
 """SQLAlchemy database models."""
 
 from uuid import uuid4
-from sqlalchemy import Column, String, Integer, Float, DateTime, Boolean, JSON, Enum, Index
+from sqlalchemy import Column, String, Integer, Float, DateTime, Boolean, JSON, Enum, Index, ForeignKey, Numeric
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
 from datetime import datetime
@@ -559,3 +560,131 @@ class UserFunnelJourney(Base):
     # Metadata
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+class AlertRule(Base):
+    """Alert rules configuration table."""
+
+    __tablename__ = "alert_rules"
+    __table_args__ = (
+        Index('idx_alert_rules_workspace', 'workspace_id', 'is_active'),
+        Index('idx_alert_rules_workspace_name', 'workspace_id', 'rule_name', unique=True),
+        Index('idx_alert_rules_active_next_check', 'is_active', 'last_evaluated_at'),
+        Index('idx_alert_rules_severity', 'severity'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4, index=True)
+    workspace_id = Column(PG_UUID(as_uuid=True), index=True, nullable=False)
+    rule_name = Column(String(255), nullable=False)
+    description = Column(String, nullable=True)
+    metric_type = Column(String(100), nullable=False)
+    condition_type = Column(String(50), nullable=False)  # 'threshold', 'change', 'anomaly', 'pattern'
+    condition_config = Column(JSON, nullable=False)
+    severity = Column(String(20), nullable=False)  # 'info', 'warning', 'critical', 'emergency'
+    is_active = Column(Boolean, nullable=False, default=True)
+    check_interval_minutes = Column(Integer, nullable=False, default=5)
+    cooldown_minutes = Column(Integer, nullable=False, default=60)
+    notification_channels = Column(JSON, nullable=False)
+    escalation_policy_id = Column(PG_UUID(as_uuid=True), ForeignKey('analytics.escalation_policies.id', ondelete='SET NULL'), nullable=True)
+    created_by = Column(PG_UUID(as_uuid=True), nullable=False)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+    last_evaluated_at = Column(DateTime, nullable=True)
+    last_triggered_at = Column(DateTime, nullable=True)
+
+
+class Alert(Base):
+    """Alert instances table."""
+
+    __tablename__ = "alerts"
+    __table_args__ = (
+        Index('idx_alerts_workspace', 'workspace_id', 'triggered_at'),
+        Index('idx_alerts_unresolved', 'workspace_id', 'resolved_at'),
+        Index('idx_alerts_severity', 'severity', 'acknowledged_at'),
+        Index('idx_alerts_rule', 'rule_id', 'triggered_at'),
+        Index('idx_alerts_escalation', 'escalated', 'escalation_level'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4, index=True)
+    workspace_id = Column(PG_UUID(as_uuid=True), index=True, nullable=False)
+    rule_id = Column(PG_UUID(as_uuid=True), ForeignKey('analytics.alert_rules.id', ondelete='CASCADE'), nullable=False)
+    alert_title = Column(String(500), nullable=False)
+    alert_message = Column(String, nullable=False)
+    severity = Column(String(20), nullable=False)
+    metric_value = Column(Numeric, nullable=True)
+    threshold_value = Column(Numeric, nullable=True)
+    triggered_at = Column(DateTime, nullable=False)
+    acknowledged_at = Column(DateTime, nullable=True)
+    acknowledged_by = Column(PG_UUID(as_uuid=True), nullable=True)
+    resolved_at = Column(DateTime, nullable=True)
+    resolved_by = Column(PG_UUID(as_uuid=True), nullable=True)
+    resolution_notes = Column(String, nullable=True)
+    alert_context = Column(JSON, nullable=True)
+    notification_sent = Column(Boolean, nullable=False, default=False)
+    notification_channels = Column(JSON, nullable=True)
+    escalated = Column(Boolean, nullable=False, default=False)
+    escalation_level = Column(Integer, nullable=False, default=0)
+
+
+class NotificationHistory(Base):
+    """Notification history table."""
+
+    __tablename__ = "notification_history"
+    __table_args__ = (
+        Index('idx_notifications_alert', 'alert_id'),
+        Index('idx_notifications_status', 'delivery_status', 'sent_at'),
+        Index('idx_notifications_channel', 'channel', 'sent_at'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4, index=True)
+    alert_id = Column(PG_UUID(as_uuid=True), ForeignKey('analytics.alerts.id', ondelete='CASCADE'), nullable=False)
+    channel = Column(String(50), nullable=False)
+    recipient = Column(String, nullable=False)
+    sent_at = Column(DateTime, nullable=False, default=func.now())
+    delivery_status = Column(String(20), nullable=False)  # 'pending', 'sent', 'failed', 'bounced'
+    error_message = Column(String, nullable=True)
+    retry_count = Column(Integer, nullable=False, default=0)
+    response_data = Column(JSON, nullable=True)
+
+
+class EscalationPolicy(Base):
+    """Escalation policies table."""
+
+    __tablename__ = "escalation_policies"
+    __table_args__ = (
+        Index('idx_escalation_policies_workspace', 'workspace_id'),
+        Index('idx_escalation_policies_workspace_name', 'workspace_id', 'policy_name', unique=True),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4, index=True)
+    workspace_id = Column(PG_UUID(as_uuid=True), index=True, nullable=False)
+    policy_name = Column(String(255), nullable=False)
+    escalation_levels = Column(JSON, nullable=False)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+class AlertSuppression(Base):
+    """Alert suppression rules table."""
+
+    __tablename__ = "alert_suppressions"
+    __table_args__ = (
+        Index('idx_suppression_active', 'workspace_id', 'start_time', 'end_time'),
+        Index('idx_suppression_time_range', 'start_time', 'end_time'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4, index=True)
+    workspace_id = Column(PG_UUID(as_uuid=True), index=True, nullable=False)
+    suppression_type = Column(String(50), nullable=False)  # 'rule', 'pattern', 'maintenance'
+    pattern = Column(JSON, nullable=False)
+    start_time = Column(DateTime, nullable=False)
+    end_time = Column(DateTime, nullable=False)
+    reason = Column(String, nullable=True)
+    created_by = Column(PG_UUID(as_uuid=True), nullable=False)
+    created_at = Column(DateTime, default=func.now())
