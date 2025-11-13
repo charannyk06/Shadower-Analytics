@@ -1,0 +1,194 @@
+// gRPC service definition for Analytics Service
+syntax = "proto3";
+
+package analytics;
+
+// Analytics Service for high-performance inter-service communication
+service AnalyticsService {
+    // Get metrics for a workspace
+    rpc GetMetrics(MetricsRequest) returns (MetricsResponse);
+
+    // Stream real-time metrics
+    rpc StreamMetrics(StreamRequest) returns (stream MetricUpdate);
+
+    // Calculate aggregates
+    rpc CalculateAggregates(AggregateRequest) returns (AggregateResponse);
+
+    // Get workspace analytics summary
+    rpc GetWorkspaceSummary(WorkspaceSummaryRequest) returns (WorkspaceSummaryResponse);
+
+    // Get agent performance metrics
+    rpc GetAgentPerformance(AgentPerformanceRequest) returns (AgentPerformanceResponse);
+}
+
+// Request to get metrics
+message MetricsRequest {
+    string workspace_id = 1;
+    string metric_type = 2;
+    int64 start_time = 3;
+    int64 end_time = 4;
+    repeated string filters = 5;
+    int32 limit = 6;
+    int32 offset = 7;
+}
+
+// Response containing metrics
+message MetricsResponse {
+    repeated Metric metrics = 1;
+    int64 total_count = 2;
+    PaginationInfo pagination = 3;
+}
+
+// Individual metric data point
+message Metric {
+    string id = 1;
+    string type = 2;
+    double value = 3;
+    int64 timestamp = 4;
+    map<string, string> tags = 5;
+    map<string, double> metadata = 6;
+}
+
+// Pagination information
+message PaginationInfo {
+    int32 current_page = 1;
+    int32 total_pages = 2;
+    int32 page_size = 3;
+    int64 total_count = 4;
+}
+
+// Request to stream metrics
+message StreamRequest {
+    string workspace_id = 1;
+    repeated string metric_types = 2;
+    map<string, string> filters = 3;
+}
+
+// Streamed metric update
+message MetricUpdate {
+    Metric metric = 1;
+    string event_type = 2;
+    int64 sequence_number = 3;
+}
+
+// Request for aggregate calculations
+message AggregateRequest {
+    string workspace_id = 1;
+    string metric_type = 2;
+    int64 start_time = 3;
+    int64 end_time = 4;
+    repeated string aggregation_functions = 5; // sum, avg, min, max, count
+    string group_by = 6;
+    map<string, string> filters = 7;
+}
+
+// Response containing aggregated data
+message AggregateResponse {
+    repeated AggregateResult results = 1;
+    int64 calculation_time_ms = 2;
+}
+
+// Individual aggregate result
+message AggregateResult {
+    string group_key = 1;
+    map<string, double> values = 2; // function_name -> value
+    int64 data_points_count = 3;
+}
+
+// Request for workspace summary
+message WorkspaceSummaryRequest {
+    string workspace_id = 1;
+    int64 start_time = 2;
+    int64 end_time = 3;
+    bool include_trends = 4;
+}
+
+// Workspace summary response
+message WorkspaceSummaryResponse {
+    string workspace_id = 1;
+    WorkspaceStats stats = 2;
+    repeated Trend trends = 3;
+    repeated Alert active_alerts = 4;
+}
+
+// Workspace statistics
+message WorkspaceStats {
+    int64 total_executions = 1;
+    int64 successful_executions = 2;
+    int64 failed_executions = 3;
+    double success_rate = 4;
+    double average_duration = 5;
+    int64 total_credits_consumed = 6;
+    int32 active_agents = 7;
+    int32 active_users = 8;
+}
+
+// Trend information
+message Trend {
+    string metric_name = 1;
+    double current_value = 2;
+    double previous_value = 3;
+    double change_percent = 4;
+    string direction = 5; // up, down, stable
+}
+
+// Alert information
+message Alert {
+    string id = 1;
+    string type = 2;
+    string severity = 3;
+    string message = 4;
+    int64 triggered_at = 5;
+    map<string, string> metadata = 6;
+}
+
+// Request for agent performance
+message AgentPerformanceRequest {
+    string workspace_id = 1;
+    string agent_id = 2;
+    int64 start_time = 3;
+    int64 end_time = 4;
+    bool include_comparison = 5;
+}
+
+// Agent performance response
+message AgentPerformanceResponse {
+    string agent_id = 1;
+    AgentStats stats = 2;
+    repeated PerformanceMetric metrics = 3;
+    AgentComparison comparison = 4;
+}
+
+// Agent statistics
+message AgentStats {
+    int64 total_executions = 1;
+    int64 successful_executions = 2;
+    int64 failed_executions = 3;
+    double success_rate = 4;
+    double average_duration = 5;
+    double p50_duration = 6;
+    double p95_duration = 7;
+    double p99_duration = 8;
+    int64 total_credits_consumed = 9;
+}
+
+// Performance metric time series
+message PerformanceMetric {
+    int64 timestamp = 1;
+    double value = 2;
+    string metric_type = 3;
+}
+
+// Agent comparison data
+message AgentComparison {
+    double workspace_average = 1;
+    double percentile_rank = 2;
+    repeated TopAgent top_agents = 3;
+}
+
+// Top performing agent
+message TopAgent {
+    string agent_id = 1;
+    string agent_name = 2;
+    double performance_score = 3;
+}

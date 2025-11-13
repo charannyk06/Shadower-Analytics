@@ -1,11 +1,15 @@
 """Main FastAPI application with API Gateway."""
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.openapi.utils import get_openapi
+from contextlib import asynccontextmanager
 import logging
 
 from ..core.config import settings
 from ..core.database import engine, Base
+from ..core.redis import get_redis_client, close_redis
 from .gateway import APIGateway
 from .routes import (
     auth_router,
@@ -47,11 +51,74 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Create API Gateway
-gateway = APIGateway()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage application lifecycle with proper startup and shutdown."""
+    # Startup
+    logger.info("Starting Shadower Analytics API...")
+
+    try:
+        # Initialize Redis connection
+        redis_client = await get_redis_client()
+        if redis_client:
+            logger.info("Redis connection initialized successfully")
+        else:
+            logger.warning("Redis connection failed - caching will be disabled")
+
+        # Initialize Redis pub/sub for WebSocket scaling
+        if settings.ENABLE_REALTIME:
+            try:
+                from .websocket import init_redis_pubsub
+                await init_redis_pubsub(settings.REDIS_URL)
+                logger.info("Redis pub/sub initialized for WebSocket scaling")
+            except Exception as e:
+                logger.warning(f"Failed to initialize Redis pub/sub: {e}")
+                logger.warning("WebSocket will work but won't scale across instances")
+
+        logger.info("Shadower Analytics API started successfully")
+
+    except Exception as e:
+        logger.error(f"Error during startup: {e}")
+        raise
+
+    yield
+
+    # Shutdown
+    logger.info("Shutting down Shadower Analytics API...")
+
+    try:
+        # Shutdown Redis pub/sub
+        if settings.ENABLE_REALTIME:
+            try:
+                from .websocket import shutdown_redis_pubsub
+                await shutdown_redis_pubsub()
+                logger.info("Redis pub/sub shut down")
+            except Exception as e:
+                logger.error(f"Error shutting down Redis pub/sub: {e}")
+
+        # Close Redis connection
+        await close_redis()
+        logger.info("Redis connection closed")
+
+        # Close database connections
+        await engine.dispose()
+        logger.info("Database connections closed")
+
+        logger.info("Shadower Analytics API shut down successfully")
+
+    except Exception as e:
+        logger.error(f"Error during shutdown: {e}")
+
+
+# Create API Gateway with lifespan
+gateway = APIGateway(lifespan=lifespan)
 app = gateway.app
 
-# Add middleware (order matters - applied in reverse order)
+# Add compression middleware
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+# Add custom middleware (order matters - applied in reverse order)
 # Gateway already includes CORS and RateLimitMiddleware
 app.add_middleware(SecurityHeadersMiddleware)  # Add security headers
 app.add_middleware(RequestLoggingMiddleware)
@@ -242,41 +309,5 @@ async def root():
     }
 
 
-@app.on_event("startup")
-async def startup_event():
-    """Initialize application on startup."""
-    logger.info("Starting Shadow Analytics API...")
-
-    # Create database tables
-    # async with engine.begin() as conn:
-    #     await conn.run_sync(Base.metadata.create_all)
-
-    # Initialize Redis pub/sub for WebSocket scaling
-    if settings.ENABLE_REALTIME:
-        try:
-            from .websocket import init_redis_pubsub
-            await init_redis_pubsub(settings.REDIS_URL)
-            logger.info("Redis pub/sub initialized for WebSocket scaling")
-        except Exception as e:
-            logger.warning(f"Failed to initialize Redis pub/sub: {e}")
-            logger.warning("WebSocket will work but won't scale across instances")
-
-    logger.info("Shadow Analytics API started successfully")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Cleanup on shutdown."""
-    logger.info("Shutting down Shadow Analytics API...")
-
-    # Shutdown Redis pub/sub
-    if settings.ENABLE_REALTIME:
-        try:
-            from .websocket import shutdown_redis_pubsub
-            await shutdown_redis_pubsub()
-            logger.info("Redis pub/sub shut down")
-        except Exception as e:
-            logger.error(f"Error shutting down Redis pub/sub: {e}")
-
-    await engine.dispose()
-    logger.info("Shadow Analytics API shut down successfully")
+# Note: Startup and shutdown events are now handled by the lifespan context manager above
+# This is the recommended approach in FastAPI 0.104+ and provides better resource management

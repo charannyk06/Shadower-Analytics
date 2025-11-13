@@ -384,14 +384,19 @@ class APIGateway:
     and API versioning.
     """
 
-    def __init__(self):
-        """Initialize API Gateway."""
+    def __init__(self, lifespan: Optional[Callable] = None):
+        """Initialize API Gateway.
+
+        Args:
+            lifespan: Optional lifespan context manager for startup/shutdown
+        """
         self.app = FastAPI(
             title="Shadower Analytics API",
             description=self._get_description(),
             version="1.0.0",
             docs_url="/docs",
             redoc_url="/redoc",
+            lifespan=lifespan,
         )
 
         self.setup_middleware()
