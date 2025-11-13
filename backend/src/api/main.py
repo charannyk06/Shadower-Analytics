@@ -3,6 +3,7 @@
 from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
 import logging
+import os
 
 from ..core.config import settings
 from ..core.database import engine, Base
@@ -38,21 +39,40 @@ from .middleware.logging import RequestLoggingMiddleware
 from .middleware.security import SecurityHeadersMiddleware
 from .versioning import versioned_api, get_api_version_info
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
-logger = logging.getLogger(__name__)
+# Import monitoring components
+from ..config.logging import setup_logging
+from ..monitoring.prometheus import PrometheusMiddleware
+from ..monitoring.tracing import setup_tracing
+from ..monitoring.sentry_config import setup_sentry
+
+# Setup structured logging
+logger = setup_logging()
 
 # Create API Gateway
 gateway = APIGateway()
 app = gateway.app
 
+# Setup Sentry error tracking
+if os.getenv("SENTRY_DSN"):
+    sentry_enabled = setup_sentry()
+    if sentry_enabled:
+        logger.info("Sentry error tracking enabled")
+else:
+    logger.info("Sentry DSN not configured, error tracking disabled")
+
+# Setup OpenTelemetry distributed tracing
+if os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT"):
+    tracer = setup_tracing(app)
+    if tracer:
+        logger.info("OpenTelemetry distributed tracing enabled")
+else:
+    logger.info("OpenTelemetry not configured, distributed tracing disabled")
+
 # Add middleware (order matters - applied in reverse order)
 # Gateway already includes CORS and RateLimitMiddleware
+app.add_middleware(PrometheusMiddleware)  # Collect Prometheus metrics
 app.add_middleware(SecurityHeadersMiddleware)  # Add security headers
-app.add_middleware(RequestLoggingMiddleware)
+app.add_middleware(RequestLoggingMiddleware)  # Log requests with context
 
 # Include routers
 app.include_router(auth_router)  # Authentication endpoints first

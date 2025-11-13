@@ -1,0 +1,507 @@
+{
+  "dashboard": {
+    "title": "Analytics Service Dashboard",
+    "tags": ["analytics", "shadower", "monitoring"],
+    "timezone": "browser",
+    "schemaVersion": 16,
+    "version": 1,
+    "refresh": "30s",
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "Request Rate",
+        "type": "graph",
+        "gridPos": {
+          "x": 0,
+          "y": 0,
+          "w": 12,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "sum(rate(http_requests_total[5m])) by (method)",
+            "legendFormat": "{{method}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "Requests/sec",
+            "format": "reqps"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Error Rate",
+        "type": "graph",
+        "gridPos": {
+          "x": 12,
+          "y": 0,
+          "w": 12,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "sum(rate(http_requests_total{status=~\"5..\"}[5m])) / sum(rate(http_requests_total[5m]))",
+            "legendFormat": "Error Rate",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "Error Rate",
+            "format": "percentunit"
+          }
+        ],
+        "alert": {
+          "conditions": [
+            {
+              "evaluator": {
+                "params": [0.05],
+                "type": "gt"
+              },
+              "operator": {
+                "type": "and"
+              },
+              "query": {
+                "params": ["A", "5m", "now"]
+              },
+              "reducer": {
+                "params": [],
+                "type": "avg"
+              },
+              "type": "query"
+            }
+          ],
+          "executionErrorState": "alerting",
+          "for": "5m",
+          "frequency": "1m",
+          "handler": 1,
+          "name": "Error rate alert",
+          "noDataState": "no_data",
+          "notifications": []
+        }
+      },
+      {
+        "id": 3,
+        "title": "P95 Latency",
+        "type": "graph",
+        "gridPos": {
+          "x": 0,
+          "y": 8,
+          "w": 12,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))",
+            "legendFormat": "P95 Latency",
+            "refId": "A"
+          },
+          {
+            "expr": "histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[5m]))",
+            "legendFormat": "P99 Latency",
+            "refId": "B"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "Seconds",
+            "format": "s"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Active Users",
+        "type": "graph",
+        "gridPos": {
+          "x": 12,
+          "y": 8,
+          "w": 12,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "sum(analytics_active_users)",
+            "legendFormat": "Active Users",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "Users",
+            "format": "short"
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "title": "Credits Consumed (hourly rate)",
+        "type": "graph",
+        "gridPos": {
+          "x": 0,
+          "y": 16,
+          "w": 12,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "sum(rate(analytics_credits_consumed_total[1h]))",
+            "legendFormat": "Credits/hour",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "Credits/hour",
+            "format": "short"
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "title": "Database Connections",
+        "type": "graph",
+        "gridPos": {
+          "x": 12,
+          "y": 16,
+          "w": 12,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "database_connections{state=\"active\"}",
+            "legendFormat": "Active",
+            "refId": "A"
+          },
+          {
+            "expr": "database_connections{state=\"idle\"}",
+            "legendFormat": "Idle",
+            "refId": "B"
+          },
+          {
+            "expr": "database_connections{state=\"total\"}",
+            "legendFormat": "Total",
+            "refId": "C"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "Connections",
+            "format": "short"
+          }
+        ]
+      },
+      {
+        "id": 7,
+        "title": "Cache Hit Rate",
+        "type": "graph",
+        "gridPos": {
+          "x": 0,
+          "y": 24,
+          "w": 12,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "sum(rate(cache_operations_total{operation=\"get\",result=\"hit\"}[5m])) / sum(rate(cache_operations_total{operation=\"get\"}[5m]))",
+            "legendFormat": "Hit Rate",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "Hit Rate",
+            "format": "percentunit"
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "title": "Background Jobs",
+        "type": "graph",
+        "gridPos": {
+          "x": 12,
+          "y": 24,
+          "w": 12,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "sum(rate(background_jobs_total{status=\"success\"}[5m])) by (job_type)",
+            "legendFormat": "Success - {{job_type}}",
+            "refId": "A"
+          },
+          {
+            "expr": "sum(rate(background_jobs_total{status=\"failure\"}[5m])) by (job_type)",
+            "legendFormat": "Failure - {{job_type}}",
+            "refId": "B"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "Jobs/sec",
+            "format": "ops"
+          }
+        ]
+      },
+      {
+        "id": 9,
+        "title": "Request Distribution by Endpoint",
+        "type": "piechart",
+        "gridPos": {
+          "x": 0,
+          "y": 32,
+          "w": 12,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "sum(rate(http_requests_total[5m])) by (endpoint)",
+            "legendFormat": "{{endpoint}}",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 10,
+        "title": "WebSocket Connections",
+        "type": "graph",
+        "gridPos": {
+          "x": 12,
+          "y": 32,
+          "w": 12,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "sum(websocket_connections_active) by (workspace_id)",
+            "legendFormat": "Workspace {{workspace_id}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "Connections",
+            "format": "short"
+          }
+        ]
+      },
+      {
+        "id": 11,
+        "title": "Database Query Performance",
+        "type": "graph",
+        "gridPos": {
+          "x": 0,
+          "y": 40,
+          "w": 12,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(database_query_duration_seconds_bucket[5m])) by (operation)",
+            "legendFormat": "P95 - {{operation}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "Seconds",
+            "format": "s"
+          }
+        ]
+      },
+      {
+        "id": 12,
+        "title": "Export Performance",
+        "type": "graph",
+        "gridPos": {
+          "x": 12,
+          "y": 40,
+          "w": 12,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "sum(rate(exports_total{status=\"success\"}[5m])) by (format)",
+            "legendFormat": "Success - {{format}}",
+            "refId": "A"
+          },
+          {
+            "expr": "sum(rate(exports_total{status=\"failure\"}[5m])) by (format)",
+            "legendFormat": "Failure - {{format}}",
+            "refId": "B"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "Exports/sec",
+            "format": "ops"
+          }
+        ]
+      },
+      {
+        "id": 13,
+        "title": "System Resources - Memory",
+        "type": "graph",
+        "gridPos": {
+          "x": 0,
+          "y": 48,
+          "w": 12,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "container_memory_usage_bytes{container=\"analytics-backend\"} / 1024 / 1024",
+            "legendFormat": "Memory Usage (MB)",
+            "refId": "A"
+          },
+          {
+            "expr": "container_spec_memory_limit_bytes{container=\"analytics-backend\"} / 1024 / 1024",
+            "legendFormat": "Memory Limit (MB)",
+            "refId": "B"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "Memory (MB)",
+            "format": "mbytes"
+          }
+        ]
+      },
+      {
+        "id": 14,
+        "title": "System Resources - CPU",
+        "type": "graph",
+        "gridPos": {
+          "x": 12,
+          "y": 48,
+          "w": 12,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "rate(container_cpu_usage_seconds_total{container=\"analytics-backend\"}[5m]) * 100",
+            "legendFormat": "CPU Usage %",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "CPU %",
+            "format": "percent"
+          }
+        ]
+      },
+      {
+        "id": 15,
+        "title": "Alert Status",
+        "type": "stat",
+        "gridPos": {
+          "x": 0,
+          "y": 56,
+          "w": 8,
+          "h": 4
+        },
+        "targets": [
+          {
+            "expr": "sum(alerts_triggered_total)",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "colorMode": "background",
+          "graphMode": "area",
+          "orientation": "auto",
+          "textMode": "value"
+        }
+      },
+      {
+        "id": 16,
+        "title": "Request Rate (Current)",
+        "type": "stat",
+        "gridPos": {
+          "x": 8,
+          "y": 56,
+          "w": 8,
+          "h": 4
+        },
+        "targets": [
+          {
+            "expr": "sum(rate(http_requests_total[1m]))",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "colorMode": "background",
+          "graphMode": "area",
+          "orientation": "auto",
+          "textMode": "value_and_name",
+          "unit": "reqps"
+        }
+      },
+      {
+        "id": 17,
+        "title": "Average Response Time",
+        "type": "stat",
+        "gridPos": {
+          "x": 16,
+          "y": 56,
+          "w": 8,
+          "h": 4
+        },
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, rate(http_request_duration_seconds_bucket[5m]))",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "colorMode": "background",
+          "graphMode": "area",
+          "orientation": "auto",
+          "textMode": "value_and_name",
+          "unit": "s"
+        }
+      }
+    ],
+    "templating": {
+      "list": [
+        {
+          "name": "workspace",
+          "type": "query",
+          "query": "label_values(analytics_active_users, workspace_id)",
+          "refresh": 1,
+          "includeAll": true,
+          "multi": true
+        },
+        {
+          "name": "interval",
+          "type": "interval",
+          "query": "1m,5m,10m,30m,1h",
+          "auto": true,
+          "auto_count": 30,
+          "auto_min": "10s"
+        }
+      ]
+    },
+    "annotations": {
+      "list": [
+        {
+          "datasource": "Prometheus",
+          "enable": true,
+          "expr": "ALERTS{alertstate=\"firing\"}",
+          "iconColor": "red",
+          "name": "Alerts",
+          "titleFormat": "Alert: {{alertname}}"
+        }
+      ]
+    }
+  }
+}

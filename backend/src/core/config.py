@@ -64,7 +64,21 @@ class Settings(BaseSettings):
 
     # Monitoring
     SENTRY_DSN: str = ""
+    SENTRY_TRACES_SAMPLE_RATE: Optional[float] = None
+    SENTRY_PROFILES_SAMPLE_RATE: Optional[float] = None
     PROMETHEUS_PORT: int = 9090
+
+    # OpenTelemetry Tracing
+    OTEL_EXPORTER_OTLP_ENDPOINT: Optional[str] = None
+    OTEL_EXPORTER_INSECURE: str = "true"
+    OTEL_CONSOLE_EXPORT: str = "false"
+
+    # Log Aggregation
+    ELASTICSEARCH_HOST: Optional[str] = None
+    ELASTICSEARCH_PORT: int = 9200
+    ELASTICSEARCH_SCHEME: str = "http"
+    ELASTICSEARCH_USER: Optional[str] = None
+    ELASTICSEARCH_PASSWORD: Optional[str] = None
 
     # Feature Flags
     ENABLE_REALTIME: bool = True
