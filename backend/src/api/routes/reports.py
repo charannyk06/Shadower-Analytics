@@ -520,21 +520,22 @@ async def download_report(
                 detail="Report not found or has expired"
             )
 
-        # In production, this would return the actual file
-        # For now, return a placeholder response
-        return {
-            "message": "Download endpoint - would return file",
-            "report_id": report_id,
-            "file_path": report.get("file_path")
-        }
+        # Verify file path exists
+        file_path = report.get("file_path")
+        if not file_path:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Generated report is missing the file path"
+            )
 
-        # Actual implementation would be:
-        # return FileResponse(
-        #     path=report["file_path"],
-        #     filename=report["filename"],
-        #     media_type=report["content_type"],
-        #     headers={"Content-Disposition": f"attachment; filename={report['filename']}"}
-        # )
+        return FileResponse(
+            path=file_path,
+            filename=report.get("filename"),
+            media_type=report.get("content_type") or "application/octet-stream",
+            headers={
+                "Content-Disposition": f'attachment; filename="{report.get("filename")}"'
+            },
+        )
 
     except HTTPException:
         raise

@@ -362,37 +362,117 @@ class ReportService:
             raise
 
     def _calculate_next_run(self, frequency: str, schedule_config: Dict[str, Any]) -> datetime:
-        """Calculate next run time for schedule."""
+        """Calculate next run time for schedule.
+
+        Honors schedule_config parameters:
+        - time: HH:MM format
+        - timezone: IANA timezone (defaults to UTC)
+        - day_of_week: for weekly (0=Monday, 6=Sunday, defaults to 0)
+        - day_of_month: for monthly (1-31, defaults to 1)
+        """
+        from datetime import timezone as dt_timezone
+        import pytz
+
         now = utc_now()
         time_str = schedule_config.get("time", "09:00")
         hours, minutes = map(int, time_str.split(':'))
 
-        if frequency == "daily":
-            next_run = now.replace(hour=hours, minute=minutes, second=0, microsecond=0)
-            if next_run <= now:
-                next_run += timedelta(days=1)
-        elif frequency == "weekly":
-            # Simplified: next Monday at specified time
-            next_run = now.replace(hour=hours, minute=minutes, second=0, microsecond=0)
-            days_ahead = 7 - now.weekday()
-            next_run += timedelta(days=days_ahead if days_ahead > 0 else 7)
-        elif frequency == "monthly":
-            # Simplified: first day of next month
-            if now.month == 12:
-                next_run = now.replace(year=now.year + 1, month=1, day=1, hour=hours, minute=minutes)
-            else:
-                next_run = now.replace(month=now.month + 1, day=1, hour=hours, minute=minutes)
-        else:  # quarterly
-            # Simplified: next quarter start
-            quarter_months = [1, 4, 7, 10]
-            current_month = now.month
-            next_quarter_month = next((m for m in quarter_months if m > current_month), None)
-            if next_quarter_month:
-                next_run = now.replace(month=next_quarter_month, day=1, hour=hours, minute=minutes)
-            else:
-                next_run = now.replace(year=now.year + 1, month=1, day=1, hour=hours, minute=minutes)
+        # Get timezone (default to UTC)
+        tz_str = schedule_config.get("timezone", "UTC")
+        try:
+            tz = pytz.timezone(tz_str)
+        except:
+            tz = pytz.UTC
 
-        return next_run
+        # Convert current time to target timezone
+        now_in_tz = now.astimezone(tz)
+
+        if frequency == "daily":
+            next_run = now_in_tz.replace(hour=hours, minute=minutes, second=0, microsecond=0)
+            if next_run <= now_in_tz:
+                next_run += timedelta(days=1)
+
+        elif frequency == "weekly":
+            # Get day of week from config (0=Monday, 6=Sunday)
+            target_weekday = schedule_config.get("day_of_week")
+            if target_weekday is None:
+                # Try string format
+                day_name = schedule_config.get("day_of_week_name", "monday").lower()
+                day_map = {
+                    "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
+                    "friday": 4, "saturday": 5, "sunday": 6
+                }
+                target_weekday = day_map.get(day_name, 0)
+            else:
+                target_weekday = int(target_weekday)
+
+            # Calculate days until target weekday
+            current_weekday = now_in_tz.weekday()
+            days_ahead = (target_weekday - current_weekday) % 7
+
+            next_run = now_in_tz.replace(hour=hours, minute=minutes, second=0, microsecond=0)
+            next_run += timedelta(days=days_ahead)
+
+            # If we're on the target day but past the time, add a week
+            if days_ahead == 0 and next_run <= now_in_tz:
+                next_run += timedelta(days=7)
+
+        elif frequency == "monthly":
+            # Get day of month from config (1-31, defaults to 1)
+            target_day = int(schedule_config.get("day_of_month", 1))
+            target_day = max(1, min(31, target_day))  # Clamp to valid range
+
+            next_run = now_in_tz.replace(day=1, hour=hours, minute=minutes, second=0, microsecond=0)
+
+            # Try setting to target day in current month
+            try:
+                next_run = next_run.replace(day=target_day)
+                # If we've passed the time this month, move to next month
+                if next_run <= now_in_tz:
+                    if next_run.month == 12:
+                        next_run = next_run.replace(year=next_run.year + 1, month=1, day=target_day)
+                    else:
+                        next_run = next_run.replace(month=next_run.month + 1, day=target_day)
+            except ValueError:
+                # Day doesn't exist in this month (e.g., Feb 31)
+                # Move to next month
+                if next_run.month == 12:
+                    next_run = next_run.replace(year=next_run.year + 1, month=1, day=target_day)
+                else:
+                    try:
+                        next_run = next_run.replace(month=next_run.month + 1, day=target_day)
+                    except ValueError:
+                        # Still invalid, use last day of next month
+                        if next_run.month == 12:
+                            next_run = next_run.replace(year=next_run.year + 1, month=1, day=1)
+                        else:
+                            next_run = next_run.replace(month=next_run.month + 1, day=1)
+                        # Get last day of month
+                        next_month = next_run.month + 1 if next_run.month < 12 else 1
+                        next_year = next_run.year + 1 if next_month == 1 else next_run.year
+                        last_day = (datetime(next_year, next_month, 1) - timedelta(days=1)).day
+                        next_run = next_run.replace(day=min(target_day, last_day))
+
+        else:  # quarterly
+            # Quarterly runs on first day of quarter months (Jan, Apr, Jul, Oct)
+            quarter_months = [1, 4, 7, 10]
+            current_month = now_in_tz.month
+
+            # Find next quarter month
+            next_quarter_month = next((m for m in quarter_months if m > current_month), None)
+
+            if next_quarter_month:
+                next_run = now_in_tz.replace(
+                    month=next_quarter_month, day=1, hour=hours, minute=minutes, second=0, microsecond=0
+                )
+            else:
+                # Next quarter is in next year
+                next_run = now_in_tz.replace(
+                    year=now_in_tz.year + 1, month=1, day=1, hour=hours, minute=minutes, second=0, microsecond=0
+                )
+
+        # Convert back to UTC
+        return next_run.astimezone(pytz.UTC).replace(tzinfo=None)
 
     # ========================================================================
     # Report History
@@ -685,9 +765,17 @@ class ReportService:
             raise
 
     def _hash_password(self, password: str) -> str:
-        """Simple password hashing (use bcrypt in production)."""
+        """Securely hash password using PBKDF2 with salt."""
         import hashlib
-        return hashlib.sha256(password.encode()).hexdigest()
+
+        salt = secrets.token_bytes(16)
+        digest = hashlib.pbkdf2_hmac(
+            "sha256",
+            password.encode("utf-8"),
+            salt,
+            200_000,  # 200,000 iterations
+        )
+        return f"{salt.hex()}:{digest.hex()}"
 
     # ========================================================================
     # Report Analytics

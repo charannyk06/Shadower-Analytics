@@ -250,7 +250,7 @@ class ReportResult(Base):
 ## 3. Service Implementation
 
 ```python
-"""Create new file: services/analytics/reports_service.py"""
+"""Create new file: services/reports/report_service.py"""
 
 import logging
 import uuid
