@@ -25,6 +25,7 @@ from .routes import (
     materialized_views_router,
     moving_averages_router,
     anomalies_router,
+    dashboard_router,
 )
 from .middleware.cors import setup_cors
 from .middleware.logging import RequestLoggingMiddleware
@@ -55,6 +56,7 @@ app.add_middleware(RateLimitMiddleware)
 
 # Include routers
 app.include_router(health_router)
+app.include_router(dashboard_router)  # Unified dashboard API
 app.include_router(executive_router)
 app.include_router(agents_router)
 app.include_router(users_router)
