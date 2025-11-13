@@ -1169,3 +1169,364 @@ class ReportWebhook(Base):
     created_by = Column(String, nullable=False)
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+# =====================================================================
+# Agent Collaboration Analytics Models
+# =====================================================================
+
+
+class MultiAgentWorkflow(Base):
+    """Multi-agent workflows table."""
+
+    __tablename__ = "multi_agent_workflows"
+    __table_args__ = (
+        Index('idx_workflows_workspace_status', 'workspace_id', 'status'),
+        Index('idx_workflows_started', 'started_at'),
+        Index('idx_workflows_workflow_type', 'workflow_type', 'started_at'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    workflow_id = Column(String, unique=True, index=True, nullable=False)
+    workspace_id = Column(String, index=True, nullable=False)
+
+    # Workflow definition
+    workflow_name = Column(String(255), nullable=False)
+    workflow_type = Column(String(50), index=True)  # sequential, parallel, conditional, hybrid
+    workflow_version = Column(String(50))
+    workflow_definition = Column(JSON, nullable=False)  # Complete workflow configuration
+
+    # Execution metrics
+    status = Column(String(20), index=True, nullable=False)  # running, completed, failed, partial
+    started_at = Column(DateTime, nullable=False, default=func.now(), index=True)
+    completed_at = Column(DateTime)
+    total_duration_ms = Column(Integer)
+
+    # Collaboration metrics
+    agents_involved = Column(Integer, default=0)
+    handoffs_count = Column(Integer, default=0)
+    parallel_executions = Column(Integer, default=0)
+    coordination_efficiency = Column(Float)  # 0-1 score
+    communication_overhead = Column(Float)  # percentage
+    bottleneck_score = Column(Float)  # 0-1 score (higher = more bottlenecks)
+    synergy_index = Column(Float)  # 0-1 score (higher = better synergy)
+
+    # Performance metrics
+    success_rate = Column(Float)
+    resource_cost = Column(Float)
+
+    # Metadata
+    created_by = Column(String)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+class AgentInteraction(Base):
+    """Agent interactions table."""
+
+    __tablename__ = "agent_interactions"
+    __table_args__ = (
+        Index('idx_interactions_workflow', 'workflow_id', 'created_at'),
+        Index('idx_interactions_agents', 'source_agent_id', 'target_agent_id'),
+        Index('idx_interactions_type', 'interaction_type', 'created_at'),
+        Index('idx_interactions_workspace', 'workspace_id', 'created_at'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    workflow_id = Column(String, index=True, nullable=False)
+    workspace_id = Column(String, index=True, nullable=False)
+    source_agent_id = Column(String, index=True, nullable=False)
+    target_agent_id = Column(String, index=True, nullable=False)
+
+    # Interaction details
+    interaction_type = Column(String(50), index=True)  # handoff, request, response, notification, sync
+    payload_size_bytes = Column(Integer)
+    data_transferred = Column(JSON)
+    transformation_applied = Column(String)
+
+    # Performance metrics
+    interaction_duration_ms = Column(Integer)
+    queue_time_ms = Column(Integer)
+    processing_time_ms = Column(Integer)
+
+    # Quality metrics
+    data_quality_score = Column(Float)
+    compatibility_score = Column(Float)
+    error_occurred = Column(Boolean, default=False, nullable=False)
+    retry_count = Column(Integer, default=0)
+
+    # Error details
+    error_message = Column(String)
+    error_type = Column(String(100))
+
+    created_at = Column(DateTime, default=func.now(), index=True)
+
+
+class AgentHandoff(Base):
+    """Agent handoffs table."""
+
+    __tablename__ = "agent_handoffs"
+    __table_args__ = (
+        Index('idx_handoffs_workflow', 'workflow_id', 'handoff_time'),
+        Index('idx_handoffs_agents', 'source_agent_id', 'target_agent_id'),
+        Index('idx_handoffs_success', 'handoff_success', 'handoff_time'),
+        Index('idx_handoffs_workspace', 'workspace_id', 'handoff_time'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    handoff_id = Column(String, unique=True, index=True, nullable=False)
+    workflow_id = Column(String, index=True, nullable=False)
+    workspace_id = Column(String, index=True, nullable=False)
+    source_agent_id = Column(String, index=True, nullable=False)
+    target_agent_id = Column(String, index=True, nullable=False)
+
+    # Handoff performance
+    preparation_time_ms = Column(Integer)
+    transfer_time_ms = Column(Integer)
+    acknowledgment_time_ms = Column(Integer)
+    total_handoff_time_ms = Column(Integer)
+
+    # Data metrics
+    data_size_bytes = Column(Integer)
+    data_completeness = Column(Float)  # 0-1 score
+    schema_compatible = Column(Boolean)
+    transformation_required = Column(Boolean)
+
+    # Quality metrics
+    handoff_success = Column(Boolean, nullable=False, index=True)
+    data_integrity_maintained = Column(Boolean)
+    context_preserved = Column(Float)  # 0-1 score
+    information_loss = Column(Float)  # percentage
+
+    # Recovery metrics
+    retry_attempts = Column(Integer, default=0)
+    recovery_strategy = Column(String(100))
+    recovery_time_ms = Column(Integer)
+
+    # Failure details
+    failure_reason = Column(String)
+
+    handoff_time = Column(DateTime, nullable=False, default=func.now(), index=True)
+    created_at = Column(DateTime, default=func.now())
+
+
+class AgentDependency(Base):
+    """Agent dependencies table."""
+
+    __tablename__ = "agent_dependencies"
+    __table_args__ = (
+        Index('idx_dependencies_workspace', 'workspace_id', 'is_active'),
+        Index('idx_dependencies_agents', 'agent_id', 'depends_on_agent_id'),
+        Index('idx_dependencies_type', 'dependency_type', 'is_active'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    workspace_id = Column(String, index=True, nullable=False)
+    agent_id = Column(String, index=True, nullable=False)
+    depends_on_agent_id = Column(String, index=True, nullable=False)
+
+    # Dependency details
+    dependency_type = Column(String(50), index=True)  # data, control, sequence, conditional
+    dependency_strength = Column(Float)  # 0-1 score (1 = critical dependency)
+    is_circular = Column(Boolean, default=False)
+    is_critical_path = Column(Boolean, default=False, index=True)
+
+    # Dependency metadata
+    description = Column(String)
+    dependency_definition = Column(JSON)
+
+    # Status
+    is_active = Column(Boolean, default=True, nullable=False, index=True)
+    last_verified = Column(DateTime)
+
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+class CollaborationMetrics(Base):
+    """Collaboration metrics aggregation table."""
+
+    __tablename__ = "collaboration_metrics"
+    __table_args__ = (
+        Index('idx_collab_metrics_workspace_period', 'workspace_id', 'period_start', 'period_end'),
+        Index('idx_collab_metrics_agent_period', 'agent_id', 'period_start'),
+        Index('idx_collab_metrics_calculated', 'calculated_at'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    workspace_id = Column(String, index=True, nullable=False)
+    agent_id = Column(String, index=True)  # NULL for workspace-level metrics
+
+    # Time period
+    period_start = Column(DateTime, nullable=False, index=True)
+    period_end = Column(DateTime, nullable=False, index=True)
+    period_type = Column(String(20), nullable=False)  # hourly, daily, weekly, monthly
+
+    # Collaboration efficiency
+    collaboration_efficiency_score = Column(Float)
+    avg_interaction_time_ms = Column(Float)
+    error_rate = Column(Float)
+    avg_quality_score = Column(Float)
+    avg_compatibility = Column(Float)
+
+    # Workflow metrics
+    workflows_participated = Column(Integer, default=0)
+    successful_workflows = Column(Integer, default=0)
+    failed_workflows = Column(Integer, default=0)
+    avg_workflow_duration_ms = Column(Float)
+
+    # Interaction metrics
+    total_interactions = Column(Integer, default=0)
+    outgoing_interactions = Column(Integer, default=0)
+    incoming_interactions = Column(Integer, default=0)
+    handoffs_given = Column(Integer, default=0)
+    handoffs_received = Column(Integer, default=0)
+
+    # Load metrics
+    avg_queue_length = Column(Float)
+    peak_load = Column(Integer)
+    idle_time_percentage = Column(Float)
+    load_variance = Column(Float)
+
+    # Collective intelligence metrics
+    diversity_index = Column(Float)
+    collective_accuracy = Column(Float)
+    emergence_score = Column(Float)
+    adaptation_rate = Column(Float)
+
+    calculated_at = Column(DateTime, default=func.now(), index=True)
+    created_at = Column(DateTime, default=func.now())
+
+
+class WorkflowExecutionStep(Base):
+    """Workflow execution steps table."""
+
+    __tablename__ = "workflow_execution_steps"
+    __table_args__ = (
+        Index('idx_workflow_steps_workflow', 'workflow_id', 'step_order'),
+        Index('idx_workflow_steps_agent', 'agent_id', 'started_at'),
+        Index('idx_workflow_steps_status', 'status', 'started_at'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    workflow_id = Column(String, index=True, nullable=False)
+    workspace_id = Column(String, index=True, nullable=False)
+    agent_id = Column(String, index=True, nullable=False)
+
+    # Step details
+    step_id = Column(String(100), nullable=False)
+    step_name = Column(String(255), nullable=False)
+    step_order = Column(Integer, nullable=False)
+    step_type = Column(String(50))  # sequential, parallel, conditional
+
+    # Execution metrics
+    status = Column(String(20), nullable=False, index=True)  # queued, running, completed, failed, skipped
+    started_at = Column(DateTime, nullable=False, index=True)
+    completed_at = Column(DateTime)
+    duration_ms = Column(Integer)
+    queue_time_ms = Column(Integer)
+
+    # Dependencies
+    depends_on_steps = Column(JSON, default=[])
+    blocking_steps = Column(JSON, default=[])
+
+    # Performance
+    cpu_usage = Column(Float)
+    memory_usage = Column(Float)
+    credits_used = Column(Integer)
+
+    # Results
+    output_data = Column(JSON)
+    error_message = Column(String)
+
+    created_at = Column(DateTime, default=func.now())
+
+
+class CollaborationPattern(Base):
+    """Detected collaboration patterns table."""
+
+    __tablename__ = "collaboration_patterns"
+    __table_args__ = (
+        Index('idx_collab_patterns_workspace_type', 'workspace_id', 'pattern_type'),
+        Index('idx_collab_patterns_detected', 'detected_at'),
+        Index('idx_collab_patterns_frequency', 'occurrence_frequency'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    workspace_id = Column(String, index=True, nullable=False)
+    pattern_id = Column(String(100), unique=True, index=True, nullable=False)
+
+    # Pattern details
+    pattern_type = Column(String(50), index=True, nullable=False)  # common_workflow, cluster, communication, bottleneck
+    pattern_name = Column(String(255), nullable=False)
+    pattern_description = Column(String)
+
+    # Pattern data
+    agents_involved = Column(JSON, nullable=False)
+    pattern_definition = Column(JSON, nullable=False)
+
+    # Pattern metrics
+    occurrence_frequency = Column(Integer, default=0, index=True)
+    success_rate = Column(Float)
+    avg_performance = Column(Float)
+    efficiency_score = Column(Float)
+
+    # Pattern insights
+    optimization_opportunities = Column(JSON)
+    redundancy_detected = Column(Boolean, default=False)
+    is_optimal = Column(Boolean, default=False)
+
+    # Detection metadata
+    detected_at = Column(DateTime, nullable=False, default=func.now(), index=True)
+    last_seen = Column(DateTime)
+    detection_confidence = Column(Float)  # 0-1 score
+
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+class LoadBalancingMetric(Base):
+    """Load balancing metrics table."""
+
+    __tablename__ = "load_balancing_metrics"
+    __table_args__ = (
+        Index('idx_load_metrics_workspace_period', 'workspace_id', 'period_start'),
+        Index('idx_load_metrics_agent', 'agent_id', 'period_start'),
+        Index('idx_load_metrics_imbalance', 'gini_coefficient'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    workspace_id = Column(String, index=True, nullable=False)
+
+    # Time period
+    period_start = Column(DateTime, nullable=False, index=True)
+    period_end = Column(DateTime, nullable=False)
+    period_type = Column(String(20), nullable=False)  # hourly, daily, weekly
+
+    # Load distribution (per agent stored as JSON)
+    load_distribution = Column(JSON, nullable=False)
+
+    # Imbalance metrics
+    gini_coefficient = Column(Float, index=True)  # 0 = perfect equality, 1 = maximum inequality
+    load_skewness = Column(Float)
+    load_variance = Column(Float)
+
+    # Identified agents
+    overloaded_agents = Column(JSON, default=[])
+    underutilized_agents = Column(JSON, default=[])
+
+    # Recommendations
+    rebalancing_strategy = Column(String(100))
+    agent_scaling_recommendations = Column(JSON)
+    workflow_reassignment_suggestions = Column(JSON)
+
+    calculated_at = Column(DateTime, default=func.now(), index=True)
+    created_at = Column(DateTime, default=func.now())
