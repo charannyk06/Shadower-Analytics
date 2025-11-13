@@ -27,6 +27,7 @@ from .routes import (
     moving_averages_router,
     anomalies_router,
     predictions_router,
+    notifications_router,
 )
 from .middleware.logging import RequestLoggingMiddleware
 from .versioning import versioned_api, get_api_version_info
@@ -65,6 +66,7 @@ app.include_router(materialized_views_router)
 app.include_router(moving_averages_router)
 app.include_router(anomalies_router)
 app.include_router(predictions_router)
+app.include_router(notifications_router)
 
 
 def custom_openapi():

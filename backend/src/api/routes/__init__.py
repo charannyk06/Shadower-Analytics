@@ -19,6 +19,7 @@ from .materialized_views import router as materialized_views_router
 from .moving_averages import router as moving_averages_router
 from .anomalies import router as anomalies_router
 from .predictions import router as predictions_router
+from .notifications import router as notifications_router
 
 __all__ = [
     "executive_router",
@@ -40,4 +41,5 @@ __all__ = [
     "moving_averages_router",
     "anomalies_router",
     "predictions_router",
+    "notifications_router",
 ]
