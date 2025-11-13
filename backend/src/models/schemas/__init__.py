@@ -7,3 +7,4 @@ from .workspaces import *
 from .common import *
 from .leaderboards import *
 from .dashboard import *
+from .alerts import *
