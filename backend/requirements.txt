@@ -36,3 +36,10 @@ opentelemetry-instrumentation-redis==0.42b0
 opentelemetry-instrumentation-requests==0.42b0
 opentelemetry-instrumentation-httpx==0.42b0
 opentelemetry-exporter-otlp-proto-grpc==1.21.0
+
+# Security dependencies
+cryptography==41.0.7
+bleach==6.1.0
+safety==3.0.1
+bandit==1.7.5
+detect-secrets==1.4.0

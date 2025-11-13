@@ -54,6 +54,65 @@ async def blacklist_token(token: str, expires_at: Optional[datetime] = None) -> 
         return False
 
 
+async def blacklist_token_by_jti(jti: str, ttl: int) -> bool:
+    """
+    Add a token to the blacklist using its JTI (JWT ID).
+
+    This is more efficient than blacklisting the entire token.
+
+    Args:
+        jti: The JWT ID (jti claim) from the token
+        ttl: Time to live in seconds (until token expires)
+
+    Returns:
+        True if successfully blacklisted, False otherwise
+    """
+    try:
+        redis = await get_redis_client()
+        if not redis:
+            logger.error("Redis client not available for token blacklist")
+            return False
+
+        if ttl <= 0:
+            # Token already expired, no need to blacklist
+            return True
+
+        key = f"{BLACKLIST_PREFIX}jti:{jti}"
+        await redis.setex(key, ttl, "1")
+        logger.info(f"Token JTI {jti} blacklisted with TTL: {ttl}s")
+        return True
+
+    except Exception as e:
+        logger.error(f"Failed to blacklist token by JTI: {e}")
+        return False
+
+
+async def is_jti_blacklisted(jti: str) -> bool:
+    """
+    Check if a token is blacklisted using its JTI.
+
+    Args:
+        jti: The JWT ID (jti claim) to check
+
+    Returns:
+        True if blacklisted, False otherwise
+    """
+    try:
+        redis = await get_redis_client()
+        if not redis:
+            logger.warning("Redis client not available, cannot check blacklist")
+            return False
+
+        key = f"{BLACKLIST_PREFIX}jti:{jti}"
+        result = await redis.exists(key)
+        return bool(result)
+
+    except Exception as e:
+        logger.error(f"Failed to check JTI blacklist: {e}")
+        # Fail open - if Redis is down, allow the token
+        return False
+
+
 async def is_token_blacklisted(token: str) -> bool:
     """
     Check if a token is blacklisted.
