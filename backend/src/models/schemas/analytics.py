@@ -5,6 +5,66 @@ from typing import Optional, Dict, List, Any
 from datetime import datetime, date
 from enum import Enum
 
+__all__ = [
+    # Enums
+    "AggregationType",
+    "Granularity",
+    "Interpolation",
+    "TrendMethod",
+    "SeasonalityType",
+    "ForecastModel",
+    "AnomalyMethod",
+    "Period",
+    # Request models
+    "DateRange",
+    "MetricsAggregateRequest",
+    "TimeseriesRequest",
+    "TrendDetectionRequest",
+    "SeasonalPatternsRequest",
+    "ForecastConfig",
+    "AnomalyConfig",
+    "CohortConfig",
+    "FunnelConfig",
+    "ComparisonConfig",
+    # Response models
+    "AggregatedMetricsResponse",
+    "TimeseriesResponse",
+    "TrendAnalysis",
+    "SeasonalityResponse",
+    "ForecastCreationResponse",
+    "ForecastResponse",
+    "AnomalyDetectionResponse",
+    "AnomalyRulesResponse",
+    "CohortCreationResponse",
+    "CohortRetentionResponse",
+    "FunnelCreationResponse",
+    "FunnelAnalysisResponse",
+    "ComparisonResponse",
+    "DistributionResponse",
+    # Supporting models
+    "AggregationGroup",
+    "TimeseriesMetric",
+    "TimeseriesDataPoint",
+    "MetricStatistics",
+    "ChangePoint",
+    "TrendForecast",
+    "SeasonalPattern",
+    "ForecastPrediction",
+    "ForecastResult",
+    "ModelMetrics",
+    "Anomaly",
+    "AnomalyRule",
+    "RetentionPeriod",
+    "RetentionMetrics",
+    "FunnelStep",
+    "FunnelAnalysisResult",
+    "MetricChange",
+    "HistogramBin",
+    "DistributionData",
+    "DistributionStatistics",
+    "Percentiles",
+]
+
 
 class AggregationType(str, Enum):
     """Aggregation types for metrics."""
@@ -75,18 +135,23 @@ class DateRange(BaseModel):
     end: date
 
     @validator('end')
-    def end_after_start(cls, v, values):
-        if 'start' in values and v < values['start']:
-            raise ValueError('end date must be after start date')
+    def validate_date_range(cls, v, values):
+        """Validate end date is after start and range is not too large."""
+        if 'start' in values:
+            if v < values['start']:
+                raise ValueError('end date must be after start date')
+            days_diff = (v - values['start']).days
+            if days_diff > 365:
+                raise ValueError('date range cannot exceed 365 days')
         return v
 
 
 class MetricsAggregateRequest(BaseModel):
     """Request for aggregated metrics."""
     workspace_id: str
-    metrics: List[str]
+    metrics: List[str] = Field(..., max_items=50, description="Metrics to aggregate")
     aggregation: AggregationType = AggregationType.SUM
-    group_by: Optional[List[str]] = None
+    group_by: Optional[List[str]] = Field(None, max_items=10, description="Fields to group by")
     filters: Optional[Dict[str, Any]] = None
     date_range: DateRange
 
@@ -94,7 +159,7 @@ class MetricsAggregateRequest(BaseModel):
 class TimeseriesRequest(BaseModel):
     """Request for time-series metrics."""
     workspace_id: str
-    metrics: List[str]
+    metrics: List[str] = Field(..., max_items=50, description="Metrics to retrieve")
     granularity: Granularity = Granularity.HOURLY
     fill_gaps: bool = True
     interpolation: Interpolation = Interpolation.LINEAR
@@ -361,9 +426,7 @@ class FunnelAnalysisResponse(BaseModel):
     funnel: FunnelAnalysisResult
 
 
-class PeriodMetrics(BaseModel):
-    """Metrics for a period."""
-    __root__: Dict[str, float]
+# Note: PeriodMetrics removed - use Dict[str, float] directly in responses
 
 
 class MetricChange(BaseModel):

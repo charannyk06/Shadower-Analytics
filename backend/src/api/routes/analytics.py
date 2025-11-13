@@ -3,10 +3,8 @@
 from typing import Dict, Any, List, Optional
 from fastapi import APIRouter, Depends, Query, HTTPException, Body
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text, func, and_
 from datetime import datetime, timedelta, date
 import logging
-import asyncio
 import uuid
 
 from ...core.database import get_db
@@ -93,9 +91,9 @@ expensive_analytics_limiter = RateLimiter(
 @router.get("/metrics/aggregate")
 async def get_aggregated_metrics(
     workspace_id: str = Query(..., description="Workspace ID"),
-    metrics: List[str] = Query(..., description="Metrics to aggregate"),
+    metrics: List[str] = Query(..., max_items=50, description="Metrics to aggregate"),
     aggregation: AggregationType = Query(AggregationType.SUM, description="Aggregation type"),
-    group_by: Optional[List[str]] = Query(None, description="Fields to group by"),
+    group_by: Optional[List[str]] = Query(None, max_items=10, description="Fields to group by"),
     start_date: date = Query(..., description="Start date"),
     end_date: date = Query(..., description="End date"),
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -106,22 +104,24 @@ async def get_aggregated_metrics(
 
     Returns aggregated values for specified metrics with optional grouping.
     Supports sum, avg, min, max, and count aggregations.
+
+    Note: Metrics and group_by lists are limited to prevent resource exhaustion.
     """
     try:
         # Validate workspace access
         await WorkspaceAccess.validate_workspace_access(current_user, workspace_id)
 
-        # Build aggregation query
-        agg_func = {
-            AggregationType.SUM: func.sum,
-            AggregationType.AVG: func.avg,
-            AggregationType.MIN: func.min,
-            AggregationType.MAX: func.max,
-            AggregationType.COUNT: func.count,
-        }[aggregation]
+        # Validate date range
+        days_diff = (end_date - start_date).days
+        if days_diff > 365:
+            raise HTTPException(
+                status_code=400,
+                detail="Date range cannot exceed 365 days"
+            )
 
         # For demo purposes, return sample data
         # In production, this would query actual metrics from the database
+        # using the appropriate aggregation function
         aggregations = [
             AggregationGroup(
                 group={"date": str(start_date)},
@@ -149,7 +149,7 @@ async def get_aggregated_metrics(
 @router.get("/metrics/timeseries")
 async def get_timeseries_metrics(
     workspace_id: str = Query(..., description="Workspace ID"),
-    metrics: List[str] = Query(..., description="Metrics to retrieve"),
+    metrics: List[str] = Query(..., max_items=50, description="Metrics to retrieve"),
     granularity: Granularity = Query(Granularity.HOURLY, description="Time granularity"),
     fill_gaps: bool = Query(True, description="Fill missing data points"),
     interpolation: str = Query("linear", description="Interpolation method"),
@@ -163,10 +163,20 @@ async def get_timeseries_metrics(
 
     Returns time-series data for specified metrics with configurable
     granularity and gap-filling options.
+
+    Note: Metrics list is limited to 50 items to prevent resource exhaustion.
     """
     try:
         # Validate workspace access
         await WorkspaceAccess.validate_workspace_access(current_user, workspace_id)
+
+        # Validate date range
+        days_diff = (end_date - start_date).days
+        if days_diff > 365:
+            raise HTTPException(
+                status_code=400,
+                detail="Date range cannot exceed 365 days"
+            )
 
         # Generate sample time-series data
         series = []
@@ -237,12 +247,18 @@ async def detect_trends(
         # Validate workspace access
         await WorkspaceAccess.validate_workspace_access(current_user, workspace_id)
 
+        # Validate date range
+        days_diff = (end_date - start_date).days
+        if days_diff > 365:
+            raise HTTPException(
+                status_code=400,
+                detail="Date range cannot exceed 365 days"
+            )
+
         # Use existing trend analysis service
         service = TrendAnalysisService(db)
-        user_id = current_user.get("id") or current_user.get("user_id")
 
         # Calculate timeframe from date range
-        days_diff = (end_date - start_date).days
         if days_diff <= 7:
             timeframe = "7d"
         elif days_diff <= 30:
@@ -256,20 +272,22 @@ async def detect_trends(
         analysis = await service.analyze_trend(
             workspace_id,
             metric,
-            timeframe,
-            user_id=user_id
+            timeframe
         )
 
-        # Transform to response format
+        # Transform to response format - extract values from analysis or use defaults
+        overview = analysis.get("overview", {})
+        forecast_data = analysis.get("forecast", {})
+
         return TrendAnalysis(
-            direction=analysis.get("overview", {}).get("trend_direction", "stable"),
-            slope=analysis.get("overview", {}).get("growth_rate", 0.0),
-            r_squared=0.85,
-            confidence_interval=[0.0, 0.0],
-            change_points=[],
+            direction=overview.get("trend_direction", "stable"),
+            slope=overview.get("growth_rate", 0.0),
+            r_squared=overview.get("r_squared", 0.0),
+            confidence_interval=overview.get("confidence_interval", [0.0, 0.0]),
+            change_points=[],  # TODO: Extract from analysis when available
             forecast=TrendForecast(
-                next_7_days=analysis.get("forecast", {}).get("next_7_days", {}).get("value", 0.0),
-                next_30_days=analysis.get("forecast", {}).get("next_30_days", {}).get("value", 0.0)
+                next_7_days=forecast_data.get("next_7_days", {}).get("value", 0.0),
+                next_30_days=forecast_data.get("next_30_days", {}).get("value", 0.0)
             )
         )
 
@@ -376,6 +394,7 @@ async def create_forecast(
 @router.get("/predictions/{forecast_id}")
 async def get_forecast_results(
     forecast_id: str,
+    workspace_id: str = Query(..., description="Workspace ID"),
     current_user: Dict[str, Any] = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> ForecastResponse:
@@ -383,8 +402,17 @@ async def get_forecast_results(
     Retrieve forecast results.
 
     Returns the predictions and model metrics for a completed forecast job.
+    Requires workspace_id to verify ownership of the forecast.
     """
     try:
+        # Validate workspace access
+        await WorkspaceAccess.validate_workspace_access(current_user, workspace_id)
+
+        # TODO: In production, verify that forecast belongs to workspace
+        # forecast = await get_forecast_from_db(forecast_id)
+        # if forecast.workspace_id != workspace_id:
+        #     raise HTTPException(status_code=403, detail="Access denied")
+
         # In production, this would retrieve from database or cache
         # Generate sample forecast data
         predictions = []
@@ -586,7 +614,7 @@ async def create_cohort(
 @router.get("/cohorts/{cohort_id}/retention", dependencies=[Depends(analytics_limiter)])
 async def get_cohort_retention(
     cohort_id: str,
-    period: str = Query("daily", regex="^(daily|weekly|monthly)$"),
+    period: str = Query("daily", pattern="^(daily|weekly|monthly)$"),
     current_user: Dict[str, Any] = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> CohortRetentionResponse:
@@ -778,7 +806,17 @@ async def compare_periods(
             p1_value = comparison.get("period_1", {}).get(metric, 0.0)
             p2_value = comparison.get("period_2", {}).get(metric, 0.0)
             absolute = p1_value - p2_value
-            percentage = (absolute / p2_value * 100) if p2_value != 0 else 0.0
+
+            # Calculate percentage change, handling division by zero
+            if p2_value == 0:
+                if p1_value > 0:
+                    percentage = 100.0  # Represents infinite increase
+                elif p1_value < 0:
+                    percentage = -100.0  # Represents infinite decrease
+                else:
+                    percentage = 0.0  # No change
+            else:
+                percentage = (absolute / p2_value * 100)
 
             changes[metric] = MetricChange(
                 absolute=absolute,
