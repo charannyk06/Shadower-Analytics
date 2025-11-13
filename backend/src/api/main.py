@@ -8,6 +8,7 @@ from ..core.config import settings
 from ..core.database import engine, Base
 from .gateway import APIGateway
 from .routes import (
+    auth_router,
     executive_router,
     agents_router,
     users_router,
@@ -34,6 +35,7 @@ from .routes import (
     admin_router,
 )
 from .middleware.logging import RequestLoggingMiddleware
+from .middleware.security import SecurityHeadersMiddleware
 from .versioning import versioned_api, get_api_version_info
 
 # Configure logging
@@ -47,10 +49,13 @@ logger = logging.getLogger(__name__)
 gateway = APIGateway()
 app = gateway.app
 
-# Add request logging middleware (after gateway middleware)
+# Add middleware (order matters - applied in reverse order)
+# Gateway already includes CORS and RateLimitMiddleware
+app.add_middleware(SecurityHeadersMiddleware)  # Add security headers
 app.add_middleware(RequestLoggingMiddleware)
 
 # Include routers
+app.include_router(auth_router)  # Authentication endpoints first
 app.include_router(health_router)
 app.include_router(dashboard_router)  # Unified dashboard API
 app.include_router(executive_router)

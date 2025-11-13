@@ -1,5 +1,6 @@
 """API routes for Shadow Analytics."""
 
+from .auth import router as auth_router
 from .executive import router as executive_router
 from .agents import router as agents_router
 from .users import router as users_router
@@ -26,6 +27,7 @@ from .notifications import router as notifications_router
 from .admin import router as admin_router
 
 __all__ = [
+    "auth_router",
     "executive_router",
     "agents_router",
     "users_router",
