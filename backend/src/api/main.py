@@ -31,6 +31,7 @@ from .routes import (
     alerts_router,
     predictions_router,
     notifications_router,
+    admin_router,
 )
 from .middleware.logging import RequestLoggingMiddleware
 from .versioning import versioned_api, get_api_version_info
@@ -73,6 +74,7 @@ app.include_router(analytics_router)
 app.include_router(alerts_router)
 app.include_router(predictions_router)
 app.include_router(notifications_router)
+app.include_router(admin_router)
 
 
 def custom_openapi():

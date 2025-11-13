@@ -23,6 +23,7 @@ from .dashboard import router as dashboard_router
 from .alerts import router as alerts_router
 from .predictions import router as predictions_router
 from .notifications import router as notifications_router
+from .admin import router as admin_router
 
 __all__ = [
     "executive_router",
@@ -48,4 +49,5 @@ __all__ = [
     "alerts_router",
     "predictions_router",
     "notifications_router",
+    "admin_router",
 ]
