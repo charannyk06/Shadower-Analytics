@@ -10,3 +10,4 @@ from .analytics import *
 from .dashboard import *
 from .alerts import *
 from .admin import *
+from .security import *

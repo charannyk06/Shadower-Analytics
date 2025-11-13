@@ -35,6 +35,7 @@ from .routes import (
     predictions_router,
     notifications_router,
     admin_router,
+    security_router,
 )
 from .middleware.logging import RequestLoggingMiddleware
 from .middleware.security import SecurityHeadersMiddleware
@@ -84,6 +85,7 @@ app.include_router(alerts_router)
 app.include_router(predictions_router)
 app.include_router(notifications_router)
 app.include_router(admin_router)
+app.include_router(security_router)
 
 
 def custom_openapi():
@@ -219,6 +221,10 @@ For issues or questions, contact: support@shadower.ai
         {
             "name": "search",
             "description": "Search functionality across all analytics entities"
+        },
+        {
+            "name": "security",
+            "description": "Security analytics, threat detection, vulnerability scanning, and compliance monitoring"
         }
     ]
 
