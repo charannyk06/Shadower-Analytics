@@ -1,5 +1,6 @@
 """API routes for Shadow Analytics."""
 
+from .auth import router as auth_router
 from .executive import router as executive_router
 from .agents import router as agents_router
 from .users import router as users_router
@@ -19,8 +20,15 @@ from .materialized_views import router as materialized_views_router
 from .moving_averages import router as moving_averages_router
 from .anomalies import router as anomalies_router
 from .integrations import router as integrations_router
+from .analytics import router as analytics_router
+from .dashboard import router as dashboard_router
+from .alerts import router as alerts_router
+from .predictions import router as predictions_router
+from .notifications import router as notifications_router
+from .admin import router as admin_router
 
 __all__ = [
+    "auth_router",
     "executive_router",
     "agents_router",
     "users_router",
@@ -40,4 +48,10 @@ __all__ = [
     "moving_averages_router",
     "anomalies_router",
     "integrations_router",
+    "analytics_router",
+    "dashboard_router",
+    "alerts_router",
+    "predictions_router",
+    "notifications_router",
+    "admin_router",
 ]
