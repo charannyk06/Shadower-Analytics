@@ -563,6 +563,10 @@ class UserFunnelJourney(Base):
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
 
+# =====================================================================
+# Alert Engine Models
+# =====================================================================
+
 class AlertRule(Base):
     """Alert rules configuration table."""
 
@@ -691,6 +695,10 @@ class AlertSuppression(Base):
     created_at = Column(DateTime, default=func.now())
 
 
+# =====================================================================
+# Anomaly Detection Models
+# =====================================================================
+
 class AnomalyDetection(Base):
     """Anomaly detections table."""
 
@@ -761,3 +769,193 @@ class BaselineModel(Base):
     training_data_end = Column(Date, nullable=False)
     accuracy_metrics = Column(JSON)
     last_updated = Column(DateTime, default=func.now())
+
+
+# =====================================================================
+# Notification System Models
+# =====================================================================
+
+
+class NotificationPreference(Base):
+    """User notification preferences per workspace and type."""
+
+    __tablename__ = "notification_preferences"
+    __table_args__ = (
+        Index('idx_notification_prefs_user', 'user_id', 'workspace_id'),
+        Index('idx_notification_prefs_type', 'notification_type', 'is_enabled'),
+        Index('idx_notification_prefs_enabled', 'is_enabled', 'channel'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    user_id = Column(String, index=True, nullable=False)
+    workspace_id = Column(String, index=True, nullable=False)
+    notification_type = Column(String(100), nullable=False)
+    channel = Column(String(50), nullable=False)
+    is_enabled = Column(Boolean, default=True)
+    frequency = Column(String(20), default='immediate')  # immediate, hourly, daily, weekly
+    schedule_time = Column(DateTime)
+    schedule_timezone = Column(String(50), default='UTC')
+    filter_rules = Column(JSON, default={})
+
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+class NotificationTemplate(Base):
+    """Notification templates for different channels."""
+
+    __tablename__ = "notification_templates"
+    __table_args__ = (
+        Index('idx_notification_templates_type', 'notification_type', 'channel', 'is_active'),
+        Index('idx_notification_templates_active', 'is_active'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    template_name = Column(String(255), unique=True, nullable=False)
+    notification_type = Column(String(100), nullable=False)
+    channel = Column(String(50), nullable=False)
+    subject_template = Column(String)
+    body_template = Column(String, nullable=False)
+    variables = Column(JSON, nullable=False, default=[])
+    preview_data = Column(JSON)
+    is_active = Column(Boolean, default=True)
+    version = Column(Integer, default=1)
+
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+class NotificationQueue(Base):
+    """Queue for pending and scheduled notifications."""
+
+    __tablename__ = "notification_queue"
+    __table_args__ = (
+        Index('idx_notification_queue_status', 'status', 'scheduled_for'),
+        Index('idx_notification_queue_recipient', 'recipient_id', 'status'),
+        Index('idx_notification_queue_scheduled', 'scheduled_for'),
+        Index('idx_notification_queue_priority', 'priority', 'scheduled_for'),
+        Index('idx_notification_queue_created', 'created_at'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    notification_type = Column(String(100), nullable=False)
+    recipient_id = Column(String, index=True, nullable=False)
+    recipient_email = Column(String(255))
+    channel = Column(String(50), nullable=False)
+    priority = Column(String(20), default='normal')  # low, normal, high, urgent
+    payload = Column(JSON, nullable=False, default={})
+    status = Column(String(20), default='pending')  # pending, processing, delivered, failed, cancelled
+    scheduled_for = Column(DateTime, default=func.now())
+    attempts = Column(Integer, default=0)
+    max_attempts = Column(Integer, default=3)
+    last_attempt_at = Column(DateTime)
+    delivered_at = Column(DateTime)
+    failed_at = Column(DateTime)
+    error_message = Column(String)
+
+    created_at = Column(DateTime, default=func.now())
+
+
+class NotificationLog(Base):
+    """Historical log of all sent notifications."""
+
+    __tablename__ = "notification_log"
+    __table_args__ = (
+        Index('idx_notification_log_user', 'user_id', 'sent_at'),
+        Index('idx_notification_log_workspace', 'workspace_id', 'notification_type', 'sent_at'),
+        Index('idx_notification_log_type', 'notification_type', 'sent_at'),
+        Index('idx_notification_log_channel', 'channel', 'sent_at'),
+        Index('idx_notification_log_status', 'delivery_status', 'sent_at'),
+        Index('idx_notification_log_unread', 'user_id', 'read_at'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    notification_id = Column(String, index=True)  # Reference to notification_queue
+    user_id = Column(String, index=True, nullable=False)
+    workspace_id = Column(String, index=True, nullable=False)
+    notification_type = Column(String(100), nullable=False)
+    channel = Column(String(50), nullable=False)
+    subject = Column(String)
+    preview = Column(String)
+    full_content = Column(String)
+    sent_at = Column(DateTime, nullable=False, default=func.now(), index=True)
+    delivered_at = Column(DateTime)
+    read_at = Column(DateTime)
+    clicked_at = Column(DateTime)
+    delivery_status = Column(String(20), nullable=False)  # sent, delivered, bounced, failed, read, clicked
+    tracking_data = Column(JSON, default={})
+
+    created_at = Column(DateTime, default=func.now())
+
+
+class DigestQueue(Base):
+    """Queue for periodic digest notifications."""
+
+    __tablename__ = "digest_queue"
+    __table_args__ = (
+        Index('idx_digest_queue_pending', 'is_sent', 'period_end'),
+        Index('idx_digest_queue_user', 'user_id', 'workspace_id', 'digest_type'),
+        Index('idx_digest_queue_period', 'period_start', 'period_end'),
+        Index('idx_digest_queue_unique', 'user_id', 'workspace_id', 'digest_type', 'period_start', unique=True),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    user_id = Column(String, index=True, nullable=False)
+    workspace_id = Column(String, index=True, nullable=False)
+    digest_type = Column(String(50), nullable=False)  # daily, weekly, monthly, custom
+    period_start = Column(DateTime, nullable=False)
+    period_end = Column(DateTime, nullable=False)
+    events = Column(JSON, nullable=False, default=[])
+    summary_stats = Column(JSON, default={})
+    is_sent = Column(Boolean, default=False)
+    sent_at = Column(DateTime)
+    notification_id = Column(String)  # Reference to notification_queue
+
+    created_at = Column(DateTime, default=func.now())
+
+
+class NotificationChannel(Base):
+    """Channel configuration per workspace (webhooks, API keys)."""
+
+    __tablename__ = "notification_channels"
+    __table_args__ = (
+        Index('idx_notification_channels_workspace', 'workspace_id', 'is_enabled'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    workspace_id = Column(String, index=True, nullable=False)
+    channel = Column(String(50), nullable=False)  # email, slack, teams, discord, webhook
+    is_enabled = Column(Boolean, default=True)
+    configuration = Column(JSON, nullable=False, default={})  # Webhook URLs, API keys, etc.
+    last_test_at = Column(DateTime)
+    last_test_status = Column(String(20))  # success, failed
+
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+class NotificationSubscription(Base):
+    """User subscriptions to specific notification topics."""
+
+    __tablename__ = "notification_subscriptions"
+    __table_args__ = (
+        Index('idx_notification_subscriptions_user', 'user_id', 'workspace_id'),
+        Index('idx_notification_subscriptions_type', 'subscription_type', 'is_subscribed'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    user_id = Column(String, index=True, nullable=False)
+    workspace_id = Column(String, index=True, nullable=False)
+    subscription_type = Column(String(100), nullable=False)
+    is_subscribed = Column(Boolean, default=True)
+    metadata = Column(JSON, default={})
+
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
