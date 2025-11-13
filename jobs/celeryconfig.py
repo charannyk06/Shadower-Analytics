@@ -22,6 +22,7 @@ app.conf.enable_utc = True
 app.conf.task_routes = {
     "aggregation.*": {"queue": "aggregation"},
     "alerts.*": {"queue": "alerts"},
+    "notifications.*": {"queue": "notifications"},
     "maintenance.*": {"queue": "maintenance"},
 }
 
@@ -68,7 +69,36 @@ app.conf.beat_schedule = {
         "task": "maintenance.cache_maintenance.warm_priority_cache",
         "schedule": crontab(hour="*/6", minute=0),  # Every 6 hours
     },
+    # Notification tasks
+    "process-notification-queue": {
+        "task": "notifications.notification_processor.process_notification_queue",
+        "schedule": crontab(minute="*/2"),  # Every 2 minutes
+    },
+    "retry-failed-notifications": {
+        "task": "notifications.notification_processor.retry_failed_notifications",
+        "schedule": crontab(minute="*/30"),  # Every 30 minutes
+    },
+    "cleanup-old-notifications": {
+        "task": "notifications.notification_processor.cleanup_old_notifications",
+        "schedule": crontab(hour=5, minute=0),  # Daily at 05:00
+    },
+    "generate-daily-digests": {
+        "task": "notifications.digest_sender.generate_daily_digests",
+        "schedule": crontab(hour=7, minute=0),  # Daily at 07:00 UTC
+    },
+    "send-daily-digests": {
+        "task": "notifications.digest_sender.send_daily_digests",
+        "schedule": crontab(hour=8, minute=0),  # Daily at 08:00 UTC
+    },
+    "generate-weekly-digests": {
+        "task": "notifications.digest_sender.generate_weekly_digests",
+        "schedule": crontab(day_of_week=1, hour=7, minute=30),  # Mondays at 07:30 UTC
+    },
+    "send-weekly-digests": {
+        "task": "notifications.digest_sender.send_weekly_digests",
+        "schedule": crontab(day_of_week=1, hour=8, minute=30),  # Mondays at 08:30 UTC
+    },
 }
 
 # Auto-discover tasks
-app.autodiscover_tasks(["aggregation", "alerts", "maintenance"])
+app.autodiscover_tasks(["aggregation", "alerts", "notifications", "maintenance"])

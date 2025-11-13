@@ -18,6 +18,10 @@ from .funnels import router as funnels_router
 from .materialized_views import router as materialized_views_router
 from .moving_averages import router as moving_averages_router
 from .anomalies import router as anomalies_router
+from .dashboard import router as dashboard_router
+from .alerts import router as alerts_router
+from .predictions import router as predictions_router
+from .notifications import router as notifications_router
 from .admin import router as admin_router
 
 __all__ = [
@@ -39,5 +43,9 @@ __all__ = [
     "materialized_views_router",
     "moving_averages_router",
     "anomalies_router",
+    "dashboard_router",
+    "alerts_router",
+    "predictions_router",
+    "notifications_router",
     "admin_router",
 ]
