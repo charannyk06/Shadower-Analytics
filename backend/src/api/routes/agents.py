@@ -8,7 +8,17 @@ import logging
 from ...core.database import get_db
 from ...models.schemas.agents import AgentMetrics, AgentPerformance, AgentStats
 from ...models.schemas.agent_analytics import AgentAnalyticsResponse
+from ...models.schemas.agent_lifecycle import (
+    AgentLifecycleAnalytics,
+    LifecycleAnalyticsQuery,
+    VersionComparisonRequest,
+    VersionComparisonResponse,
+    RetirementCandidatesQuery,
+    LifecycleEventCreate,
+    LifecycleEvent,
+)
 from ...services.analytics.agent_analytics_service import AgentAnalyticsService
+from ...services.analytics.agent_lifecycle_service import AgentLifecycleService
 from ...middleware.auth import get_current_user
 from ...middleware.workspace import validate_workspace_access
 from ...utils.validators import validate_agent_id, validate_workspace_id
@@ -173,3 +183,264 @@ async def get_agent_executions(
     # Should query agent_runs table with filters and sorting
     # TODO: Verify user has access to this agent
     return {"executions": [], "total": 0}
+
+
+# ============================================================================
+# Lifecycle Analytics Endpoints
+# ============================================================================
+
+
+@router.get("/{agent_id}/lifecycle")
+async def get_agent_lifecycle_analytics(
+    agent_id: str = Path(..., description="Agent ID"),
+    workspace_id: str = Query(..., description="Workspace ID"),
+    timeframe: str = Query(
+        "all",
+        description="Time range: 24h, 7d, 30d, 90d, all",
+        pattern="^(24h|7d|30d|90d|all)$",
+    ),
+    include_predictions: bool = Query(False, description="Include predictive analytics"),
+    include_versions: bool = Query(True, description="Include version data"),
+    include_deployments: bool = Query(True, description="Include deployment metrics"),
+    include_health: bool = Query(True, description="Include health scores"),
+    db=Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    workspace_access=Depends(validate_workspace_access),
+):
+    """
+    Get comprehensive lifecycle analytics for an agent.
+
+    Tracks agent lifecycle including:
+    - Current state and state history
+    - State transitions and durations
+    - Version history and performance comparison
+    - Deployment metrics and patterns
+    - Health scores and trends
+    - Retirement risk assessment
+
+    **Parameters:**
+    - **agent_id**: Unique identifier for the agent
+    - **workspace_id**: Workspace context
+    - **timeframe**: Time range for analysis
+    - **include_predictions**: Include predictive analytics
+    - **include_versions**: Include version comparison data
+    - **include_deployments**: Include deployment metrics
+    - **include_health**: Include health score data
+
+    **Returns:**
+    - Comprehensive lifecycle analytics including state transitions, versions,
+      deployments, health scores, and retirement risk assessment
+    """
+    # Validate inputs
+    validated_agent_id = validate_agent_id(agent_id)
+    validated_workspace_id = validate_workspace_id(workspace_id)
+
+    try:
+        logger.info(
+            f"Fetching lifecycle analytics for agent {validated_agent_id} "
+            f"in workspace {validated_workspace_id} for timeframe {timeframe} "
+            f"(user: {current_user.get('user_id')})"
+        )
+
+        service = AgentLifecycleService(db)
+        analytics = await service.get_lifecycle_analytics(
+            agent_id=validated_agent_id,
+            workspace_id=validated_workspace_id,
+            timeframe=timeframe,
+            include_predictions=include_predictions,
+            include_versions=include_versions,
+            include_deployments=include_deployments,
+            include_health=include_health,
+        )
+
+        return analytics
+
+    except Exception as e:
+        logger.error(f"Error fetching lifecycle analytics: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch lifecycle analytics: {str(e)}",
+        )
+
+
+@router.get("/{agent_id}/lifecycle/transitions")
+async def get_lifecycle_transitions(
+    agent_id: str = Path(..., description="Agent ID"),
+    workspace_id: str = Query(..., description="Workspace ID"),
+    timeframe: str = Query(
+        "30d",
+        description="Time range: 24h, 7d, 30d, 90d, all",
+        pattern="^(24h|7d|30d|90d|all)$",
+    ),
+    db=Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    workspace_access=Depends(validate_workspace_access),
+):
+    """
+    Get detailed state transition history for an agent.
+
+    Returns all state transitions within the specified timeframe,
+    including transition reasons, durations, and metadata.
+    """
+    validated_agent_id = validate_agent_id(agent_id)
+    validated_workspace_id = validate_workspace_id(workspace_id)
+
+    try:
+        from ...utils.datetime import calculate_start_date
+
+        service = AgentLifecycleService(db)
+        start_date = calculate_start_date(timeframe)
+        transitions = await service._get_state_transitions(validated_agent_id, start_date)
+
+        return {
+            "agentId": validated_agent_id,
+            "workspaceId": validated_workspace_id,
+            "timeframe": timeframe,
+            "transitions": transitions,
+            "totalTransitions": len(transitions),
+        }
+
+    except Exception as e:
+        logger.error(f"Error fetching state transitions: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch state transitions: {str(e)}",
+        )
+
+
+@router.get("/{agent_id}/lifecycle/status")
+async def get_lifecycle_status(
+    agent_id: str = Path(..., description="Agent ID"),
+    workspace_id: str = Query(..., description="Workspace ID"),
+    db=Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    workspace_access=Depends(validate_workspace_access),
+):
+    """
+    Get current lifecycle status (lightweight endpoint for polling).
+
+    Returns only the current state and basic information without
+    historical data. Useful for frequent polling and status checks.
+    """
+    validated_agent_id = validate_agent_id(agent_id)
+    validated_workspace_id = validate_workspace_id(workspace_id)
+
+    try:
+        service = AgentLifecycleService(db)
+        current_state = await service._get_current_state(validated_agent_id)
+
+        return {
+            "agentId": validated_agent_id,
+            "workspaceId": validated_workspace_id,
+            "currentState": current_state,
+        }
+
+    except Exception as e:
+        logger.error(f"Error fetching lifecycle status: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch lifecycle status: {str(e)}",
+        )
+
+
+@router.post("/{agent_id}/lifecycle/events", response_model=Dict[str, str])
+async def record_lifecycle_event(
+    agent_id: str = Path(..., description="Agent ID"),
+    event: LifecycleEventCreate = ...,
+    db=Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    workspace_access=Depends(validate_workspace_access),
+):
+    """
+    Record a lifecycle event for an agent.
+
+    Use this endpoint to manually record state changes, deployments,
+    or other lifecycle events.
+    """
+    validated_agent_id = validate_agent_id(agent_id)
+
+    try:
+        service = AgentLifecycleService(db)
+        event_id = await service.record_lifecycle_event(
+            agent_id=validated_agent_id,
+            workspace_id=event.workspace_id,
+            event_type=event.event_type,
+            previous_state=event.previous_state,
+            new_state=event.new_state,
+            triggered_by=event.triggered_by,
+            metadata=event.metadata,
+        )
+
+        return {
+            "eventId": event_id,
+            "message": "Lifecycle event recorded successfully",
+        }
+
+    except Exception as e:
+        logger.error(f"Error recording lifecycle event: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to record lifecycle event: {str(e)}",
+        )
+
+
+@router.get("/{agent_id}/versions/compare")
+async def compare_agent_versions(
+    agent_id: str = Path(..., description="Agent ID"),
+    workspace_id: str = Query(..., description="Workspace ID"),
+    version_a: str = Query(..., description="First version to compare"),
+    version_b: str = Query(..., description="Second version to compare"),
+    db=Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    workspace_access=Depends(validate_workspace_access),
+):
+    """
+    Compare performance between two agent versions.
+
+    Provides side-by-side comparison of performance metrics, costs,
+    reliability, and other key indicators between specified versions.
+    """
+    validated_agent_id = validate_agent_id(agent_id)
+    validated_workspace_id = validate_workspace_id(workspace_id)
+
+    try:
+        service = AgentLifecycleService(db)
+        version_performance = await service._get_version_performance(validated_agent_id)
+
+        # Find the specified versions
+        version_a_data = next((v for v in version_performance if v["version"] == version_a), None)
+        version_b_data = next((v for v in version_performance if v["version"] == version_b), None)
+
+        if not version_a_data:
+            raise HTTPException(status_code=404, detail=f"Version {version_a} not found")
+        if not version_b_data:
+            raise HTTPException(status_code=404, detail=f"Version {version_b} not found")
+
+        # Calculate comparison metrics
+        comparison = {
+            "executionsDelta": version_b_data["totalExecutions"] - version_a_data["totalExecutions"],
+            "successRateDelta": version_b_data["successRate"] - version_a_data["successRate"],
+            "avgDurationDelta": version_b_data["avgDuration"] - version_a_data["avgDuration"],
+            "avgCreditsDelta": version_b_data["avgCredits"] - version_a_data["avgCredits"],
+            "errorCountDelta": version_b_data["errorCount"] - version_a_data["errorCount"],
+        }
+
+        # Generate recommendation
+        recommendation = "Version B shows improvement" if comparison["successRateDelta"] > 0 else "Consider rollback to Version A"
+
+        return {
+            "agentId": validated_agent_id,
+            "versionA": version_a_data,
+            "versionB": version_b_data,
+            "comparison": comparison,
+            "recommendation": recommendation,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error comparing versions: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to compare versions: {str(e)}",
+        )
