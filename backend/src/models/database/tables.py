@@ -632,3 +632,235 @@ class BaselineModel(Base):
     training_data_end = Column(Date, nullable=False)
     accuracy_metrics = Column(JSON)
     last_updated = Column(DateTime, default=func.now())
+
+
+class ReportJob(Base):
+    """Report generation jobs table."""
+
+    __tablename__ = "report_jobs"
+    __table_args__ = (
+        Index('idx_report_jobs_workspace_created', 'workspace_id', 'created_at'),
+        Index('idx_report_jobs_status', 'status', 'created_at'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    workspace_id = Column(String, index=True, nullable=False)
+    user_id = Column(String, index=True, nullable=False)
+
+    # Report configuration
+    report_name = Column(String(255), nullable=False)
+    template_id = Column(String, index=True)
+    report_format = Column(String(20), nullable=False)  # pdf, excel, csv, json
+    sections = Column(JSON, default=[])
+    date_range = Column(JSON)
+    filters = Column(JSON, default={})
+    delivery_config = Column(JSON)
+
+    # Job status
+    status = Column(String(20), index=True, nullable=False, default='queued')  # queued, processing, completed, failed
+    progress = Column(Integer, default=0)  # 0-100
+    current_section = Column(String(100))
+
+    # Results
+    file_path = Column(String)
+    file_size = Column(Integer)
+    page_count = Column(Integer)
+    download_url = Column(String)
+
+    # Error handling
+    error_message = Column(String)
+    retry_count = Column(Integer, default=0)
+
+    # Timestamps
+    created_at = Column(DateTime, default=func.now(), index=True)
+    started_at = Column(DateTime)
+    completed_at = Column(DateTime)
+    expires_at = Column(DateTime)
+    generation_time = Column(Float)  # seconds
+
+
+class ReportTemplate(Base):
+    """Report templates table."""
+
+    __tablename__ = "report_templates"
+    __table_args__ = (
+        Index('idx_report_templates_workspace_category', 'workspace_id', 'category'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    workspace_id = Column(String, index=True)  # NULL for global templates
+
+    # Template metadata
+    name = Column(String(255), nullable=False)
+    description = Column(String)
+    category = Column(String(50), index=True)  # executive, operational, technical, financial
+    is_custom = Column(Boolean, default=False, nullable=False)
+
+    # Template configuration
+    sections = Column(JSON, nullable=False)  # Array of section definitions
+    layout = Column(JSON)  # Page layout settings
+    supported_formats = Column(JSON, default=['pdf', 'excel'])
+
+    # Usage tracking
+    usage_count = Column(Integer, default=0)
+    last_used_at = Column(DateTime)
+
+    # Metadata
+    created_by = Column(String, nullable=False)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+    is_active = Column(Boolean, default=True, nullable=False)
+
+
+class ReportSchedule(Base):
+    """Scheduled reports table."""
+
+    __tablename__ = "report_schedules"
+    __table_args__ = (
+        Index('idx_report_schedules_workspace_active', 'workspace_id', 'is_active'),
+        Index('idx_report_schedules_next_run', 'next_run_at'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    workspace_id = Column(String, index=True, nullable=False)
+
+    # Schedule configuration
+    name = Column(String(255), nullable=False)
+    template_id = Column(String, index=True, nullable=False)
+    frequency = Column(String(20), nullable=False)  # daily, weekly, monthly, quarterly
+    schedule_config = Column(JSON, nullable=False)  # time, timezone, day_of_week, etc.
+
+    # Recipients
+    recipients = Column(JSON, nullable=False)  # emails, slack_channels, webhooks
+
+    # Filters
+    filters = Column(JSON, default={})
+
+    # Status
+    is_active = Column(Boolean, default=True, nullable=False, index=True)
+    last_run_at = Column(DateTime)
+    next_run_at = Column(DateTime, index=True)
+    last_job_id = Column(String)
+    last_status = Column(String(20))
+
+    # Statistics
+    successful_runs = Column(Integer, default=0)
+    failed_runs = Column(Integer, default=0)
+
+    # Metadata
+    created_by = Column(String, nullable=False)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+class GeneratedReport(Base):
+    """Historical generated reports table."""
+
+    __tablename__ = "generated_reports"
+    __table_args__ = (
+        Index('idx_generated_reports_workspace_date', 'workspace_id', 'generated_at'),
+        Index('idx_generated_reports_type', 'report_type', 'generated_at'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    workspace_id = Column(String, index=True, nullable=False)
+    job_id = Column(String, index=True)
+
+    # Report metadata
+    report_name = Column(String(255), nullable=False)
+    report_type = Column(String(50), index=True)  # scheduled, manual, ad-hoc
+    template_id = Column(String, index=True)
+
+    # File information
+    file_path = Column(String, nullable=False)
+    filename = Column(String(255), nullable=False)
+    file_format = Column(String(20), nullable=False)
+    file_size = Column(Integer)
+    page_count = Column(Integer)
+    content_type = Column(String(100))
+
+    # Access control
+    generated_by = Column(String, nullable=False)
+    shared_with = Column(JSON, default=[])
+    is_public = Column(Boolean, default=False)
+
+    # Download tracking
+    download_count = Column(Integer, default=0)
+    last_downloaded_at = Column(DateTime)
+
+    # Timestamps
+    generated_at = Column(DateTime, default=func.now(), index=True)
+    expires_at = Column(DateTime, index=True)
+
+
+class ReportShare(Base):
+    """Report sharing links table."""
+
+    __tablename__ = "report_shares"
+    __table_args__ = (
+        Index('idx_report_shares_report_created', 'report_id', 'created_at'),
+        Index('idx_report_shares_token', 'share_token'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    report_id = Column(String, index=True, nullable=False)
+    workspace_id = Column(String, index=True, nullable=False)
+
+    # Share configuration
+    share_token = Column(String(100), unique=True, index=True, nullable=False)
+    share_url = Column(String, nullable=False)
+    recipients = Column(JSON, default=[])
+    message = Column(String)
+
+    # Access control
+    password_hash = Column(String)
+    require_password = Column(Boolean, default=False)
+    allow_download = Column(Boolean, default=True)
+
+    # Tracking
+    access_count = Column(Integer, default=0)
+    last_accessed_at = Column(DateTime)
+
+    # Metadata
+    created_by = Column(String, nullable=False)
+    created_at = Column(DateTime, default=func.now())
+    expires_at = Column(DateTime, nullable=False, index=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+
+
+class ReportWebhook(Base):
+    """Report webhooks table."""
+
+    __tablename__ = "report_webhooks"
+    __table_args__ = (
+        Index('idx_report_webhooks_workspace_active', 'workspace_id', 'is_active'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    workspace_id = Column(String, index=True, nullable=False)
+
+    # Webhook configuration
+    url = Column(String, nullable=False)
+    events = Column(JSON, nullable=False)  # report.generated, report.failed, etc.
+    secret = Column(String)
+
+    # Status
+    is_active = Column(Boolean, default=True, nullable=False, index=True)
+
+    # Statistics
+    total_deliveries = Column(Integer, default=0)
+    successful_deliveries = Column(Integer, default=0)
+    failed_deliveries = Column(Integer, default=0)
+    last_delivery_at = Column(DateTime)
+    last_delivery_status = Column(String(20))
+
+    # Metadata
+    created_by = Column(String, nullable=False)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
