@@ -27,6 +27,7 @@ from .routes import (
     moving_averages_router,
     anomalies_router,
     analytics_router,
+    dashboard_router,
     alerts_router,
     predictions_router,
     notifications_router,
@@ -50,6 +51,7 @@ app.add_middleware(RequestLoggingMiddleware)
 
 # Include routers
 app.include_router(health_router)
+app.include_router(dashboard_router)  # Unified dashboard API
 app.include_router(executive_router)
 app.include_router(agents_router)
 app.include_router(users_router)
