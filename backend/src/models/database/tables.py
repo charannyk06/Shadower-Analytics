@@ -1169,3 +1169,426 @@ class ReportWebhook(Base):
     created_by = Column(String, nullable=False)
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+# =====================================================================
+# Knowledge Base Analytics Models
+# =====================================================================
+
+
+class AgentKnowledgeItem(Base):
+    """Agent knowledge items table."""
+
+    __tablename__ = "agent_knowledge_items"
+    __table_args__ = (
+        Index('idx_knowledge_items_agent', 'agent_id', 'created_at'),
+        Index('idx_knowledge_items_workspace', 'workspace_id'),
+        Index('idx_knowledge_items_domain', 'domain', 'subdomain'),
+        Index('idx_knowledge_items_type', 'knowledge_type'),
+        Index('idx_knowledge_items_hash', 'content_hash'),
+        Index('idx_knowledge_items_cluster', 'cluster_id'),
+        Index('idx_knowledge_items_quality', 'quality_score'),
+        Index('idx_knowledge_items_access', 'access_count'),
+        Index('idx_knowledge_items_verification', 'verification_status', 'last_validated'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    agent_id = Column(String, index=True, nullable=False)
+    workspace_id = Column(String, index=True, nullable=False)
+
+    # Knowledge metadata
+    knowledge_type = Column(String(50), nullable=False)
+    domain = Column(String(100))
+    subdomain = Column(String(100))
+
+    # Content
+    content = Column(String, nullable=False)
+    content_hash = Column(String(64))
+    embedding_vector = Column(postgresql.ARRAY(Float), default=[])
+    embedding_model = Column(String(100), default='text-embedding-ada-002')
+
+    # Quality metrics
+    confidence_score = Column(Float)
+    verification_status = Column(String(20), default='unverified')
+    source_reliability = Column(Float)
+    quality_score = Column(Float)
+
+    # Usage metrics
+    access_count = Column(Integer, default=0)
+    last_accessed = Column(DateTime)
+    usefulness_score = Column(Float)
+    success_rate = Column(Float)
+
+    # Source information
+    source_id = Column(String)
+    source_type = Column(String(50))
+    source_name = Column(String(255))
+
+    # Relationships
+    related_items = Column(postgresql.ARRAY(String), default=[])
+    prerequisite_items = Column(postgresql.ARRAY(String), default=[])
+    derived_from = Column(postgresql.ARRAY(String), default=[])
+    parent_concept_id = Column(String)
+
+    # Graph metrics
+    node_degree = Column(Integer, default=0)
+    centrality_score = Column(Float)
+    cluster_id = Column(String)
+
+    # Temporal aspects
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+    last_validated = Column(DateTime)
+    expires_at = Column(DateTime)
+    deprecation_date = Column(DateTime)
+
+    # Metadata
+    tags = Column(postgresql.ARRAY(String), default=[])
+    metadata = Column(JSON, default={})
+
+
+class KnowledgeSource(Base):
+    """Knowledge sources table."""
+
+    __tablename__ = "knowledge_sources"
+    __table_args__ = (
+        Index('idx_knowledge_sources_agent', 'agent_id'),
+        Index('idx_knowledge_sources_type', 'source_type'),
+        Index('idx_knowledge_sources_reliability', 'reliability_score'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    agent_id = Column(String, index=True, nullable=False)
+    workspace_id = Column(String, index=True, nullable=False)
+
+    # Source details
+    source_type = Column(String(50), nullable=False)
+    source_name = Column(String(255), nullable=False)
+    source_url = Column(String)
+
+    # Quality metrics
+    reliability_score = Column(Float)
+    reliability_category = Column(String(30))
+
+    # Usage statistics
+    items_count = Column(Integer, default=0)
+    avg_confidence = Column(Float)
+    avg_usefulness = Column(Float)
+    verification_rate = Column(Float)
+    total_accesses = Column(Integer, default=0)
+
+    # Metadata
+    metadata = Column(JSON, default={})
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+    last_used = Column(DateTime)
+
+
+class KnowledgeValidationEvent(Base):
+    """Knowledge validation events table."""
+
+    __tablename__ = "knowledge_validation_events"
+    __table_args__ = (
+        Index('idx_validation_events_knowledge', 'knowledge_item_id', 'created_at'),
+        Index('idx_validation_events_agent', 'agent_id'),
+        Index('idx_validation_events_validity', 'is_valid', 'created_at'),
+        Index('idx_validation_events_impact', 'business_impact'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    knowledge_item_id = Column(String, nullable=False)
+    agent_id = Column(String, index=True, nullable=False)
+    workspace_id = Column(String, index=True, nullable=False)
+
+    # Validation details
+    validation_type = Column(String(50), nullable=False)
+    validator_id = Column(String(100))
+    validation_method = Column(String)
+
+    # Results
+    is_valid = Column(Boolean, nullable=False)
+    confidence_level = Column(Float)
+    previous_status = Column(String(20))
+    new_status = Column(String(20))
+
+    # Error details
+    error_details = Column(JSON, default={})
+    corrections_applied = Column(JSON, default={})
+
+    # Impact assessment
+    affected_decisions = Column(Integer, default=0)
+    affected_users = Column(Integer, default=0)
+    business_impact = Column(String(20))
+
+    # Metadata
+    notes = Column(String)
+    metadata = Column(JSON, default={})
+    created_at = Column(DateTime, default=func.now())
+
+
+class KnowledgeTransfer(Base):
+    """Knowledge transfers table."""
+
+    __tablename__ = "knowledge_transfers"
+    __table_args__ = (
+        Index('idx_knowledge_transfers_source', 'source_agent_id', 'created_at'),
+        Index('idx_knowledge_transfers_target', 'target_agent_id', 'created_at'),
+        Index('idx_knowledge_transfers_workspace', 'workspace_id'),
+        Index('idx_knowledge_transfers_domain', 'knowledge_domain'),
+        Index('idx_knowledge_transfers_success', 'transfer_successful', 'performance_improvement'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    source_agent_id = Column(String, index=True, nullable=False)
+    target_agent_id = Column(String, index=True, nullable=False)
+    workspace_id = Column(String, index=True, nullable=False)
+
+    # Transfer details
+    knowledge_item_ids = Column(postgresql.ARRAY(String), nullable=False)
+    knowledge_domain = Column(String(100))
+    transfer_type = Column(String(50))
+
+    # Quality metrics
+    knowledge_quality_score = Column(Float)
+    transfer_successful = Column(Boolean, default=True)
+    adaptation_time_hours = Column(Numeric(10, 2))
+
+    # Performance impact
+    performance_before = Column(Float)
+    performance_after = Column(Float)
+    performance_improvement = Column(Float)
+
+    # Transfer metadata
+    transferred_items_count = Column(Integer, nullable=False)
+    failed_items_count = Column(Integer, default=0)
+    conflict_resolution_strategy = Column(String(50))
+
+    # Metadata
+    notes = Column(String)
+    metadata = Column(JSON, default={})
+    created_at = Column(DateTime, default=func.now())
+    completed_at = Column(DateTime)
+
+
+class KnowledgeRetrievalLog(Base):
+    """Knowledge retrieval logs table."""
+
+    __tablename__ = "knowledge_retrieval_logs"
+    __table_args__ = (
+        Index('idx_retrieval_logs_agent', 'agent_id', 'created_at'),
+        Index('idx_retrieval_logs_knowledge', 'knowledge_item_id'),
+        Index('idx_retrieval_logs_performance', 'retrieval_time_ms'),
+        Index('idx_retrieval_logs_cache', 'cache_hit', 'created_at'),
+        Index('idx_retrieval_logs_effectiveness', 'result_used', 'user_satisfied'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    agent_id = Column(String, index=True, nullable=False)
+    workspace_id = Column(String, index=True, nullable=False)
+    knowledge_item_id = Column(String)
+
+    # Query details
+    query_text = Column(String)
+    query_embedding = Column(postgresql.ARRAY(Float), default=[])
+    query_type = Column(String(50))
+
+    # Retrieval performance
+    retrieval_time_ms = Column(Integer, nullable=False)
+    cache_hit = Column(Boolean, default=False)
+    results_count = Column(Integer, default=0)
+    results_examined = Column(Integer, default=0)
+
+    # Effectiveness metrics
+    result_used = Column(Boolean, default=False)
+    result_rank = Column(Integer)
+    user_satisfied = Column(Boolean)
+
+    # Search quality
+    precision_score = Column(Float)
+    relevance_score = Column(Float)
+
+    # Metadata
+    metadata = Column(JSON, default={})
+    created_at = Column(DateTime, default=func.now())
+
+
+class KnowledgeDriftEvent(Base):
+    """Knowledge drift events table."""
+
+    __tablename__ = "knowledge_drift_events"
+    __table_args__ = (
+        Index('idx_drift_events_agent', 'agent_id', 'created_at'),
+        Index('idx_drift_events_knowledge', 'knowledge_item_id'),
+        Index('idx_drift_events_type', 'drift_type', 'severity'),
+        Index('idx_drift_events_unresolved', 'resolved_at'),
+        Index('idx_drift_events_severity', 'severity', 'created_at'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    agent_id = Column(String, index=True, nullable=False)
+    workspace_id = Column(String, index=True, nullable=False)
+    knowledge_item_id = Column(String)
+
+    # Drift details
+    drift_type = Column(String(50), nullable=False)
+    drift_score = Column(Float, nullable=False)
+    drift_detected = Column(Boolean, default=True)
+
+    # Context
+    baseline_value = Column(JSON)
+    current_value = Column(JSON)
+    affected_concepts = Column(postgresql.ARRAY(String))
+
+    # Impact assessment
+    severity = Column(String(20))
+    affected_operations = Column(Integer, default=0)
+
+    # Remediation
+    remediation_required = Column(Boolean, default=False)
+    remediation_applied = Column(Boolean, default=False)
+    remediation_plan = Column(JSON)
+
+    # Detection metadata
+    detection_method = Column(String(100))
+    detection_confidence = Column(Float)
+
+    # Metadata
+    metadata = Column(JSON, default={})
+    created_at = Column(DateTime, default=func.now())
+    resolved_at = Column(DateTime)
+
+
+class KnowledgeGraphMetric(Base):
+    """Knowledge graph metrics table."""
+
+    __tablename__ = "knowledge_graph_metrics"
+    __table_args__ = (
+        Index('idx_graph_metrics_agent', 'agent_id', 'created_at'),
+        Index('idx_graph_metrics_workspace', 'workspace_id', 'created_at'),
+        Index('idx_graph_metrics_quality', 'quality_trend', 'created_at'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    agent_id = Column(String, index=True, nullable=False)
+    workspace_id = Column(String, index=True, nullable=False)
+
+    # Graph structure metrics
+    total_nodes = Column(Integer, nullable=False)
+    total_edges = Column(Integer, nullable=False)
+    graph_density = Column(Float)
+    average_degree = Column(Float)
+    clustering_coefficient = Column(Float)
+    connected_components = Column(Integer)
+    max_path_length = Column(Integer)
+
+    # Node type distribution
+    concepts_count = Column(Integer, default=0)
+    facts_count = Column(Integer, default=0)
+    procedures_count = Column(Integer, default=0)
+    examples_count = Column(Integer, default=0)
+    rules_count = Column(Integer, default=0)
+    relationships_count = Column(Integer, default=0)
+
+    # Quality metrics
+    avg_node_quality = Column(Float)
+    avg_edge_strength = Column(Float)
+    redundancy_ratio = Column(Float)
+    coverage_score = Column(Float)
+
+    # Evolution metrics
+    growth_rate = Column(Float)
+    update_frequency = Column(Float)
+    deprecation_rate = Column(Float)
+    quality_trend = Column(String(20))
+
+    # Performance metrics
+    avg_query_time_ms = Column(Integer)
+    avg_traversal_depth = Column(Float)
+    cache_hit_rate = Column(Float)
+
+    # Metadata
+    snapshot_type = Column(String(20), default='scheduled')
+    metadata = Column(JSON, default={})
+    created_at = Column(DateTime, default=func.now())
+
+
+class KnowledgeDomain(Base):
+    """Knowledge domains table."""
+
+    __tablename__ = "knowledge_domains"
+    __table_args__ = (
+        Index('idx_knowledge_domains_agent', 'agent_id'),
+        Index('idx_knowledge_domains_domain', 'domain', 'subdomain'),
+        Index('idx_knowledge_domains_quality', 'quality_score'),
+        Index('idx_knowledge_domains_coverage', 'coverage_percentage'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    agent_id = Column(String, index=True, nullable=False)
+    workspace_id = Column(String, index=True, nullable=False)
+
+    # Domain information
+    domain = Column(String(100), nullable=False)
+    subdomain = Column(String(100))
+
+    # Coverage metrics
+    item_count = Column(Integer, default=0)
+    coverage_percentage = Column(Float)
+    depth_score = Column(Float)
+    breadth_score = Column(Float)
+
+    # Quality metrics
+    quality_score = Column(Float)
+    avg_confidence = Column(Float)
+    verification_rate = Column(Float)
+
+    # Usage metrics
+    access_frequency = Column(Float)
+    usefulness_score = Column(Float)
+
+    # Temporal tracking
+    last_updated = Column(DateTime)
+    created_at = Column(DateTime, default=func.now())
+
+    # Metadata
+    metadata = Column(JSON, default={})
+
+
+class KnowledgeLifecycleStage(Base):
+    """Knowledge lifecycle stages table."""
+
+    __tablename__ = "knowledge_lifecycle_stages"
+    __table_args__ = (
+        Index('idx_lifecycle_stages_knowledge', 'knowledge_item_id', 'created_at'),
+        Index('idx_lifecycle_stages_agent', 'agent_id', 'stage'),
+        Index('idx_lifecycle_stages_stage', 'stage', 'created_at'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    knowledge_item_id = Column(String, nullable=False)
+    agent_id = Column(String, index=True, nullable=False)
+
+    # Lifecycle stage
+    stage = Column(String(30), nullable=False)
+    previous_stage = Column(String(30))
+
+    # Transition details
+    trigger_event = Column(String(100))
+    trigger_reason = Column(String)
+    automated = Column(Boolean, default=False)
+
+    # Duration in previous stage
+    duration_days = Column(Numeric(10, 2))
+
+    # Metadata
+    metadata = Column(JSON, default={})
+    created_at = Column(DateTime, default=func.now())
