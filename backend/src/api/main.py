@@ -26,6 +26,7 @@ from .routes import (
     materialized_views_router,
     moving_averages_router,
     anomalies_router,
+    analytics_router,
     dashboard_router,
     alerts_router,
     predictions_router,
@@ -68,6 +69,7 @@ app.include_router(funnels_router)
 app.include_router(materialized_views_router)
 app.include_router(moving_averages_router)
 app.include_router(anomalies_router)
+app.include_router(analytics_router)
 app.include_router(alerts_router)
 app.include_router(predictions_router)
 app.include_router(notifications_router)
