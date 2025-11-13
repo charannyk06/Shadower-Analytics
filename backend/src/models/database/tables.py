@@ -632,3 +632,108 @@ class BaselineModel(Base):
     training_data_end = Column(Date, nullable=False)
     accuracy_metrics = Column(JSON)
     last_updated = Column(DateTime, default=func.now())
+
+
+class APIKey(Base):
+    """API keys for programmatic access to analytics."""
+
+    __tablename__ = "api_keys"
+    __table_args__ = (
+        Index('idx_api_keys_workspace', 'workspace_id'),
+        Index('idx_api_keys_user', 'user_id'),
+        Index('idx_api_keys_active', 'is_active'),
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    key_hash = Column(String(255), unique=True, nullable=False, index=True)
+    name = Column(String(100), nullable=False)
+    user_id = Column(String, index=True, nullable=False)
+    workspace_id = Column(String, index=True, nullable=False)
+
+    # Permissions and access control
+    permissions = Column(JSON, default=list, nullable=False)
+    rate_limit = Column(Integer, default=1000)  # requests per hour
+
+    # Status and metadata
+    is_active = Column(Boolean, default=True, nullable=False, index=True)
+    last_used = Column(DateTime, index=True)
+    usage_count = Column(Integer, default=0)
+
+    # Expiration
+    expires_at = Column(DateTime, index=True)
+
+    # Audit fields
+    created_by = Column(String, nullable=False)
+    created_at = Column(DateTime, default=func.now(), index=True)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+    revoked_at = Column(DateTime)
+    revoked_by = Column(String)
+
+
+class UserSession(Base):
+    """User sessions for tracking active login sessions."""
+
+    __tablename__ = "user_sessions"
+    __table_args__ = (
+        Index('idx_user_sessions_user', 'user_id'),
+        Index('idx_user_sessions_active', 'is_active'),
+        Index('idx_user_sessions_user_active', 'user_id', 'is_active'),
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    user_id = Column(String, index=True, nullable=False)
+
+    # Session token (hashed)
+    session_token_hash = Column(String(255), unique=True, nullable=False, index=True)
+
+    # Device and location information
+    device_info = Column(String(255))
+    ip_address = Column(String(45))  # IPv6 compatible
+    user_agent = Column(String(500))
+
+    # Geolocation
+    country_code = Column(String(2))
+    city = Column(String(100))
+    location = Column(String(255))  # Combined location string
+
+    # Session status
+    is_active = Column(Boolean, default=True, nullable=False, index=True)
+
+    # Timestamps
+    created_at = Column(DateTime, default=func.now(), index=True)
+    last_active = Column(DateTime, default=func.now(), index=True)
+    expires_at = Column(DateTime, nullable=False, index=True)
+    terminated_at = Column(DateTime)
+
+
+class RefreshToken(Base):
+    """Refresh tokens for token renewal without re-authentication."""
+
+    __tablename__ = "refresh_tokens"
+    __table_args__ = (
+        Index('idx_refresh_tokens_user', 'user_id'),
+        Index('idx_refresh_tokens_active', 'is_active'),
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    user_id = Column(String, index=True, nullable=False)
+
+    # Token (hashed)
+    token_hash = Column(String(255), unique=True, nullable=False, index=True)
+
+    # Associated access token (for revocation)
+    access_token_jti = Column(String(255), index=True)
+
+    # Status
+    is_active = Column(Boolean, default=True, nullable=False, index=True)
+    is_revoked = Column(Boolean, default=False, nullable=False)
+
+    # Device tracking
+    device_info = Column(String(255))
+    ip_address = Column(String(45))
+
+    # Timestamps
+    created_at = Column(DateTime, default=func.now(), index=True)
+    expires_at = Column(DateTime, nullable=False, index=True)
+    revoked_at = Column(DateTime)
+    last_used = Column(DateTime)

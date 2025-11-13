@@ -7,6 +7,7 @@ import logging
 from ..core.config import settings
 from ..core.database import engine, Base
 from .routes import (
+    auth_router,
     executive_router,
     agents_router,
     users_router,
@@ -29,6 +30,7 @@ from .routes import (
 from .middleware.cors import setup_cors
 from .middleware.logging import RequestLoggingMiddleware
 from .middleware.rate_limit import RateLimitMiddleware
+from .middleware.security import SecurityHeadersMiddleware
 
 # Configure logging
 logging.basicConfig(
@@ -49,11 +51,13 @@ app = FastAPI(
 # Setup CORS
 setup_cors(app)
 
-# Add middleware
+# Add middleware (order matters - applied in reverse order)
+app.add_middleware(SecurityHeadersMiddleware)  # Add security headers first
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(RateLimitMiddleware)
 
 # Include routers
+app.include_router(auth_router)  # Authentication endpoints first
 app.include_router(health_router)
 app.include_router(executive_router)
 app.include_router(agents_router)
