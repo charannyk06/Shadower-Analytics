@@ -223,6 +223,8 @@ async def get_workspace_metrics(workspace_id: str):
 
 ### Docker Compose (Development)
 
+**Note**: Replace all placeholder values (marked with `<>`) with secure values before deployment.
+
 ```yaml
 version: '3.8'
 services:
@@ -231,7 +233,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=postgresql://postgres:password@postgres:5432/analytics
+      - DATABASE_URL=postgresql://postgres:<POSTGRES_PASSWORD>@postgres:5432/analytics
       - REDIS_URL=redis://redis:6379
       - KAFKA_BROKERS=kafka:9092
     depends_on:
@@ -243,7 +245,7 @@ services:
     image: postgres:15-alpine
     environment:
       POSTGRES_DB: analytics
-      POSTGRES_PASSWORD: password
+      POSTGRES_PASSWORD: <POSTGRES_PASSWORD>  # CHANGE THIS - Use secrets management in production
 
   redis:
     image: redis:7-alpine
@@ -269,6 +271,8 @@ services:
 
 ### Production Deployment
 
+**Security Warning**: Never use default or example passwords in production!
+
 1. **Build Docker image:**
 ```bash
 docker build -t shadower-analytics:latest .
@@ -280,11 +284,23 @@ kubectl apply -f k8s/
 ```
 
 3. **Configure environment variables:**
-- `DATABASE_URL`: PostgreSQL connection string
-- `REDIS_URL`: Redis connection string
+
+**Important**: Use Kubernetes Secrets or a secrets management service (HashiCorp Vault, AWS Secrets Manager, etc.)
+
+```bash
+# Example: Create Kubernetes secret (use actual secure values)
+kubectl create secret generic shadower-analytics-secrets \
+  --from-literal=database-url='postgresql://user:SECURE_PASSWORD@host:5432/db' \
+  --from-literal=redis-url='redis://:SECURE_PASSWORD@host:6379' \
+  --from-literal=jwt-secret='GENERATED_SECURE_SECRET_KEY'
+```
+
+Required environment variables:
+- `DATABASE_URL`: PostgreSQL connection string with secure credentials
+- `REDIS_URL`: Redis connection string with authentication
 - `KAFKA_BROKERS`: Kafka broker addresses
-- `CELERY_BROKER_URL`: Celery broker (Redis/RabbitMQ)
-- `JWT_SECRET_KEY`: Strong secret for JWT signing
+- `CELERY_BROKER_URL`: Celery broker (Redis/RabbitMQ) with authentication
+- `JWT_SECRET_KEY`: Strong secret for JWT signing (generate with: `openssl rand -hex 32`)
 
 ## Monitoring
 
