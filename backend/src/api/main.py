@@ -26,6 +26,7 @@ from .routes import (
     materialized_views_router,
     moving_averages_router,
     anomalies_router,
+    dashboard_router,
     alerts_router,
     predictions_router,
     notifications_router,
@@ -49,6 +50,7 @@ app.add_middleware(RequestLoggingMiddleware)
 
 # Include routers
 app.include_router(health_router)
+app.include_router(dashboard_router)  # Unified dashboard API
 app.include_router(executive_router)
 app.include_router(agents_router)
 app.include_router(users_router)
@@ -252,14 +254,3 @@ async def shutdown_event():
 
     await engine.dispose()
     logger.info("Shadow Analytics API shut down successfully")
-
-
-@app.get("/")
-async def root():
-    """Root endpoint."""
-    return {
-        "service": "Shadow Analytics API",
-        "version": "0.1.0",
-        "status": "running",
-        "docs": "/docs",
-    }
