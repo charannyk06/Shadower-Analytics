@@ -25,16 +25,11 @@ from ...models.schemas.dashboard import (
     ExportConfig,
     ExportJobResponse,
     ExportStatusResponse,
-    RealtimeMetrics,
-    DateRange,
     GranularityEnum,
     LeaderboardTypeEnum,
     ActivityTypeEnum,
     ErrorResponse,
 )
-from ...services.metrics.executive_service import executive_metrics_service
-from ...services.analytics.agent_analytics_service import AgentAnalyticsService
-from ...services.analytics.leaderboard_service import LeaderboardService
 from ..dependencies.auth import get_current_user, require_owner_or_admin
 from ..middleware.workspace import WorkspaceAccess
 from ..middleware.rate_limit import RateLimiter
@@ -666,7 +661,7 @@ async def realtime_metrics_websocket(
             }
 
             await websocket.send_json({
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "metrics": data
             })
 
@@ -714,7 +709,7 @@ async def realtime_events_stream(
                             "agent_id": "agent_123",
                             "status": "success",
                             "duration": 2.3,
-                            "timestamp": datetime.utcnow().isoformat()
+                            "timestamp": datetime.now(timezone.utc).isoformat()
                         }
                     }
 

@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 
@@ -71,7 +71,7 @@ class APIResponse(BaseModel):
     success: bool = True
     data: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
-    timestamp: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
+    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
 # Executive Dashboard Schemas
@@ -318,17 +318,17 @@ class UserEngagementResponse(BaseModel):
 class WorkspaceInfo(BaseModel):
     """Workspace information."""
 
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
     id: str
     name: str
     created_at: str = Field(alias="createdAt")
     plan: str
     seats: int
     seats_used: int = Field(alias="seatsUsed")
-
-    model_config = ConfigDict(
-        alias_generator=to_camel,
-        populate_by_name=True,
-    )
 
 
 class WorkspaceUsage(BaseModel):
@@ -423,13 +423,13 @@ class RealtimeMetrics(BaseModel):
 class LeaderboardDetails(BaseModel):
     """Leaderboard entry details."""
 
-    executions: Optional[int] = None
-    success_rate: Optional[float] = Field(None, alias="successRate")
-
     model_config = ConfigDict(
         alias_generator=to_camel,
         populate_by_name=True,
     )
+
+    executions: Optional[int] = None
+    success_rate: Optional[float] = Field(None, alias="successRate")
 
 
 class LeaderboardEntry(BaseModel):
@@ -544,12 +544,12 @@ class PaginatedResponse(BaseModel):
 class ErrorResponse(BaseModel):
     """Error response."""
 
-    error: str
-    message: str
-    status_code: int = Field(alias="statusCode")
-    timestamp: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
-
     model_config = ConfigDict(
         alias_generator=to_camel,
         populate_by_name=True,
     )
+
+    error: str
+    message: str
+    status_code: int = Field(alias="statusCode")
+    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
