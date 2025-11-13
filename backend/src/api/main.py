@@ -27,6 +27,7 @@ from .routes import (
     materialized_views_router,
     moving_averages_router,
     anomalies_router,
+    integrations_router,
     search_router,
     analytics_router,
     dashboard_router,
@@ -76,6 +77,7 @@ app.include_router(funnels_router)
 app.include_router(materialized_views_router)
 app.include_router(moving_averages_router)
 app.include_router(anomalies_router)
+app.include_router(integrations_router)
 app.include_router(search_router)
 app.include_router(analytics_router)
 app.include_router(alerts_router)
@@ -100,6 +102,7 @@ Analytics API for Shadower platform providing:
 - **Predictive insights**: Anomaly detection and forecasting
 - **Custom reports**: Scheduled and on-demand reporting
 - **Data exports**: Multiple format support (CSV, JSON, PDF, Excel)
+- **Third-party integrations**: Slack, Teams, webhooks, email, databases, and APIs
 - **Search functionality**: Advanced search across all analytics entities
 
 ## Authentication
@@ -121,6 +124,7 @@ API calls are rate-limited per workspace to ensure fair usage:
 | Reports | 10 requests | 1 minute |
 | Exports | 5 requests | 1 hour |
 | Admin | 50 requests | 1 minute |
+| Integrations | 100 requests | 1 minute |
 | Search | 100 requests | 1 minute |
 
 **Response Headers:**
@@ -203,6 +207,10 @@ For issues or questions, contact: support@shadower.ai
         {
             "name": "exports",
             "description": "Data export functionality"
+        },
+        {
+            "name": "integrations",
+            "description": "Third-party integrations (Slack, Teams, webhooks, etc.)"
         },
         {
             "name": "admin",

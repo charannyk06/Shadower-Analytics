@@ -19,6 +19,7 @@ from .funnels import router as funnels_router
 from .materialized_views import router as materialized_views_router
 from .moving_averages import router as moving_averages_router
 from .anomalies import router as anomalies_router
+from .integrations import router as integrations_router
 from .search import router as search_router
 from .analytics import router as analytics_router
 from .dashboard import router as dashboard_router
@@ -47,6 +48,7 @@ __all__ = [
     "materialized_views_router",
     "moving_averages_router",
     "anomalies_router",
+    "integrations_router",
     "search_router",
     "analytics_router",
     "dashboard_router",
