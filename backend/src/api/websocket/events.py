@@ -153,6 +153,132 @@ class EventBroadcaster:
             f"Broadcasted workspace_update ({update_type}) to workspace {workspace_id}"
         )
 
+    @staticmethod
+    async def broadcast_dashboard_update(
+        workspace_id: str, section: str, data: Dict[str, Any]
+    ):
+        """
+        Broadcast dashboard update.
+
+        Args:
+            workspace_id: Target workspace
+            section: Dashboard section being updated
+            data: Updated data
+        """
+        message = {
+            "type": "dashboard_update",
+            "section": section,
+            "data": data,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
+        await manager.broadcast_to_workspace(workspace_id, message)
+        logger.debug(
+            f"Broadcasted dashboard_update ({section}) to workspace {workspace_id}"
+        )
+
+    @staticmethod
+    async def broadcast_alert_notification(
+        workspace_id: str,
+        severity: str,
+        title: str,
+        message: str,
+        metric: str,
+        value: float,
+        threshold: float,
+        alert_id: str,
+    ):
+        """
+        Broadcast alert notification.
+
+        Args:
+            workspace_id: Target workspace
+            severity: Alert severity (critical, warning, info)
+            title: Alert title
+            message: Alert message
+            metric: Metric that triggered the alert
+            value: Current metric value
+            threshold: Threshold that was exceeded
+            alert_id: Unique alert identifier
+        """
+        alert_message = {
+            "type": "alert",
+            "severity": severity,
+            "title": title,
+            "message": message,
+            "metric": metric,
+            "value": value,
+            "threshold": threshold,
+            "alert_id": alert_id,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
+        await manager.broadcast_to_workspace(workspace_id, alert_message)
+        logger.info(
+            f"Broadcasted alert ({severity}) to workspace {workspace_id}: {title}"
+        )
+
+    @staticmethod
+    async def broadcast_user_event(
+        workspace_id: str,
+        event: str,
+        user_id: str,
+        agent_id: Optional[str] = None,
+        execution_id: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ):
+        """
+        Broadcast user activity event.
+
+        Args:
+            workspace_id: Target workspace
+            event: Event type (execution_started, execution_completed, etc.)
+            user_id: User who triggered the event
+            agent_id: Optional agent ID
+            execution_id: Optional execution ID
+            metadata: Optional additional metadata
+        """
+        message = {
+            "type": "user_event",
+            "event": event,
+            "user_id": user_id,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
+        if agent_id:
+            message["agent_id"] = agent_id
+        if execution_id:
+            message["execution_id"] = execution_id
+        if metadata:
+            message["metadata"] = metadata
+
+        await manager.broadcast_to_workspace(workspace_id, message)
+        logger.debug(f"Broadcasted user_event ({event}) to workspace {workspace_id}")
+
+    @staticmethod
+    async def broadcast_agent_update(
+        workspace_id: str, agent_id: str, metrics: Dict[str, Any]
+    ):
+        """
+        Broadcast agent performance update.
+
+        Args:
+            workspace_id: Target workspace
+            agent_id: Agent ID
+            metrics: Agent metrics
+        """
+        message = {
+            "type": "agent_update",
+            "agent_id": agent_id,
+            "metrics": metrics,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
+        await manager.broadcast_to_workspace(workspace_id, message)
+        logger.debug(
+            f"Broadcasted agent_update for agent {agent_id} to workspace {workspace_id}"
+        )
+
 
 # Global instance
 broadcaster = EventBroadcaster()
