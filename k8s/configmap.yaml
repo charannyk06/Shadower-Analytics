@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: analytics-config
+  namespace: analytics
+data:
+  redis-url: "redis://analytics-redis-service:6379"
+  celery-broker-url: "redis://analytics-redis-service:6379/1"
+  celery-result-backend: "redis://analytics-redis-service:6379/2"
+  api-url: "https://analytics.shadower.ai/api"
+  ws-url: "wss://analytics.shadower.ai/ws"

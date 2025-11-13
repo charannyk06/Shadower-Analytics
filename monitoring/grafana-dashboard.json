@@ -1,0 +1,81 @@
+{
+  "dashboard": {
+    "title": "Shadower Analytics - Overview",
+    "tags": ["analytics", "shadower"],
+    "timezone": "UTC",
+    "panels": [
+      {
+        "title": "Request Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "sum(rate(http_requests_total{job=\"analytics-backend\"}[5m])) by (status)"
+          }
+        ]
+      },
+      {
+        "title": "Response Time (p95)",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=\"analytics-backend\"}[5m])) by (le, endpoint))"
+          }
+        ]
+      },
+      {
+        "title": "Error Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "sum(rate(http_requests_total{job=\"analytics-backend\",status=~\"5..\"}[5m])) / sum(rate(http_requests_total{job=\"analytics-backend\"}[5m]))"
+          }
+        ]
+      },
+      {
+        "title": "CPU Usage",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "sum(rate(container_cpu_usage_seconds_total{pod=~\"analytics-backend.*\"}[5m])) by (pod)"
+          }
+        ]
+      },
+      {
+        "title": "Memory Usage",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "sum(container_memory_working_set_bytes{pod=~\"analytics-backend.*\"}) by (pod) / 1024 / 1024"
+          }
+        ]
+      },
+      {
+        "title": "Database Connections",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "pg_stat_database_numbackends{datname=\"analytics\"}"
+          }
+        ]
+      },
+      {
+        "title": "Redis Operations",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(redis_commands_processed_total[5m])"
+          }
+        ]
+      },
+      {
+        "title": "Celery Task Queue",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "sum(celery_queue_length) by (queue_name)"
+          }
+        ]
+      }
+    ]
+  }
+}
