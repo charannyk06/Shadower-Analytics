@@ -15,6 +15,7 @@ celery_app = Celery(
     include=[
         'src.tasks.aggregation',
         'src.tasks.maintenance',
+        'src.tasks.exports',
         'src.tasks.alerts',
         'src.tasks.reports',
         'src.tasks.analytics',
@@ -104,6 +105,13 @@ celery_app.conf.beat_schedule = {
         'options': {'expires': 1800, 'priority': 4}
     },
 
+    # Export tasks
+    'cleanup-old-exports': {
+        'task': 'src.tasks.exports.cleanup_old_exports',
+        'schedule': crontab(hour=4, minute=0),  # Run at 4:00 AM daily
+        'options': {'expires': 7200, 'priority': 3}
+    },
+
     # Alert tasks
     'evaluate-alert-rules': {
         'task': 'src.tasks.alerts.evaluate_alert_rules',
@@ -117,7 +125,7 @@ celery_app.conf.beat_schedule = {
     },
     'cleanup-old-alerts': {
         'task': 'src.tasks.alerts.cleanup_old_alerts',
-        'schedule': crontab(hour=4, minute=0),  # Run at 4:00 AM daily
+        'schedule': crontab(hour=4, minute=30),  # Run at 4:30 AM daily (30 min after export cleanup)
         'options': {'expires': 7200, 'priority': 3}
     },
 
@@ -138,6 +146,7 @@ celery_app.conf.beat_schedule = {
 celery_app.conf.task_routes = {
     'src.tasks.aggregation.*': {'queue': 'aggregation'},
     'src.tasks.maintenance.*': {'queue': 'maintenance'},
+    'src.tasks.exports.*': {'queue': 'exports'},
     'src.tasks.alerts.*': {'queue': 'alerts'},
     'src.tasks.reports.*': {'queue': 'reports'},
     'src.tasks.analytics.*': {'queue': 'analytics'},

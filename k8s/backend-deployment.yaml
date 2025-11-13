@@ -1,0 +1,100 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: analytics-backend
+  namespace: analytics
+  labels:
+    app: analytics-backend
+    version: v1
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: analytics-backend
+  template:
+    metadata:
+      labels:
+        app: analytics-backend
+        version: v1
+    spec:
+      containers:
+      - name: backend
+        image: ghcr.io/charannyk06/shadower-analytics-backend:latest
+        ports:
+        - containerPort: 8000
+          name: http
+          protocol: TCP
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: analytics-secrets
+              key: database-url
+        - name: REDIS_URL
+          valueFrom:
+            configMapKeyRef:
+              name: analytics-config
+              key: redis-url
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: analytics-secrets
+              key: jwt-secret
+        - name: ENVIRONMENT
+          value: "production"
+        - name: CELERY_BROKER_URL
+          valueFrom:
+            configMapKeyRef:
+              name: analytics-config
+              key: celery-broker-url
+        - name: CELERY_RESULT_BACKEND
+          valueFrom:
+            configMapKeyRef:
+              name: analytics-config
+              key: celery-result-backend
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: analytics-backend-service
+  namespace: analytics
+  labels:
+    app: analytics-backend
+spec:
+  selector:
+    app: analytics-backend
+  ports:
+  - port: 80
+    targetPort: 8000
+    protocol: TCP
+    name: http
+  type: ClusterIP
+  sessionAffinity: ClientIP
