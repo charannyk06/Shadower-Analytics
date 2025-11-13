@@ -35,6 +35,7 @@ from .routes import (
     predictions_router,
     notifications_router,
     admin_router,
+    benchmarks_router,
 )
 from .middleware.logging import RequestLoggingMiddleware
 from .middleware.security import SecurityHeadersMiddleware
@@ -84,6 +85,7 @@ app.include_router(alerts_router)
 app.include_router(predictions_router)
 app.include_router(notifications_router)
 app.include_router(admin_router)
+app.include_router(benchmarks_router)  # Agent performance benchmarking
 
 
 def custom_openapi():

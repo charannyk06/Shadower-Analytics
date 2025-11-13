@@ -1169,3 +1169,395 @@ class ReportWebhook(Base):
     created_by = Column(String, nullable=False)
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+# =====================================================================
+# Agent Benchmarking Models
+# =====================================================================
+
+
+class BenchmarkSuite(Base):
+    """Benchmark suite definitions table."""
+
+    __tablename__ = "benchmark_suites"
+    __table_args__ = (
+        Index('idx_benchmark_suites_category', 'category', 'status'),
+        Index('idx_benchmark_suites_status', 'status', 'created_at'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    suite_name = Column(String(255), unique=True, nullable=False)
+    category = Column(String(50), nullable=False)  # speed, accuracy, cost, reliability, scalability, comprehensive
+    description = Column(String)
+    version = Column(String(50), nullable=False, default='1.0.0')
+
+    # Suite configuration
+    suite_config = Column(JSON, default={})
+    baseline_agent_id = Column(String)
+
+    # Status
+    status = Column(String(20), default='active')  # active, deprecated, archived, draft
+
+    created_by = Column(String)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+class BenchmarkDefinition(Base):
+    """Individual benchmark test definitions table."""
+
+    __tablename__ = "benchmark_definitions"
+    __table_args__ = (
+        Index('idx_benchmark_defs_suite', 'suite_id', 'created_at'),
+        Index('idx_benchmark_defs_type', 'test_type'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    suite_id = Column(String, nullable=False, index=True)
+    benchmark_name = Column(String(255), nullable=False)
+    description = Column(String)
+
+    # Test configuration
+    test_type = Column(String(50), nullable=False)  # synthetic, real_world, stress, edge_case, regression
+    metrics_measured = Column(postgresql.ARRAY(String), default=['accuracy', 'speed', 'efficiency', 'cost', 'reliability'])
+
+    # Dataset configuration
+    dataset_size = Column(Integer)
+    dataset_complexity = Column(String(20))  # low, medium, high, extreme
+    dataset_source = Column(String)
+    test_data = Column(JSON)
+
+    # Constraints
+    time_limit_ms = Column(Integer)
+    memory_limit_mb = Column(Integer)
+    token_limit = Column(Integer)
+    cost_limit_usd = Column(Numeric(10, 4))
+
+    # Expected outputs and scoring
+    expected_outputs = Column(JSON)
+    scoring_rubric = Column(JSON, nullable=False)
+
+    # Execution settings
+    num_runs = Column(Integer, default=5)
+    warmup_runs = Column(Integer, default=3)
+    parallel_execution = Column(Boolean, default=False)
+
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+class BenchmarkExecution(Base):
+    """Benchmark execution records table."""
+
+    __tablename__ = "benchmark_executions"
+    __table_args__ = (
+        Index('idx_benchmark_exec_agent', 'agent_id', 'created_at'),
+        Index('idx_benchmark_exec_suite', 'suite_id', 'benchmark_id'),
+        Index('idx_benchmark_exec_workspace', 'workspace_id', 'created_at'),
+        Index('idx_benchmark_exec_scores', 'overall_score', 'accuracy_score'),
+        Index('idx_benchmark_exec_status', 'status', 'start_time'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    suite_id = Column(String, nullable=False, index=True)
+    benchmark_id = Column(String, nullable=False, index=True)
+    agent_id = Column(String, nullable=False, index=True)
+    agent_version = Column(String(50))
+    workspace_id = Column(String, nullable=False, index=True)
+
+    # Execution context
+    execution_environment = Column(JSON)
+    model_configuration = Column(JSON)
+    run_number = Column(Integer, default=1)
+
+    # Timing
+    start_time = Column(DateTime, nullable=False)
+    end_time = Column(DateTime)
+    total_duration_ms = Column(Integer)
+
+    # Core performance metrics (0-100 scale)
+    accuracy_score = Column(Numeric(5, 2))
+    speed_score = Column(Numeric(5, 2))
+    efficiency_score = Column(Numeric(5, 2))
+    cost_score = Column(Numeric(5, 2))
+    reliability_score = Column(Numeric(5, 2))
+    overall_score = Column(Numeric(5, 2))
+
+    # Detailed metrics
+    tokens_used = Column(Integer, default=0)
+    api_calls_made = Column(Integer, default=0)
+    memory_peak_mb = Column(Numeric(10, 2))
+    cpu_usage_percent = Column(Numeric(5, 2))
+
+    # Quality metrics
+    output_correctness = Column(Numeric(5, 2))
+    output_completeness = Column(Numeric(5, 2))
+    output_relevance = Column(Numeric(5, 2))
+
+    # Comparative metrics
+    percentile_rank = Column(Numeric(5, 2))
+    deviation_from_baseline = Column(Numeric(10, 2))
+
+    # Results
+    actual_output = Column(JSON)
+    validation_results = Column(JSON)
+    detailed_metrics = Column(JSON)
+
+    # Status
+    status = Column(String(20), default='pending')  # pending, running, completed, failed, timeout, cancelled
+    error_details = Column(String)
+
+    created_at = Column(DateTime, default=func.now())
+
+
+class BenchmarkComparison(Base):
+    """Agent-to-agent benchmark comparisons table."""
+
+    __tablename__ = "benchmark_comparisons"
+    __table_args__ = (
+        Index('idx_benchmark_comparisons_suite', 'suite_id', 'created_at'),
+        Index('idx_benchmark_comparisons_workspace', 'workspace_id', 'created_at'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    suite_id = Column(String, nullable=False, index=True)
+    workspace_id = Column(String, nullable=False, index=True)
+
+    # Agents being compared
+    agent_ids = Column(postgresql.ARRAY(String), nullable=False)
+    agent_count = Column(Integer, nullable=False)
+
+    # Comparison type
+    comparison_type = Column(String(50), nullable=False)  # head_to_head, multi_agent, time_series, regression
+
+    # Comparison results
+    overall_winner = Column(String)
+    category_winners = Column(JSON)
+    detailed_metrics = Column(JSON, nullable=False)
+    statistical_significance = Column(JSON)
+
+    # Recommendations
+    recommendations = Column(JSON)
+    insights = Column(JSON)
+
+    created_at = Column(DateTime, default=func.now())
+
+
+class BenchmarkRegression(Base):
+    """Performance regression tracking table."""
+
+    __tablename__ = "benchmark_regressions"
+    __table_args__ = (
+        Index('idx_benchmark_regressions_agent', 'agent_id', 'detected_at'),
+        Index('idx_benchmark_regressions_status', 'status', 'severity', 'detected_at'),
+        Index('idx_benchmark_regressions_benchmark', 'benchmark_id', 'detected_at'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    agent_id = Column(String, nullable=False, index=True)
+    workspace_id = Column(String, nullable=False, index=True)
+    benchmark_id = Column(String, nullable=False, index=True)
+
+    # Version information
+    baseline_version = Column(String(50))
+    current_version = Column(String(50))
+    baseline_execution_id = Column(String)
+    current_execution_id = Column(String)
+
+    # Regression details
+    metric_name = Column(String(100), nullable=False)
+    baseline_value = Column(Numeric(10, 2))
+    current_value = Column(Numeric(10, 2))
+    regression_percentage = Column(Numeric(10, 2))
+
+    # Classification
+    severity = Column(String(20), nullable=False)  # minor, moderate, major, critical
+    regression_type = Column(String(50))  # performance, accuracy, cost, reliability, pattern
+
+    # Impact analysis
+    impact_analysis = Column(JSON)
+    affected_users_estimate = Column(Integer)
+    business_impact = Column(String(20))  # low, medium, high, critical
+
+    # Status
+    status = Column(String(20), default='detected')  # detected, investigating, confirmed, resolved, false_positive
+    resolution_notes = Column(String)
+    resolved_at = Column(DateTime)
+
+    detected_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+class StressTestResult(Base):
+    """Stress testing results table."""
+
+    __tablename__ = "stress_test_results"
+    __table_args__ = (
+        Index('idx_stress_test_agent', 'agent_id', 'created_at'),
+        Index('idx_stress_test_scenario', 'test_scenario', 'created_at'),
+        Index('idx_stress_test_workspace', 'workspace_id', 'created_at'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    agent_id = Column(String, nullable=False, index=True)
+    workspace_id = Column(String, nullable=False, index=True)
+
+    # Test configuration
+    test_scenario = Column(String(100), nullable=False)
+    test_parameters = Column(JSON, nullable=False)
+
+    # Test execution
+    start_time = Column(DateTime, nullable=False)
+    end_time = Column(DateTime)
+    duration_seconds = Column(Integer)
+
+    # Results
+    max_throughput_rps = Column(Numeric(10, 2))
+    avg_response_time_ms = Column(Numeric(10, 2))
+    p95_response_time_ms = Column(Numeric(10, 2))
+    p99_response_time_ms = Column(Numeric(10, 2))
+    error_rate_percent = Column(Numeric(5, 2))
+
+    # Breaking points
+    broke = Column(Boolean, default=False)
+    breaking_point_description = Column(String)
+    max_concurrent_requests = Column(Integer)
+    max_memory_mb = Column(Numeric(10, 2))
+
+    # Resource usage at peak
+    peak_cpu_percent = Column(Numeric(5, 2))
+    peak_memory_mb = Column(Numeric(10, 2))
+    peak_io_operations = Column(Integer)
+
+    # Resilience metrics
+    recovery_time_seconds = Column(Numeric(10, 2))
+    failure_count = Column(Integer, default=0)
+    auto_recovery_success = Column(Boolean)
+
+    # Overall assessment
+    resilience_score = Column(Numeric(5, 2))
+    scaling_limit_description = Column(String)
+    recommendations = Column(JSON)
+
+    status = Column(String(20), default='completed')  # running, completed, failed, aborted
+
+    created_at = Column(DateTime, default=func.now())
+
+
+class CostPerformanceAnalysis(Base):
+    """Cost efficiency analysis table."""
+
+    __tablename__ = "cost_performance_analysis"
+    __table_args__ = (
+        Index('idx_cost_perf_agent_date', 'agent_id', 'analysis_date'),
+        Index('idx_cost_perf_workspace', 'workspace_id', 'analysis_date'),
+        Index('idx_cost_perf_efficiency', 'overall_efficiency', 'analysis_date'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    agent_id = Column(String, nullable=False, index=True)
+    workspace_id = Column(String, nullable=False, index=True)
+    analysis_date = Column(Date, nullable=False)
+
+    # Cost metrics
+    total_cost_usd = Column(Numeric(15, 4), default=0)
+    cost_per_task = Column(Numeric(10, 4))
+    cost_per_success = Column(Numeric(10, 4))
+
+    # Performance metrics
+    avg_performance_score = Column(Numeric(5, 2))
+    performance_per_dollar = Column(Numeric(10, 4))
+
+    # Efficiency analysis
+    token_efficiency = Column(Numeric(5, 2))
+    resource_efficiency = Column(Numeric(5, 2))
+    time_efficiency = Column(Numeric(5, 2))
+    overall_efficiency = Column(Numeric(5, 2))
+
+    # Optimal configurations
+    optimal_configurations = Column(JSON)
+    current_configuration = Column(JSON)
+    estimated_savings_usd = Column(Numeric(10, 4))
+
+    # Optimization opportunities
+    optimization_opportunities = Column(JSON)
+
+    created_at = Column(DateTime, default=func.now())
+
+
+class BenchmarkLeaderboard(Base):
+    """Benchmark leaderboard materialized view table."""
+
+    __tablename__ = "benchmark_leaderboard"
+    __table_args__ = (
+        Index('idx_benchmark_leaderboard_category', 'benchmark_category', 'overall_rank'),
+        Index('idx_benchmark_leaderboard_agent', 'agent_id', 'benchmark_category'),
+        Index('idx_benchmark_leaderboard_workspace', 'workspace_id', 'overall_rank'),
+        Index('idx_benchmark_leaderboard_overall', 'overall_rank', 'avg_overall'),
+        {'schema': 'analytics'}
+    )
+
+    agent_id = Column(String, primary_key=True, index=True)
+    benchmark_category = Column(String(50), primary_key=True)
+    workspace_id = Column(String, nullable=False, index=True)
+
+    # Average scores
+    avg_accuracy = Column(Numeric(5, 2))
+    avg_speed = Column(Numeric(5, 2))
+    avg_efficiency = Column(Numeric(5, 2))
+    avg_cost = Column(Numeric(5, 2))
+    avg_reliability = Column(Numeric(5, 2))
+    avg_overall = Column(Numeric(5, 2))
+
+    # Rankings
+    accuracy_rank = Column(Integer)
+    speed_rank = Column(Integer)
+    efficiency_rank = Column(Integer)
+    cost_rank = Column(Integer)
+    reliability_rank = Column(Integer)
+    overall_rank = Column(Integer)
+
+    # Metadata
+    benchmarks_completed = Column(Integer)
+    last_benchmark_date = Column(DateTime)
+    best_ranking = Column(Integer)
+
+
+class AgentComparisonMatrix(Base):
+    """Agent comparison matrix materialized view table."""
+
+    __tablename__ = "agent_comparison_matrix"
+    __table_args__ = (
+        Index('idx_agent_comparison_matrix_composite', 'composite_score'),
+        Index('idx_agent_comparison_matrix_overall', 'overall_rank'),
+        {'schema': 'analytics'}
+    )
+
+    agent_id = Column(String, primary_key=True, index=True)
+
+    # Average scores
+    avg_accuracy = Column(Numeric(5, 2))
+    avg_speed = Column(Numeric(5, 2))
+    avg_efficiency = Column(Numeric(5, 2))
+    avg_cost = Column(Numeric(5, 2))
+    avg_reliability = Column(Numeric(5, 2))
+    avg_overall = Column(Numeric(5, 2))
+    composite_score = Column(Numeric(5, 2))
+
+    # Rankings
+    accuracy_rank = Column(Integer)
+    speed_rank = Column(Integer)
+    efficiency_rank = Column(Integer)
+    cost_rank = Column(Integer)
+    reliability_rank = Column(Integer)
+    overall_rank = Column(Integer)
+
+    # Metadata
+    benchmarks_completed = Column(Integer)
