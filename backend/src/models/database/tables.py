@@ -1169,3 +1169,66 @@ class ReportWebhook(Base):
     created_by = Column(String, nullable=False)
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+class AuditLog(Base):
+    """
+    Audit log table for tracking security-relevant events.
+
+    Stores comprehensive audit trail for compliance and security monitoring.
+    """
+
+    __tablename__ = "audit_logs"
+    __table_args__ = (
+        # Indices for efficient audit log queries
+        Index('idx_audit_logs_event_type', 'event_type'),
+        Index('idx_audit_logs_user_id', 'user_id'),
+        Index('idx_audit_logs_workspace_id', 'workspace_id'),
+        Index('idx_audit_logs_timestamp', 'timestamp'),
+        Index('idx_audit_logs_resource', 'resource_type', 'resource_id'),
+        {'schema': 'analytics'}
+    )
+
+    # Primary key
+    id = Column(String, primary_key=True, default=lambda: str(uuid4()))
+
+    # Event classification
+    event_type = Column(String(100), nullable=False, index=True)
+    # Event types: authentication, authorization, data_access, data_export,
+    # data_modification, data_deletion, configuration_change, security_breach,
+    # unauthorized_access, admin_action
+
+    # User and workspace context
+    user_id = Column(String, nullable=True, index=True)
+    workspace_id = Column(String, nullable=True, index=True)
+
+    # Resource information
+    resource_type = Column(String(100), nullable=True)
+    # Resource types: user, workspace, report, export, alert, dashboard, etc.
+    resource_id = Column(String, nullable=True)
+
+    # Action performed
+    action = Column(String(100), nullable=False)
+    # Actions: create, read, update, delete, export, login, logout, etc.
+
+    # Event details (sanitized)
+    details = Column(JSON, nullable=True)
+
+    # Request metadata
+    ip_address = Column(String(45), nullable=True)  # Support IPv6
+    user_agent = Column(String(500), nullable=True)
+    request_id = Column(String, nullable=True)
+
+    # Status
+    status = Column(String(20), default='success')
+    # Status: success, failure, error
+
+    # Error information (if applicable)
+    error_message = Column(String(500), nullable=True)
+
+    # Timestamp
+    timestamp = Column(DateTime, default=func.now(), nullable=False, index=True)
+
+    # Severity level
+    severity = Column(String(20), default='info')
+    # Severity: debug, info, warning, error, critical
