@@ -27,8 +27,8 @@ from prophet import Prophet
 from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.tsa.statespace.sarimax import SARIMAX
 
-from backend.src.core.config import settings
-from backend.src.services.cache.cache_service import CacheService
+from ...core.config import settings
+from ..cache.cache_service import CacheService
 
 logger = logging.getLogger(__name__)
 

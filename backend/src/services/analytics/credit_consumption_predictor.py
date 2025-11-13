@@ -9,7 +9,7 @@ Date: 2025-11-12
 
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any
 import json
 
 import pandas as pd
@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from prophet import Prophet
 from statsmodels.tsa.arima.model import ARIMA
-from sklearn.metrics import mean_absolute_percentage_error, mean_squared_error
+from sklearn.metrics import mean_absolute_percentage_error
 
 logger = logging.getLogger(__name__)
 

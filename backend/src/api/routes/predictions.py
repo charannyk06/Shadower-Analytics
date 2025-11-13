@@ -10,6 +10,7 @@ Date: 2025-11-12
 
 from typing import Dict, Any, Optional, List
 from fastapi import APIRouter, Depends, Query, HTTPException, Body
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 import asyncio
@@ -33,6 +34,15 @@ predictions_limiter = RateLimiter(
     requests_per_minute=5,
     requests_per_hour=50,
 )
+
+
+# Pydantic models
+class GeneratePredictionRequest(BaseModel):
+    """Request model for generating predictions."""
+    prediction_type: str = Field(..., description="Type of prediction to generate")
+    target_metric: str = Field(..., description="Target metric")
+    horizon: int = Field(..., description="Prediction horizon")
+    parameters: Dict[str, Any] = Field(default_factory=dict, description="Additional parameters")
 
 
 @router.get("/consumption/{workspace_id}", dependencies=[Depends(predictions_limiter)])
@@ -357,10 +367,7 @@ async def predict_error_rates(
 @router.post("/generate/{workspace_id}", dependencies=[Depends(predictions_limiter)])
 async def generate_prediction(
     workspace_id: str,
-    prediction_type: str = Body(..., description="Type of prediction to generate"),
-    target_metric: str = Body(..., description="Target metric"),
-    horizon: int = Body(..., description="Prediction horizon"),
-    parameters: Dict[str, Any] = Body(default={}, description="Additional parameters"),
+    request: GeneratePredictionRequest,
     current_user: Dict[str, Any] = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -390,40 +397,40 @@ async def generate_prediction(
         # Route to appropriate prediction service
         service = PredictiveAnalytics(db)
 
-        if prediction_type == "consumption":
+        if request.prediction_type == "consumption":
             result = await service.predict_credit_consumption(
                 workspace_id,
-                days_ahead=horizon,
-                granularity=parameters.get('granularity', 'daily')
+                days_ahead=request.horizon,
+                granularity=request.parameters.get('granularity', 'daily')
             )
-        elif prediction_type == "churn":
+        elif request.prediction_type == "churn":
             result = await service.predict_user_churn(
                 workspace_id,
-                users=parameters.get('users'),
-                risk_threshold=parameters.get('risk_threshold', 0.7)
+                users=request.parameters.get('users'),
+                risk_threshold=request.parameters.get('risk_threshold', 0.7)
             )
-        elif prediction_type == "growth":
+        elif request.prediction_type == "growth":
             result = await service.predict_growth_metrics(
                 workspace_id,
-                metric=target_metric,
-                horizon_days=horizon
+                metric=request.target_metric,
+                horizon_days=request.horizon
             )
-        elif prediction_type == "peak_usage":
+        elif request.prediction_type == "peak_usage":
             result = await service.predict_peak_usage(
                 workspace_id,
-                granularity=parameters.get('granularity', 'hourly'),
-                days_ahead=horizon
+                granularity=request.parameters.get('granularity', 'hourly'),
+                days_ahead=request.horizon
             )
-        elif prediction_type == "error_rate":
+        elif request.prediction_type == "error_rate":
             result = await service.predict_error_rates(
                 workspace_id,
-                agent_id=parameters.get('agent_id'),
-                days_ahead=horizon
+                agent_id=request.parameters.get('agent_id'),
+                days_ahead=request.horizon
             )
         else:
             raise HTTPException(
                 status_code=400,
-                detail=f"Unknown prediction type: {prediction_type}"
+                detail=f"Unknown prediction type: {request.prediction_type}"
             )
 
         return result

@@ -8,16 +8,14 @@ Date: 2025-11-12
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Dict, List, Any, Optional
 import json
 
 import pandas as pd
-import numpy as np
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from prophet import Prophet
-from statsmodels.tsa.arima.model import ARIMA
 
 logger = logging.getLogger(__name__)
 
