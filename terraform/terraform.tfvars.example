@@ -1,0 +1,26 @@
+# AWS Configuration
+aws_region = "us-west-2"
+environment = "production"
+
+# VPC Configuration
+vpc_cidr = "10.0.0.0/16"
+availability_zones = ["us-west-2a", "us-west-2b", "us-west-2c"]
+
+# Database Configuration
+db_instance_class = "db.t3.medium"
+db_allocated_storage = 100
+db_max_allocated_storage = 500
+db_iops = 3000
+db_name = "analytics"
+db_username = "analytics_admin"
+db_password = "CHANGE_ME_STRONG_PASSWORD"
+backup_retention_period = 30
+
+# Redis Configuration
+redis_node_type = "cache.t3.medium"
+redis_num_cache_nodes = 2
+redis_auth_token = "CHANGE_ME_STRONG_AUTH_TOKEN"
+redis_snapshot_retention_limit = 7
+
+# S3 Configuration
+export_retention_days = 90

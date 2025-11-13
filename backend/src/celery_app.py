@@ -12,6 +12,7 @@ celery_app = Celery(
     include=[
         'src.tasks.aggregation',
         'src.tasks.maintenance',
+        'src.tasks.exports',
         'src.tasks.alerts',
     ]
 )
@@ -84,6 +85,12 @@ celery_app.conf.beat_schedule = {
         'schedule': crontab(minute='*/5'),  # Every 5 minutes
         'options': {'expires': 300}  # Task expires after 5 minutes
     },
+    # Export Tasks
+    'cleanup-old-exports': {
+        'task': 'tasks.exports.cleanup_old_exports',
+        'schedule': crontab(hour=4, minute=0),  # Run at 4:00 AM daily
+        'options': {'expires': 7200}  # Task expires after 2 hours
+    },
     # Alert Engine Tasks
     'evaluate-alert-rules': {
         'task': 'tasks.alerts.evaluate_alert_rules',
@@ -97,7 +104,7 @@ celery_app.conf.beat_schedule = {
     },
     'cleanup-old-alerts': {
         'task': 'tasks.alerts.cleanup_old_alerts',
-        'schedule': crontab(hour=4, minute=0),  # Run at 4:00 AM daily
+        'schedule': crontab(hour=4, minute=30),  # Run at 4:30 AM daily (30 min after export cleanup)
         'options': {'expires': 7200}  # Task expires after 2 hours
     }
 }
@@ -106,5 +113,6 @@ celery_app.conf.beat_schedule = {
 celery_app.conf.task_routes = {
     'tasks.aggregation.*': {'queue': 'aggregation'},
     'tasks.maintenance.*': {'queue': 'maintenance'},
+    'tasks.exports.*': {'queue': 'exports'},
     'tasks.alerts.*': {'queue': 'alerts'},
 }
