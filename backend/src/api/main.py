@@ -1,11 +1,12 @@
-"""Main FastAPI application."""
+"""Main FastAPI application with API Gateway."""
 
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
 import logging
 
 from ..core.config import settings
 from ..core.database import engine, Base
+from .gateway import APIGateway
 from .routes import (
     executive_router,
     agents_router,
@@ -26,10 +27,11 @@ from .routes import (
     moving_averages_router,
     anomalies_router,
     analytics_router,
+    predictions_router,
+    notifications_router,
 )
-from .middleware.cors import setup_cors
 from .middleware.logging import RequestLoggingMiddleware
-from .middleware.rate_limit import RateLimitMiddleware
+from .versioning import versioned_api, get_api_version_info
 
 # Configure logging
 logging.basicConfig(
@@ -38,21 +40,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Create FastAPI app
-app = FastAPI(
-    title="Shadow Analytics API",
-    description="Analytics service for Shadow agent platform",
-    version="0.1.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
-)
+# Create API Gateway
+gateway = APIGateway()
+app = gateway.app
 
-# Setup CORS
-setup_cors(app)
-
-# Add middleware
+# Add request logging middleware (after gateway middleware)
 app.add_middleware(RequestLoggingMiddleware)
-app.add_middleware(RateLimitMiddleware)
 
 # Include routers
 app.include_router(health_router)
@@ -74,6 +67,151 @@ app.include_router(materialized_views_router)
 app.include_router(moving_averages_router)
 app.include_router(anomalies_router)
 app.include_router(analytics_router)
+app.include_router(predictions_router)
+app.include_router(notifications_router)
+
+
+def custom_openapi():
+    """Custom OpenAPI schema with enhanced documentation."""
+    if app.openapi_schema:
+        return app.openapi_schema
+
+    openapi_schema = get_openapi(
+        title="Shadower Analytics API",
+        version="1.0.0",
+        description="""
+## Overview
+Analytics API for Shadower platform providing:
+- **Real-time metrics**: Live dashboards and monitoring
+- **Historical analytics**: Trends and comparisons over time
+- **Predictive insights**: Anomaly detection and forecasting
+- **Custom reports**: Scheduled and on-demand reporting
+- **Data exports**: Multiple format support (CSV, JSON, PDF, Excel)
+
+## Authentication
+All endpoints require JWT authentication.
+Include your token in the Authorization header:
+
+```
+Authorization: Bearer <your-jwt-token>
+```
+
+## Rate Limiting
+API calls are rate-limited per workspace to ensure fair usage:
+
+| Endpoint Type | Limit | Window |
+|--------------|-------|--------|
+| Default | 1000 requests | 1 hour |
+| Dashboard | 200 requests | 1 minute |
+| Analytics | 100 requests | 1 minute |
+| Reports | 10 requests | 1 minute |
+| Exports | 5 requests | 1 hour |
+| Admin | 50 requests | 1 minute |
+
+**Response Headers:**
+- `X-RateLimit-Limit`: Maximum requests allowed
+- `X-RateLimit-Remaining`: Remaining requests in current window
+- `X-RateLimit-Reset`: Unix timestamp when limit resets
+
+## Response Caching
+GET requests are cached to improve performance:
+- Dashboard endpoints: 1 minute TTL
+- Analytics endpoints: 5 minutes TTL
+- Reports endpoints: 10 minutes TTL
+- Metrics endpoints: 2 minutes TTL
+
+**Cache Headers:**
+- `X-Cache`: `HIT` (served from cache) or `MISS` (fresh data)
+
+## Error Handling
+All errors follow a consistent format:
+```json
+{
+  "error": "Error message",
+  "code": "ERROR_CODE",
+  "timestamp": "2024-01-01T00:00:00Z",
+  "path": "/api/v1/endpoint"
+}
+```
+
+**Common Error Codes:**
+- `UNAUTHORIZED`: Missing or invalid authentication
+- `FORBIDDEN`: Insufficient permissions
+- `RATE_LIMIT_EXCEEDED`: Too many requests
+- `VALIDATION_ERROR`: Invalid request parameters
+- `NOT_FOUND`: Resource not found
+- `INTERNAL_ERROR`: Server error
+
+## Versioning
+API is versioned with prefix `/api/v1/`
+Breaking changes will increment the version number.
+Current version: **v1** (stable)
+
+## Support
+For issues or questions, contact: support@shadower.ai
+        """,
+        routes=app.routes,
+    )
+
+    # Add security scheme
+    openapi_schema["components"]["securitySchemes"] = {
+        "Bearer": {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "JWT",
+            "description": "Enter your JWT token"
+        }
+    }
+
+    # Add global security requirement
+    openapi_schema["security"] = [{"Bearer": []}]
+
+    # Add custom tags with descriptions
+    openapi_schema["tags"] = [
+        {
+            "name": "health",
+            "description": "Health check and monitoring endpoints"
+        },
+        {
+            "name": "dashboard",
+            "description": "Dashboard metrics and visualizations"
+        },
+        {
+            "name": "analytics",
+            "description": "Advanced analytics and trends"
+        },
+        {
+            "name": "reports",
+            "description": "Report generation and management"
+        },
+        {
+            "name": "exports",
+            "description": "Data export functionality"
+        },
+        {
+            "name": "admin",
+            "description": "Administrative endpoints (requires admin role)"
+        }
+    ]
+
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+
+# Set custom OpenAPI schema
+app.openapi = custom_openapi
+
+
+@app.get("/")
+async def root():
+    """Root endpoint with API information."""
+    return {
+        "service": "Shadower Analytics API",
+        "version": "1.0.0",
+        "status": "running",
+        "docs": "/docs",
+        "api_versions": get_api_version_info()
+    }
 
 
 @app.on_event("startup")
@@ -114,14 +252,3 @@ async def shutdown_event():
 
     await engine.dispose()
     logger.info("Shadow Analytics API shut down successfully")
-
-
-@app.get("/")
-async def root():
-    """Root endpoint."""
-    return {
-        "service": "Shadow Analytics API",
-        "version": "0.1.0",
-        "status": "running",
-        "docs": "/docs",
-    }
