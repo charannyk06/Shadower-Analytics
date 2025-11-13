@@ -24,6 +24,8 @@ from .routes import (
     funnels_router,
     materialized_views_router,
     moving_averages_router,
+    anomalies_router,
+    predictions_router,
     notifications_router,
 )
 from .middleware.cors import setup_cors
@@ -71,6 +73,8 @@ app.include_router(leaderboards_router)
 app.include_router(funnels_router)
 app.include_router(materialized_views_router)
 app.include_router(moving_averages_router)
+app.include_router(anomalies_router)
+app.include_router(predictions_router)
 app.include_router(notifications_router)
 
 
