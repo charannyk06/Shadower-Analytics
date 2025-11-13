@@ -70,6 +70,27 @@ class Settings(BaseSettings):
     ENABLE_REALTIME: bool = True
     ENABLE_ALERTS: bool = True
     ENABLE_EXPORTS: bool = True
+    ENABLE_NOTIFICATIONS: bool = True
+
+    # Notification System
+    SMTP_HOST: Optional[str] = None
+    SMTP_PORT: int = 587
+    SMTP_USER: Optional[str] = None
+    SMTP_PASSWORD: Optional[str] = None
+    SMTP_FROM: Optional[str] = None
+    SMTP_USE_TLS: bool = True
+
+    # Notification Channels
+    SLACK_WEBHOOK_URL: Optional[str] = None
+    TEAMS_WEBHOOK_URL: Optional[str] = None
+    DISCORD_WEBHOOK_URL: Optional[str] = None
+
+    # Notification Defaults
+    NOTIFICATION_MAX_RETRIES: int = 3
+    NOTIFICATION_RETRY_DELAY: int = 300  # 5 minutes
+    DIGEST_ENABLED: bool = True
+    DIGEST_DAILY_TIME: str = "08:00"  # UTC time for daily digests
+    DIGEST_WEEKLY_DAY: int = 1  # Monday
 
     # Rate Limiting
     RATE_LIMIT_PER_MINUTE: int = 60
