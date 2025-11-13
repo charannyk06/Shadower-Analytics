@@ -34,6 +34,7 @@ from .routes import (
     predictions_router,
     notifications_router,
     admin_router,
+    agent_executions_router,
 )
 from .middleware.logging import RequestLoggingMiddleware
 from .middleware.security import SecurityHeadersMiddleware
@@ -61,6 +62,7 @@ app.include_router(health_router)
 app.include_router(dashboard_router)  # Unified dashboard API
 app.include_router(executive_router)
 app.include_router(agents_router)
+app.include_router(agent_executions_router)  # Agent execution analytics
 app.include_router(users_router)
 app.include_router(workspaces_router)
 app.include_router(metrics_router)

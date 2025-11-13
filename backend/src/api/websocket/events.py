@@ -279,6 +279,194 @@ class EventBroadcaster:
             f"Broadcasted agent_update for agent {agent_id} to workspace {workspace_id}"
         )
 
+    @staticmethod
+    async def broadcast_execution_progress(
+        workspace_id: str,
+        execution_id: str,
+        agent_id: str,
+        current_step: str,
+        steps_completed: int,
+        steps_total: int,
+        progress_percent: float,
+    ):
+        """
+        Broadcast execution progress update.
+
+        Args:
+            workspace_id: Target workspace
+            execution_id: Execution ID
+            agent_id: Agent ID
+            current_step: Current step name
+            steps_completed: Number of steps completed
+            steps_total: Total number of steps
+            progress_percent: Progress percentage (0-100)
+        """
+        message = {
+            "type": "execution_progress",
+            "event": "execution.progress",
+            "data": {
+                "execution_id": execution_id,
+                "agent_id": agent_id,
+                "current_step": current_step,
+                "steps_completed": steps_completed,
+                "steps_total": steps_total,
+                "progress_percent": progress_percent,
+            },
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
+        await manager.broadcast_to_workspace(workspace_id, message)
+        logger.debug(
+            f"Broadcasted execution_progress for execution {execution_id} to workspace {workspace_id}"
+        )
+
+    @staticmethod
+    async def broadcast_execution_failed(
+        workspace_id: str,
+        execution_id: str,
+        agent_id: str,
+        error_type: str,
+        error_message: str,
+        duration_ms: int,
+    ):
+        """
+        Broadcast execution failure.
+
+        Args:
+            workspace_id: Target workspace
+            execution_id: Execution ID
+            agent_id: Agent ID
+            error_type: Error type
+            error_message: Error message
+            duration_ms: Duration in milliseconds before failure
+        """
+        message = {
+            "type": "execution_failed",
+            "event": "execution.failed",
+            "data": {
+                "execution_id": execution_id,
+                "agent_id": agent_id,
+                "error_type": error_type,
+                "error_message": error_message,
+                "duration_ms": duration_ms,
+                "failed_at": datetime.utcnow().isoformat(),
+            },
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
+        await manager.broadcast_to_workspace(workspace_id, message)
+        logger.info(
+            f"Broadcasted execution_failed for execution {execution_id} to workspace {workspace_id}"
+        )
+
+    @staticmethod
+    async def broadcast_execution_analytics_update(
+        workspace_id: str,
+        agent_id: str,
+        analytics_summary: Dict[str, Any],
+    ):
+        """
+        Broadcast execution analytics update.
+
+        Args:
+            workspace_id: Target workspace
+            agent_id: Agent ID
+            analytics_summary: Analytics summary data
+        """
+        message = {
+            "type": "execution_analytics_update",
+            "event": "execution.analytics_update",
+            "data": {
+                "agent_id": agent_id,
+                **analytics_summary,
+            },
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
+        await manager.broadcast_to_workspace(workspace_id, message)
+        logger.debug(
+            f"Broadcasted execution_analytics_update for agent {agent_id} to workspace {workspace_id}"
+        )
+
+    @staticmethod
+    async def broadcast_performance_alert(
+        workspace_id: str,
+        agent_id: str,
+        alert_type: str,
+        metric_name: str,
+        current_value: float,
+        threshold: float,
+        severity: str,
+    ):
+        """
+        Broadcast performance alert.
+
+        Args:
+            workspace_id: Target workspace
+            agent_id: Agent ID
+            alert_type: Alert type (e.g., 'duration_anomaly', 'high_failure_rate')
+            metric_name: Metric name
+            current_value: Current metric value
+            threshold: Threshold value
+            severity: Severity level (critical, high, medium, low)
+        """
+        message = {
+            "type": "performance_alert",
+            "event": "performance.alert",
+            "data": {
+                "agent_id": agent_id,
+                "alert_type": alert_type,
+                "metric_name": metric_name,
+                "current_value": current_value,
+                "threshold": threshold,
+                "severity": severity,
+            },
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
+        await manager.broadcast_to_workspace(workspace_id, message)
+        logger.warning(
+            f"Broadcasted performance_alert ({alert_type}) for agent {agent_id} to workspace {workspace_id}"
+        )
+
+    @staticmethod
+    async def broadcast_bottleneck_detected(
+        workspace_id: str,
+        agent_id: str,
+        step_name: str,
+        avg_duration_ms: int,
+        impact_score: float,
+        priority: str,
+    ):
+        """
+        Broadcast bottleneck detection.
+
+        Args:
+            workspace_id: Target workspace
+            agent_id: Agent ID
+            step_name: Step name
+            avg_duration_ms: Average duration in milliseconds
+            impact_score: Impact score (0-100)
+            priority: Priority level (critical, high, medium, low)
+        """
+        message = {
+            "type": "bottleneck_detected",
+            "event": "performance.bottleneck_detected",
+            "data": {
+                "agent_id": agent_id,
+                "step_name": step_name,
+                "avg_duration_ms": avg_duration_ms,
+                "impact_score": impact_score,
+                "priority": priority,
+            },
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
+        await manager.broadcast_to_workspace(workspace_id, message)
+        logger.info(
+            f"Broadcasted bottleneck_detected ({step_name}) for agent {agent_id} to workspace {workspace_id}"
+        )
+
 
 # Global instance
 broadcaster = EventBroadcaster()
