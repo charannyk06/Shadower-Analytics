@@ -18,6 +18,7 @@ from .funnels import router as funnels_router
 from .materialized_views import router as materialized_views_router
 from .moving_averages import router as moving_averages_router
 from .anomalies import router as anomalies_router
+from .admin import router as admin_router
 
 __all__ = [
     "executive_router",
@@ -38,4 +39,5 @@ __all__ = [
     "materialized_views_router",
     "moving_averages_router",
     "anomalies_router",
+    "admin_router",
 ]
