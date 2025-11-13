@@ -47,6 +47,13 @@ This guide covers the deployment process for the Shadower Analytics service acro
    # Edit .env with your local configuration
    ```
 
+   **⚠️ SECURITY WARNING:**
+   - Never commit `.env` files to version control
+   - Change all default passwords and secrets before deploying
+   - Generate strong JWT secrets: `openssl rand -hex 32`
+   - Update `FLOWER_BASIC_AUTH` with secure credentials
+   - Keep `terraform.tfvars` and `k8s/secrets.yaml` out of git
+
 3. **Start services with Docker Compose**
    ```bash
    docker-compose up -d
