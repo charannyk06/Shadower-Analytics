@@ -1,0 +1,266 @@
+# Prometheus Alert Rules for Analytics Service
+# This file contains alerting rules for monitoring the analytics service
+
+groups:
+  - name: analytics_alerts
+    interval: 30s
+    rules:
+      # High error rate alert
+      - alert: HighErrorRate
+        expr: |
+          (
+            sum(rate(http_requests_total{status=~"5.."}[5m]))
+            /
+            sum(rate(http_requests_total[5m]))
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          service: analytics
+          component: api
+        annotations:
+          summary: "High error rate detected in analytics service"
+          description: "Error rate is {{ $value | humanizePercentage }} for {{ $labels.instance }}. More than 5% of requests are failing."
+          runbook_url: "https://docs.shadower.ai/runbooks/high-error-rate"
+
+      # Database connection pool exhausted
+      - alert: DatabaseConnectionPoolExhausted
+        expr: database_connections{state="idle"} < 5
+        for: 2m
+        labels:
+          severity: warning
+          service: analytics
+          component: database
+        annotations:
+          summary: "Database connection pool nearly exhausted"
+          description: "Only {{ $value }} idle database connections remaining on {{ $labels.instance }}. Consider increasing pool size."
+          runbook_url: "https://docs.shadower.ai/runbooks/db-pool-exhausted"
+
+      # Database connection failures
+      - alert: DatabaseConnectionFailures
+        expr: rate(database_errors_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: critical
+          service: analytics
+          component: database
+        annotations:
+          summary: "High rate of database connection failures"
+          description: "Database error rate is {{ $value }} errors/sec on {{ $labels.instance }}"
+          runbook_url: "https://docs.shadower.ai/runbooks/db-errors"
+
+      # High memory usage
+      - alert: HighMemoryUsage
+        expr: |
+          (
+            container_memory_usage_bytes{container="analytics-backend"}
+            /
+            container_spec_memory_limit_bytes{container="analytics-backend"}
+          ) > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          service: analytics
+          component: system
+        annotations:
+          summary: "High memory usage detected"
+          description: "Memory usage is {{ $value | humanizePercentage }} on {{ $labels.instance }}"
+          runbook_url: "https://docs.shadower.ai/runbooks/high-memory"
+
+      # High CPU usage
+      - alert: HighCPUUsage
+        expr: |
+          rate(container_cpu_usage_seconds_total{container="analytics-backend"}[5m]) > 0.8
+        for: 10m
+        labels:
+          severity: warning
+          service: analytics
+          component: system
+        annotations:
+          summary: "High CPU usage detected"
+          description: "CPU usage is {{ $value | humanizePercentage }} on {{ $labels.instance }}"
+          runbook_url: "https://docs.shadower.ai/runbooks/high-cpu"
+
+      # API latency - P95
+      - alert: HighAPILatencyP95
+        expr: |
+          histogram_quantile(0.95,
+            rate(http_request_duration_seconds_bucket[5m])
+          ) > 1
+        for: 5m
+        labels:
+          severity: warning
+          service: analytics
+          component: api
+        annotations:
+          summary: "High API latency detected (P95)"
+          description: "95th percentile latency is {{ $value }}s for {{ $labels.endpoint }} on {{ $labels.instance }}"
+          runbook_url: "https://docs.shadower.ai/runbooks/high-latency"
+
+      # API latency - P99
+      - alert: HighAPILatencyP99
+        expr: |
+          histogram_quantile(0.99,
+            rate(http_request_duration_seconds_bucket[5m])
+          ) > 3
+        for: 5m
+        labels:
+          severity: critical
+          service: analytics
+          component: api
+        annotations:
+          summary: "Very high API latency detected (P99)"
+          description: "99th percentile latency is {{ $value }}s for {{ $labels.endpoint }} on {{ $labels.instance }}"
+          runbook_url: "https://docs.shadower.ai/runbooks/high-latency"
+
+      # Credit consumption spike
+      - alert: CreditConsumptionSpike
+        expr: |
+          rate(analytics_credits_consumed_total[1h]) > 10000
+        for: 5m
+        labels:
+          severity: info
+          service: analytics
+          component: business
+        annotations:
+          summary: "Unusual credit consumption detected"
+          description: "Credit consumption rate is {{ $value }} credits/hour for workspace {{ $labels.workspace_id }}"
+          runbook_url: "https://docs.shadower.ai/runbooks/credit-spike"
+
+      # Low cache hit rate
+      - alert: LowCacheHitRate
+        expr: |
+          (
+            sum(rate(cache_operations_total{operation="get",result="hit"}[5m]))
+            /
+            sum(rate(cache_operations_total{operation="get"}[5m]))
+          ) < 0.7
+        for: 10m
+        labels:
+          severity: warning
+          service: analytics
+          component: cache
+        annotations:
+          summary: "Low cache hit rate detected"
+          description: "Cache hit rate is {{ $value | humanizePercentage }} on {{ $labels.instance }}. Expected > 70%."
+          runbook_url: "https://docs.shadower.ai/runbooks/low-cache-hit"
+
+      # Redis connection failures
+      - alert: RedisConnectionFailures
+        expr: redis_connected_clients < 1
+        for: 2m
+        labels:
+          severity: warning
+          service: analytics
+          component: cache
+        annotations:
+          summary: "Redis connection issues"
+          description: "Redis has {{ $value }} connected clients on {{ $labels.instance }}"
+          runbook_url: "https://docs.shadower.ai/runbooks/redis-connection"
+
+      # Background job failures
+      - alert: BackgroundJobFailures
+        expr: |
+          (
+            sum(rate(background_jobs_total{status="failure"}[5m]))
+            /
+            sum(rate(background_jobs_total[5m]))
+          ) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          service: analytics
+          component: jobs
+        annotations:
+          summary: "High background job failure rate"
+          description: "Job failure rate is {{ $value | humanizePercentage }} for {{ $labels.job_type }}"
+          runbook_url: "https://docs.shadower.ai/runbooks/job-failures"
+
+      # Service down
+      - alert: ServiceDown
+        expr: up{job="analytics-backend"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: analytics
+          component: system
+        annotations:
+          summary: "Analytics service is down"
+          description: "The analytics service at {{ $labels.instance }} has been down for more than 1 minute"
+          runbook_url: "https://docs.shadower.ai/runbooks/service-down"
+
+      # Too many requests
+      - alert: HighRequestRate
+        expr: |
+          sum(rate(http_requests_total[5m])) > 1000
+        for: 5m
+        labels:
+          severity: info
+          service: analytics
+          component: api
+        annotations:
+          summary: "High request rate detected"
+          description: "Request rate is {{ $value }} requests/sec on {{ $labels.instance }}"
+          runbook_url: "https://docs.shadower.ai/runbooks/high-traffic"
+
+      # Export failures
+      - alert: ExportFailures
+        expr: |
+          rate(exports_total{status="failure"}[5m]) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          service: analytics
+          component: exports
+        annotations:
+          summary: "High export failure rate"
+          description: "Export failure rate is {{ $value }} failures/sec for {{ $labels.format }} format"
+          runbook_url: "https://docs.shadower.ai/runbooks/export-failures"
+
+      # WebSocket connection issues
+      - alert: WebSocketConnectionDrop
+        expr: |
+          rate(websocket_connections_active[5m]) < -10
+        for: 5m
+        labels:
+          severity: warning
+          service: analytics
+          component: websocket
+        annotations:
+          summary: "Rapid WebSocket disconnections"
+          description: "WebSocket connections dropping at {{ $value }} connections/sec"
+          runbook_url: "https://docs.shadower.ai/runbooks/websocket-drops"
+
+  # Database performance alerts
+  - name: database_performance
+    interval: 30s
+    rules:
+      - alert: SlowDatabaseQueries
+        expr: |
+          histogram_quantile(0.95,
+            rate(database_query_duration_seconds_bucket[5m])
+          ) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          service: analytics
+          component: database
+        annotations:
+          summary: "Slow database queries detected"
+          description: "95th percentile query time is {{ $value }}s for {{ $labels.operation }}"
+          runbook_url: "https://docs.shadower.ai/runbooks/slow-queries"
+
+      - alert: DatabaseQueryTimeout
+        expr: |
+          histogram_quantile(0.99,
+            rate(database_query_duration_seconds_bucket[5m])
+          ) > 2.5
+        for: 5m
+        labels:
+          severity: critical
+          service: analytics
+          component: database
+        annotations:
+          summary: "Database queries timing out"
+          description: "99th percentile query time is {{ $value }}s for {{ $labels.operation }}, approaching timeout threshold"
+          runbook_url: "https://docs.shadower.ai/runbooks/query-timeout"
