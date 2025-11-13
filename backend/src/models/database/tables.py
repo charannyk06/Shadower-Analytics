@@ -632,3 +632,540 @@ class BaselineModel(Base):
     training_data_end = Column(Date, nullable=False)
     accuracy_metrics = Column(JSON)
     last_updated = Column(DateTime, default=func.now())
+
+
+# =====================================================================
+# Authentication and Authorization Models
+# =====================================================================
+
+
+class APIKey(Base):
+    """API keys for programmatic access to analytics."""
+
+    __tablename__ = "api_keys"
+    __table_args__ = (
+        Index('idx_api_keys_workspace', 'workspace_id'),
+        Index('idx_api_keys_user', 'user_id'),
+        Index('idx_api_keys_active', 'is_active'),
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    key_hash = Column(String(255), unique=True, nullable=False, index=True)
+    name = Column(String(100), nullable=False)
+    user_id = Column(String, index=True, nullable=False)
+    workspace_id = Column(String, index=True, nullable=False)
+
+    # Permissions and access control
+    permissions = Column(JSON, default=list, nullable=False)
+    rate_limit = Column(Integer, default=1000)  # requests per hour
+
+    # Status and metadata
+    is_active = Column(Boolean, default=True, nullable=False, index=True)
+    last_used = Column(DateTime, index=True)
+    usage_count = Column(Integer, default=0)
+
+    # Expiration
+    expires_at = Column(DateTime, index=True)
+
+    # Audit fields
+    created_by = Column(String, nullable=False)
+    created_at = Column(DateTime, default=func.now(), index=True)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+    revoked_at = Column(DateTime)
+    revoked_by = Column(String)
+
+
+class UserSession(Base):
+    """User sessions for tracking active login sessions."""
+
+    __tablename__ = "user_sessions"
+    __table_args__ = (
+        Index('idx_user_sessions_user', 'user_id'),
+        Index('idx_user_sessions_active', 'is_active'),
+        Index('idx_user_sessions_user_active', 'user_id', 'is_active'),
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    user_id = Column(String, index=True, nullable=False)
+
+    # Session token (hashed)
+    session_token_hash = Column(String(255), unique=True, nullable=False, index=True)
+
+    # Device and location information
+    device_info = Column(String(255))
+    ip_address = Column(String(45))  # IPv6 compatible
+    user_agent = Column(String(500))
+
+    # Geolocation
+    country_code = Column(String(2))
+    city = Column(String(100))
+    location = Column(String(255))  # Combined location string
+
+    # Session status
+    is_active = Column(Boolean, default=True, nullable=False, index=True)
+
+    # Timestamps
+    created_at = Column(DateTime, default=func.now(), index=True)
+    last_active = Column(DateTime, default=func.now(), index=True)
+    expires_at = Column(DateTime, nullable=False, index=True)
+    terminated_at = Column(DateTime)
+
+
+class RefreshToken(Base):
+    """Refresh tokens for token renewal without re-authentication."""
+
+    __tablename__ = "refresh_tokens"
+    __table_args__ = (
+        Index('idx_refresh_tokens_user', 'user_id'),
+        Index('idx_refresh_tokens_active', 'is_active'),
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    user_id = Column(String, index=True, nullable=False)
+
+    # Token (hashed)
+    token_hash = Column(String(255), unique=True, nullable=False, index=True)
+
+    # Associated access token (for revocation)
+    access_token_jti = Column(String(255), index=True)
+
+    # Status
+    is_active = Column(Boolean, default=True, nullable=False, index=True)
+    is_revoked = Column(Boolean, default=False, nullable=False)
+
+    # Device tracking
+    device_info = Column(String(255))
+    ip_address = Column(String(45))
+
+    # Timestamps
+    created_at = Column(DateTime, default=func.now(), index=True)
+    expires_at = Column(DateTime, nullable=False, index=True)
+    revoked_at = Column(DateTime)
+    last_used = Column(DateTime)
+
+
+# =====================================================================
+# Notification System Models
+# =====================================================================
+
+
+class NotificationPreference(Base):
+    """User notification preferences per workspace and type."""
+
+    __tablename__ = "notification_preferences"
+    __table_args__ = (
+        Index('idx_notification_prefs_user', 'user_id', 'workspace_id'),
+        Index('idx_notification_prefs_type', 'notification_type', 'is_enabled'),
+        Index('idx_notification_prefs_enabled', 'is_enabled', 'channel'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    user_id = Column(String, index=True, nullable=False)
+    workspace_id = Column(String, index=True, nullable=False)
+    notification_type = Column(String(100), nullable=False)
+    channel = Column(String(50), nullable=False)
+    is_enabled = Column(Boolean, default=True)
+    frequency = Column(String(20), default='immediate')  # immediate, hourly, daily, weekly
+    schedule_time = Column(DateTime)
+    schedule_timezone = Column(String(50), default='UTC')
+    filter_rules = Column(JSON, default={})
+
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+class NotificationTemplate(Base):
+    """Notification templates for different channels."""
+
+    __tablename__ = "notification_templates"
+    __table_args__ = (
+        Index('idx_notification_templates_type', 'notification_type', 'channel', 'is_active'),
+        Index('idx_notification_templates_active', 'is_active'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    template_name = Column(String(255), unique=True, nullable=False)
+    notification_type = Column(String(100), nullable=False)
+    channel = Column(String(50), nullable=False)
+    subject_template = Column(String)
+    body_template = Column(String, nullable=False)
+    variables = Column(JSON, nullable=False, default=[])
+    preview_data = Column(JSON)
+    is_active = Column(Boolean, default=True)
+    version = Column(Integer, default=1)
+
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+class NotificationQueue(Base):
+    """Queue for pending and scheduled notifications."""
+
+    __tablename__ = "notification_queue"
+    __table_args__ = (
+        Index('idx_notification_queue_status', 'status', 'scheduled_for'),
+        Index('idx_notification_queue_recipient', 'recipient_id', 'status'),
+        Index('idx_notification_queue_scheduled', 'scheduled_for'),
+        Index('idx_notification_queue_priority', 'priority', 'scheduled_for'),
+        Index('idx_notification_queue_created', 'created_at'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    notification_type = Column(String(100), nullable=False)
+    recipient_id = Column(String, index=True, nullable=False)
+    recipient_email = Column(String(255))
+    channel = Column(String(50), nullable=False)
+    priority = Column(String(20), default='normal')  # low, normal, high, urgent
+    payload = Column(JSON, nullable=False, default={})
+    status = Column(String(20), default='pending')  # pending, processing, delivered, failed, cancelled
+    scheduled_for = Column(DateTime, default=func.now())
+    attempts = Column(Integer, default=0)
+    max_attempts = Column(Integer, default=3)
+    last_attempt_at = Column(DateTime)
+    delivered_at = Column(DateTime)
+    failed_at = Column(DateTime)
+    error_message = Column(String)
+
+    created_at = Column(DateTime, default=func.now())
+
+
+class NotificationLog(Base):
+    """Historical log of all sent notifications."""
+
+    __tablename__ = "notification_log"
+    __table_args__ = (
+        Index('idx_notification_log_user', 'user_id', 'sent_at'),
+        Index('idx_notification_log_workspace', 'workspace_id', 'notification_type', 'sent_at'),
+        Index('idx_notification_log_type', 'notification_type', 'sent_at'),
+        Index('idx_notification_log_channel', 'channel', 'sent_at'),
+        Index('idx_notification_log_status', 'delivery_status', 'sent_at'),
+        Index('idx_notification_log_unread', 'user_id', 'read_at'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    notification_id = Column(String, index=True)  # Reference to notification_queue
+    user_id = Column(String, index=True, nullable=False)
+    workspace_id = Column(String, index=True, nullable=False)
+    notification_type = Column(String(100), nullable=False)
+    channel = Column(String(50), nullable=False)
+    subject = Column(String)
+    preview = Column(String)
+    full_content = Column(String)
+    sent_at = Column(DateTime, nullable=False, default=func.now(), index=True)
+    delivered_at = Column(DateTime)
+    read_at = Column(DateTime)
+    clicked_at = Column(DateTime)
+    delivery_status = Column(String(20), nullable=False)  # sent, delivered, bounced, failed, read, clicked
+    tracking_data = Column(JSON, default={})
+
+    created_at = Column(DateTime, default=func.now())
+
+
+class DigestQueue(Base):
+    """Queue for periodic digest notifications."""
+
+    __tablename__ = "digest_queue"
+    __table_args__ = (
+        Index('idx_digest_queue_pending', 'is_sent', 'period_end'),
+        Index('idx_digest_queue_user', 'user_id', 'workspace_id', 'digest_type'),
+        Index('idx_digest_queue_period', 'period_start', 'period_end'),
+        Index('idx_digest_queue_unique', 'user_id', 'workspace_id', 'digest_type', 'period_start', unique=True),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    user_id = Column(String, index=True, nullable=False)
+    workspace_id = Column(String, index=True, nullable=False)
+    digest_type = Column(String(50), nullable=False)  # daily, weekly, monthly, custom
+    period_start = Column(DateTime, nullable=False)
+    period_end = Column(DateTime, nullable=False)
+    events = Column(JSON, nullable=False, default=[])
+    summary_stats = Column(JSON, default={})
+    is_sent = Column(Boolean, default=False)
+    sent_at = Column(DateTime)
+    notification_id = Column(String)  # Reference to notification_queue
+
+    created_at = Column(DateTime, default=func.now())
+
+
+class NotificationChannel(Base):
+    """Channel configuration per workspace (webhooks, API keys)."""
+
+    __tablename__ = "notification_channels"
+    __table_args__ = (
+        Index('idx_notification_channels_workspace', 'workspace_id', 'is_enabled'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    workspace_id = Column(String, index=True, nullable=False)
+    channel = Column(String(50), nullable=False)  # email, slack, teams, discord, webhook
+    is_enabled = Column(Boolean, default=True)
+    configuration = Column(JSON, nullable=False, default={})  # Webhook URLs, API keys, etc.
+    last_test_at = Column(DateTime)
+    last_test_status = Column(String(20))  # success, failed
+
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+class NotificationSubscription(Base):
+    """User subscriptions to specific notification topics."""
+
+    __tablename__ = "notification_subscriptions"
+    __table_args__ = (
+        Index('idx_notification_subscriptions_user', 'user_id', 'workspace_id'),
+        Index('idx_notification_subscriptions_type', 'subscription_type', 'is_subscribed'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    user_id = Column(String, index=True, nullable=False)
+    workspace_id = Column(String, index=True, nullable=False)
+    subscription_type = Column(String(100), nullable=False)
+    is_subscribed = Column(Boolean, default=True)
+    metadata = Column(JSON, default={})
+
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+# =====================================================================
+# Reports System Models
+# =====================================================================
+
+
+class ReportJob(Base):
+    """Report generation jobs table."""
+
+    __tablename__ = "report_jobs"
+    __table_args__ = (
+        Index('idx_report_jobs_workspace_created', 'workspace_id', 'created_at'),
+        Index('idx_report_jobs_status', 'status', 'created_at'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    workspace_id = Column(String, index=True, nullable=False)
+    user_id = Column(String, index=True, nullable=False)
+
+    # Report configuration
+    report_name = Column(String(255), nullable=False)
+    template_id = Column(String, index=True)
+    report_format = Column(String(20), nullable=False)  # pdf, excel, csv, json
+    sections = Column(JSON, default=[])
+    date_range = Column(JSON)
+    filters = Column(JSON, default={})
+    delivery_config = Column(JSON)
+
+    # Job status
+    status = Column(String(20), index=True, nullable=False, default='queued')  # queued, processing, completed, failed
+    progress = Column(Integer, default=0)  # 0-100
+    current_section = Column(String(100))
+
+    # Results
+    file_path = Column(String)
+    file_size = Column(Integer)
+    page_count = Column(Integer)
+    download_url = Column(String)
+
+    # Error handling
+    error_message = Column(String)
+    retry_count = Column(Integer, default=0)
+
+    # Timestamps
+    created_at = Column(DateTime, default=func.now(), index=True)
+    started_at = Column(DateTime)
+    completed_at = Column(DateTime)
+    expires_at = Column(DateTime)
+    generation_time = Column(Float)  # seconds
+
+
+class ReportTemplate(Base):
+    """Report templates table."""
+
+    __tablename__ = "report_templates"
+    __table_args__ = (
+        Index('idx_report_templates_workspace_category', 'workspace_id', 'category'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    workspace_id = Column(String, index=True)  # NULL for global templates
+
+    # Template metadata
+    name = Column(String(255), nullable=False)
+    description = Column(String)
+    category = Column(String(50), index=True)  # executive, operational, technical, financial
+    is_custom = Column(Boolean, default=False, nullable=False)
+
+    # Template configuration
+    sections = Column(JSON, nullable=False)  # Array of section definitions
+    layout = Column(JSON)  # Page layout settings
+    supported_formats = Column(JSON, default=['pdf', 'excel'])
+
+    # Usage tracking
+    usage_count = Column(Integer, default=0)
+    last_used_at = Column(DateTime)
+
+    # Metadata
+    created_by = Column(String, nullable=False)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+    is_active = Column(Boolean, default=True, nullable=False)
+
+
+class ReportSchedule(Base):
+    """Scheduled reports table."""
+
+    __tablename__ = "report_schedules"
+    __table_args__ = (
+        Index('idx_report_schedules_workspace_active', 'workspace_id', 'is_active'),
+        Index('idx_report_schedules_next_run', 'next_run_at'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    workspace_id = Column(String, index=True, nullable=False)
+
+    # Schedule configuration
+    name = Column(String(255), nullable=False)
+    template_id = Column(String, index=True, nullable=False)
+    frequency = Column(String(20), nullable=False)  # daily, weekly, monthly, quarterly
+    schedule_config = Column(JSON, nullable=False)  # time, timezone, day_of_week, etc.
+
+    # Recipients
+    recipients = Column(JSON, nullable=False)  # emails, slack_channels, webhooks
+
+    # Filters
+    filters = Column(JSON, default={})
+
+    # Status
+    is_active = Column(Boolean, default=True, nullable=False, index=True)
+    last_run_at = Column(DateTime)
+    next_run_at = Column(DateTime, index=True)
+    last_job_id = Column(String)
+    last_status = Column(String(20))
+
+    # Statistics
+    successful_runs = Column(Integer, default=0)
+    failed_runs = Column(Integer, default=0)
+
+    # Metadata
+    created_by = Column(String, nullable=False)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+class GeneratedReport(Base):
+    """Historical generated reports table."""
+
+    __tablename__ = "generated_reports"
+    __table_args__ = (
+        Index('idx_generated_reports_workspace_date', 'workspace_id', 'generated_at'),
+        Index('idx_generated_reports_type', 'report_type', 'generated_at'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    workspace_id = Column(String, index=True, nullable=False)
+    job_id = Column(String, index=True)
+
+    # Report metadata
+    report_name = Column(String(255), nullable=False)
+    report_type = Column(String(50), index=True)  # scheduled, manual, ad-hoc
+    template_id = Column(String, index=True)
+
+    # File information
+    file_path = Column(String, nullable=False)
+    filename = Column(String(255), nullable=False)
+    file_format = Column(String(20), nullable=False)
+    file_size = Column(Integer)
+    page_count = Column(Integer)
+    content_type = Column(String(100))
+
+    # Access control
+    generated_by = Column(String, nullable=False)
+    shared_with = Column(JSON, default=[])
+    is_public = Column(Boolean, default=False)
+
+    # Download tracking
+    download_count = Column(Integer, default=0)
+    last_downloaded_at = Column(DateTime)
+
+    # Timestamps
+    generated_at = Column(DateTime, default=func.now(), index=True)
+    expires_at = Column(DateTime, index=True)
+
+
+class ReportShare(Base):
+    """Report sharing links table."""
+
+    __tablename__ = "report_shares"
+    __table_args__ = (
+        Index('idx_report_shares_report_created', 'report_id', 'created_at'),
+        Index('idx_report_shares_token', 'share_token'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    report_id = Column(String, index=True, nullable=False)
+    workspace_id = Column(String, index=True, nullable=False)
+
+    # Share configuration
+    share_token = Column(String(100), unique=True, index=True, nullable=False)
+    share_url = Column(String, nullable=False)
+    recipients = Column(JSON, default=[])
+    message = Column(String)
+
+    # Access control
+    password_hash = Column(String)
+    require_password = Column(Boolean, default=False)
+    allow_download = Column(Boolean, default=True)
+
+    # Tracking
+    access_count = Column(Integer, default=0)
+    last_accessed_at = Column(DateTime)
+
+    # Metadata
+    created_by = Column(String, nullable=False)
+    created_at = Column(DateTime, default=func.now())
+    expires_at = Column(DateTime, nullable=False, index=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+
+
+class ReportWebhook(Base):
+    """Report webhooks table."""
+
+    __tablename__ = "report_webhooks"
+    __table_args__ = (
+        Index('idx_report_webhooks_workspace_active', 'workspace_id', 'is_active'),
+        {'schema': 'analytics'}
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    workspace_id = Column(String, index=True, nullable=False)
+
+    # Webhook configuration
+    url = Column(String, nullable=False)
+    events = Column(JSON, nullable=False)  # report.generated, report.failed, etc.
+    secret = Column(String)
+
+    # Status
+    is_active = Column(Boolean, default=True, nullable=False, index=True)
+
+    # Statistics
+    total_deliveries = Column(Integer, default=0)
+    successful_deliveries = Column(Integer, default=0)
+    failed_deliveries = Column(Integer, default=0)
+    last_delivery_at = Column(DateTime)
+    last_delivery_status = Column(String(20))
+
+    # Metadata
+    created_by = Column(String, nullable=False)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
