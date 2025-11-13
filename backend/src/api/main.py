@@ -27,6 +27,7 @@ from .routes import (
     materialized_views_router,
     moving_averages_router,
     anomalies_router,
+    search_router,
     analytics_router,
     dashboard_router,
     alerts_router,
@@ -75,6 +76,7 @@ app.include_router(funnels_router)
 app.include_router(materialized_views_router)
 app.include_router(moving_averages_router)
 app.include_router(anomalies_router)
+app.include_router(search_router)
 app.include_router(analytics_router)
 app.include_router(alerts_router)
 app.include_router(predictions_router)
@@ -98,6 +100,7 @@ Analytics API for Shadower platform providing:
 - **Predictive insights**: Anomaly detection and forecasting
 - **Custom reports**: Scheduled and on-demand reporting
 - **Data exports**: Multiple format support (CSV, JSON, PDF, Excel)
+- **Search functionality**: Advanced search across all analytics entities
 
 ## Authentication
 All endpoints require JWT authentication.
@@ -118,6 +121,7 @@ API calls are rate-limited per workspace to ensure fair usage:
 | Reports | 10 requests | 1 minute |
 | Exports | 5 requests | 1 hour |
 | Admin | 50 requests | 1 minute |
+| Search | 100 requests | 1 minute |
 
 **Response Headers:**
 - `X-RateLimit-Limit`: Maximum requests allowed
@@ -130,6 +134,7 @@ GET requests are cached to improve performance:
 - Analytics endpoints: 5 minutes TTL
 - Reports endpoints: 10 minutes TTL
 - Metrics endpoints: 2 minutes TTL
+- Search endpoints: 2 minutes TTL
 
 **Cache Headers:**
 - `X-Cache`: `HIT` (served from cache) or `MISS` (fresh data)
@@ -202,6 +207,10 @@ For issues or questions, contact: support@shadower.ai
         {
             "name": "admin",
             "description": "Administrative endpoints (requires admin role)"
+        },
+        {
+            "name": "search",
+            "description": "Search functionality across all analytics entities"
         }
     ]
 
